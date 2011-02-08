@@ -1731,7 +1731,7 @@
    {
       "abstract" : null,
       "distvname" : "mod_perl-1.29_related",
-      "latest_version" : "2.0.4",
+      "latest_version" : "2.0.5",
       "name" : "mod_perl",
       "version" : "1.29_related"
    },
