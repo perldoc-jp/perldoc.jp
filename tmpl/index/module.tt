@@ -1,5 +1,3 @@
-[% INCLUDE 'include/header.tt' %]
-
 <div class="content">
     <p class="about">CPAN モジュールのドキュメントです。英語版は <a href="http://search.cpan.org/">search.cpan.org</a>でみることができます</p>
 
@@ -16,7 +14,7 @@
                 [% IF count > 1 %]</td></tr>[% END %]
                 [% before_name = v.name; count = 1 %]
                 <tr>
-                    <td><a href="/docs/modules/[% v.distvname %]/">[% v.name %]-[% v.version %]
+                    <td nowrap="nowrap"><a href="/docs/modules/[% v.distvname %]/">[% v.name %]-[% v.version %]
                         [% IF v.latest_version %]
                             [% IF v.latest_version==v.version %]
                                 <span class="fresh">(Fresh)</span>
@@ -36,5 +34,3 @@
         </div>
     </div>
 </div>
-
-[% INCLUDE 'include/footer.tt' %]
