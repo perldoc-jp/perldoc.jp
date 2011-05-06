@@ -1,4 +1,4 @@
-[% INCLUDE 'include/header.tt' %]
+[% WRAPPER 'layout.html' %]
 
 <p>
 なんということでしょう! '[% name %]' はまだ翻訳されていないようです!<br />
@@ -17,4 +17,4 @@ Perlコミュニティに貢献するチャンスですよ!
 	英語のドキュメントでよければ <a href="http://search.cpan.org/perldoc?[% name %]">search.cpan.org</a> でみることができますよ。
 </p>
 
-[% INCLUDE 'include/footer.tt' %]
+[% END %]

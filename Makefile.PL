@@ -15,8 +15,11 @@ requires 'CPAN::DistnameInfo';
 requires 'LWP::UserAgent';
 requires 'URI::Escape';
 requires 'Try::Tiny';
-requires 'HTML::Zoom';
-requires 'Text::Caml';
+requires 'DBD::SQLite';
+requires 'SQL::Maker';
+requires 'DBIx::TransactionManager';
+
+test_requires 'Test::Requires';
 
 recursive_author_tests('xt');
 

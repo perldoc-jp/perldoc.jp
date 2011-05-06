@@ -3,6 +3,8 @@ use warnings;
 use utf8;
 use 5.10.0;
 
+# perl -Ilib -e 'use PJP::M::Index::Module; use PJP; my $c = PJP->bootstrap; PJP::M::Index::Module->generate_and_save($c)'
+
 package PJP::M::Index::Module;
 use LWP::UserAgent;
 use CPAN::DistnameInfo;
@@ -14,6 +16,7 @@ use File::Find::Rule;
 use version;
 use autodie;
 use PJP::M::Pod;
+use Data::Dumper;
 
 sub slurp {
     if (@_==1) {
@@ -27,13 +30,13 @@ sub slurp {
 
 sub get {
     my ($class, $c) = @_;
+
     my $fname = $class->cache_path($c);
-    if (-f $fname) {
-        my $json = slurp $fname;
-        return JSON::decode_json($json);
-    } else {
-        return $class->generate_and_save($c);
+    unless (-f $fname) {
+        die "Missing '$fname'";
     }
+
+    return do $fname;
 }
 
 sub cache_path {
@@ -45,17 +48,23 @@ sub generate_and_save {
     my ($class, $c) = @_;
 
     my $fname = $class->cache_path($c);
+
     my @data = $class->generate($c);
+    local $Data::Dumper::Terse  = 1;
+    local $Data::Dumper::Indent = 1;
+    local $Data::Dumper::Purity = 1;
+
     open my $fh, '>', $fname;
-    print $fh JSON->new->pretty->canonical->utf8->encode(\@data);
+    print $fh Dumper(\@data);
     close $fh;
 
-    return \@data;
+    return;
 }
 
 sub generate {
     my ($class, $c) = @_;
 
+    # 情報をかきあつめる
     my @mods;
     for my $base (qw(
         assets/perldoc.jp/docs/modules/
@@ -63,17 +72,47 @@ sub generate {
     )) {
         push @mods, $class->_generate($c, $base);
     }
-    my %sort_tmp;
-    @mods = sort { $a->{name} cmp $b->{name} or
-                   ($sort_tmp{$b} ||= version->new($b->{version})) <=> ($sort_tmp{$a} ||= version->new($a->{version}))
-                 }  @mods;
-    infof("data: %s", ddf(\@mods));
-    return @mods;
+
+    # モジュールを中心に GROUP 化する
+    my %module2versions;
+    for (@mods) {
+        push @{$module2versions{$_->{name}}}, $_;
+    }
+    for my $module ( keys %module2versions ) {
+        $module2versions{$module} = [
+            map            { $_->[0] }
+              reverse sort { $a->[1] <=> $b->[1] }
+              map {
+                [ $_, eval { version->new( $_->{version} ) } || 0 ]
+              } @{ $module2versions{$module} }
+        ];
+    }
+
+    my @sorted = (
+        map {
+            +{
+                name     => $_,
+                abstract => $module2versions{$_}->[0]->{abstract},
+                repository => $module2versions{$_}->[0]->{repository},
+                latest_version => $module2versions{$_}->[0]->{latest_version},
+                versions => $module2versions{$_}
+              }
+          }
+          sort { $a cmp $b } keys %module2versions
+    );
+    return @sorted;
 }
 
 sub _generate {
     my ($class, $c, $base) = @_;
     state $ua = LWP::UserAgent->new(agent => 'PJP', timeout => 1);
+
+    my $repository = do {
+        local $_ = $base;
+        s!assets/!!;
+        s!/.+!!;
+        $_;
+    };
 
     my @mods;
     opendir(my $dh, $base);
@@ -91,7 +130,7 @@ sub _generate {
                 infof("api response: %s", ddf($data));
                 $data;
             } else {
-                warnf("Cannot get latest version info from frepan API: %s", $res->status_line);
+                warnf("Cannot get latest version info from frepan API: %s, %s", $res->status_line, $res->content);
                 undef;
             }
         });
@@ -105,14 +144,18 @@ sub _generate {
             File::Find::Rule->file()
                             ->name('*.pod')
                             ->in("$base/$e");
-        if ($pod_file) {
-            infof("parsing %s", $pod_file);
-            my ($name, $desc) = PJP::M::Pod->parse_name_section($pod_file);
-            if ($desc) {
-                infof("Japanese Description: %s, %s", $name, $desc);
-                $row->{abstract} = $desc;
-            }
+
+        # pod file が一個もないものは表示しない(具体的には CPANPLUS)
+        next unless $pod_file;
+
+        infof("parsing %s", $pod_file);
+        my ($name, $desc) = PJP::M::Pod->parse_name_section($pod_file);
+        if ($desc) {
+            infof("Japanese Description: %s, %s", $name, $desc);
+            $row->{abstract} = $desc;
         }
+
+        $row->{repository} = $repository;
 
         push @mods, $row;
     }

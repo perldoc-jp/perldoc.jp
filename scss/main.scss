@@ -1,5 +1,20 @@
-@import "reset.scss";
-@import "typography.scss";
+@import "../prettify/prettify.css";
+
+@mixin clearfix {
+  zoom: 1;
+
+  &:before,
+  &:after {
+    display: block; 
+    height: 0; 
+    visibility: hidden; 
+    content: "\0020"; 
+  }
+
+  &:after {
+    clear: both;
+  }
+}
 
 /* ----------------------------------------------- */
 /* sites css                                       */
@@ -28,7 +43,7 @@ a {
 }
 
 body {
-    background: whiteSmoke;
+    background: white;
 }
 
 #Container {
@@ -36,6 +51,7 @@ body {
     margin-top: 2px;
     margin-bottom: 20px;
     padding: 10px;
+    text-align: left;
 }
 
 .header {
@@ -112,9 +128,20 @@ body {
         float: right;
         text-align: right;
         overflow: visible;
+
+        .OtherVersions {
+            margin-top: 20px;
+        }
+    }
+
+    .BreadList {
+        margin-bottom: 10px;
+        float: left;
     }
 
     .PodBody {
+        clear: left;
+
         ul.pod_toc {
             list-style: none;
             margin-bottom: 10px;
@@ -127,6 +154,20 @@ body {
 
         .pod_content_body {
             div.original { display: none; }
+
+            a.toc_link {
+                color: white;
+
+                &:hover {
+                    color:#eccc01;
+                }
+            }
+
+            .toc_link {
+                text-decoration: none;
+                font-size: 70%;
+                vertical-align: top;
+            }
 
             pre {
                 background-color: white;
@@ -171,31 +212,30 @@ body {
 .DirectoryIndexContainer {
     h1 {
         font-size: 120%;
-    }
-    
-    ul.DirectoryIndex {
-        list-style: none;
-        margin-top: 20px;
-        font-size: 100%;
+        font-weight: bold;
     }
 }
 
 .IndexModuleContent {
     .old   { color: red }
     .fresh { color: green }
+    .oldVersionInfo {
+        padding-left: 10px;
+        font-size: x-small;
+    }
 }
 
 .alert { color: red; font-size: 150%; font-weight: bold; }
 
 /* media queries for iPhone */
 @media screen and (max-device-width: 480px) {
-    body { margin: 1.5em; }
     #Container {
         width: 100%;
-        font-size: 200%;
         line-height: 1.5em;
+        word-wrap:break-word;
     }
     #content {
+        margin-left: 2px;
         .about { font-size: normal; margin-bottom: 20px; }
     }
     pre { overflow:auto; }
@@ -208,6 +248,14 @@ body {
     .IndexModuleContent {
         .old   { display: block; }
         .fresh { display: block; }
+    }
+    .PodPage {
+        .PodInfo {
+            display: none;
+        }
+        .PodBody {
+            clear: both;
+        }
     }
     h1, h2, h3, h4, h5, h6 {
         font-size: 110%;
