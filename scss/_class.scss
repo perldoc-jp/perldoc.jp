@@ -1,0 +1,99 @@
+@import url(http://fonts.googleapis.com/css?family=Open+Sans+Condensed:700);
+.header {
+  background: $color-key;
+  padding: 5px $gap;
+  .SiteLogo {
+    @include link-colors(#fff);
+    font-size: 24px;
+    font-weight: bold;
+    font-family: $font-head;
+    @include single-text-shadow(#000,0px,1px);
+    letter-spacing: 0.05em;
+  }
+}
+
+.nav {
+  background: #222;
+  @include background-image(linear-gradient(#111, #222 , #222));
+  padding: 10px $gap;
+  @include box-shadow(#888 0px 3px 7px);
+  font-size: 90%;
+  ul {
+    @include clearfix;
+    margin:0;
+    padding: 0;
+    li {
+    list-style-type: none;
+      float: left;
+      margin-right: 20px;
+      a {
+        @include link-colors(#fff);
+      }
+    }
+  }
+  form {
+    position: absolute;
+    right: $gap;
+    top: 10px;
+
+  }
+}
+
+#main {
+  padding: 2em $gap;
+  position: relative;
+}
+
+#content {
+  background: #fff;
+  padding: $margin*1em;
+  @include border-radius(5px);
+  border: 5px solid adjust-lightness($color-gray, 75);
+}
+
+.footer {
+  background: $color-gray;
+  padding: 3em;
+  text-align: center;
+  color: #fff;
+}
+
+.PodInfo {
+  font-size: 80%;
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  padding: 5px;
+}
+
+.PodPage .PodBody .pod_content_body div.original {
+  display: none;
+}
+
+.pod_toc {
+  float: right;
+  width: percentage(250px / 960px);
+  background: adjust-lightness($color-gray, 83);
+  border: 1px solid adjust-lightness($color-gray, 75);
+  padding: 1em 2em;
+  margin: 1em 2em;
+  @include respond-to(mobile) {
+    float: none;
+    margin: 0;
+    width: 100%;
+  }
+}
+
+h1,h2,h3,h4,h5,h6 { 
+  @include single-text-shadow(#fff,0px,1px);
+    .toc_link {
+      font-weight: normal;
+      font-size: 11px;
+      display: none;
+    }
+  &:hover {
+    .toc_link {
+      display: inline;
+    }
+  }
+}

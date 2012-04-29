@@ -1,0 +1,42 @@
+$font-body: 'Lucida Grande', Arial, sans-serif;
+$font-logo: $font-body;
+$font-code: "Monaco","Consolas",'Courier',monospace;
+$font-navi: $font-body;
+$font-head: 'Open Sans Condensed', sans-serif;
+
+$color-base: #333;
+$color-key:  #069;
+$color-gray: #222;
+$color-light-gray: #999;
+$color-darkgray : #111;
+$color-link: $color-key;
+$color-hover: "";
+
+$line-height: 1.6;
+$line-height-code: 1.4;
+
+$margin: $line-height;
+
+$min-width: 1024px;
+
+.margin {
+  margin: 0 0 $margin*1em 0;
+}
+
+$gap: percentage(70px / 960px);
+
+$break-small: 320px;
+$break-large: 1024px;
+
+@mixin respond-to($media) {
+  @if $media == mobile {
+    @media only screen and (max-width: $break-small) { @content; }
+  }
+  @else if $media == medium {
+    @media only screen and (min-width: $break-small + 1) and (max-width: $break-large - 1) { @content; }
+  }
+  @else if $media == wide {
+    @media only screen and (min-width: $break-large) { @content; }
+  }
+}
+
