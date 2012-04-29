@@ -2,11 +2,12 @@
 .header {
   background: $color-key;
   padding: 5px $gap;
+  font-family: $font-head;
   .SiteLogo {
     @include link-colors(#fff);
     font-size: 24px;
     font-weight: bold;
-    font-family: $font-head;
+    font-family: $font-logo;
     @include single-text-shadow(#000,0px,1px);
     letter-spacing: 0.05em;
   }

@@ -523,7 +523,7 @@ table {
   border-spacing: 0;
 }
 
-/* line 22, ../../scss/_vars.scss */
+/* line 23, ../../scss/_vars.scss */
 .margin, p {
   margin: 0 0 1.6em 0;
 }
@@ -540,7 +540,7 @@ body {
   font-family: "Lucida Grande", Arial, sans-serif;
   line-height: 1.6;
   color: #333333;
-  background: #eee;
+  background: #eeeeee;
 }
 
 /* line 14, ../../scss/_basic.scss */
@@ -585,8 +585,9 @@ dd {
 .header {
   background: #006699;
   padding: 5px 7.292%;
+  font-family: "Lucida Grande", Arial, sans-serif;
 }
-/* line 5, ../../scss/_class.scss */
+/* line 6, ../../scss/_class.scss */
 .header .SiteLogo {
   color: white;
   font-size: 24px;
@@ -596,7 +597,7 @@ dd {
   letter-spacing: 0.05em;
 }
 
-/* line 15, ../../scss/_class.scss */
+/* line 16, ../../scss/_class.scss */
 .nav {
   background: #222;
   background-image: -webkit-gradient(linear, 50% 0%, 50% 100%, color-stop(0%, #111111), color-stop(50%, #222222), color-stop(100%, #222222));
@@ -611,37 +612,37 @@ dd {
   box-shadow: #888888 0px 3px 7px;
   font-size: 90%;
 }
-/* line 21, ../../scss/_class.scss */
+/* line 22, ../../scss/_class.scss */
 .nav ul {
   overflow: hidden;
   *zoom: 1;
   margin: 0;
   padding: 0;
 }
-/* line 25, ../../scss/_class.scss */
+/* line 26, ../../scss/_class.scss */
 .nav ul li {
   list-style-type: none;
   float: left;
   margin-right: 20px;
 }
-/* line 29, ../../scss/_class.scss */
+/* line 30, ../../scss/_class.scss */
 .nav ul li a {
   color: white;
 }
-/* line 34, ../../scss/_class.scss */
+/* line 35, ../../scss/_class.scss */
 .nav form {
   position: absolute;
   right: 7.292%;
   top: 10px;
 }
 
-/* line 42, ../../scss/_class.scss */
+/* line 43, ../../scss/_class.scss */
 #main {
   padding: 2em 7.292%;
   position: relative;
 }
 
-/* line 47, ../../scss/_class.scss */
+/* line 48, ../../scss/_class.scss */
 #content {
   background: #fff;
   padding: 1.6em;
@@ -653,7 +654,7 @@ dd {
   border: 5px solid #e1e1e1;
 }
 
-/* line 54, ../../scss/_class.scss */
+/* line 55, ../../scss/_class.scss */
 .footer {
   background: #222222;
   padding: 3em;
@@ -661,7 +662,7 @@ dd {
   color: #fff;
 }
 
-/* line 61, ../../scss/_class.scss */
+/* line 62, ../../scss/_class.scss */
 .PodInfo {
   font-size: 80%;
   position: absolute;
@@ -670,12 +671,12 @@ dd {
   padding: 5px;
 }
 
-/* line 69, ../../scss/_class.scss */
+/* line 70, ../../scss/_class.scss */
 .PodPage .PodBody .pod_content_body div.original {
   display: none;
 }
 
-/* line 73, ../../scss/_class.scss */
+/* line 74, ../../scss/_class.scss */
 .pod_toc {
   float: right;
   width: 26.042%;
@@ -685,7 +686,7 @@ dd {
   margin: 1em 2em;
 }
 @media only screen and (max-width: 320px) {
-  /* line 73, ../../scss/_class.scss */
+  /* line 74, ../../scss/_class.scss */
   .pod_toc {
     float: none;
     margin: 0;
@@ -693,17 +694,17 @@ dd {
   }
 }
 
-/* line 87, ../../scss/_class.scss */
+/* line 88, ../../scss/_class.scss */
 h1, h2, h3, h4, h5, h6 {
   text-shadow: white 0px 1px 1px;
 }
-/* line 89, ../../scss/_class.scss */
+/* line 90, ../../scss/_class.scss */
 h1 .toc_link, h2 .toc_link, h3 .toc_link, h4 .toc_link, h5 .toc_link, h6 .toc_link {
   font-weight: normal;
   font-size: 11px;
   display: none;
 }
-/* line 95, ../../scss/_class.scss */
+/* line 96, ../../scss/_class.scss */
 h1:hover .toc_link, h2:hover .toc_link, h3:hover .toc_link, h4:hover .toc_link, h5:hover .toc_link, h6:hover .toc_link {
   display: inline;
 }

@@ -1,8 +1,8 @@
 $font-body: 'Lucida Grande', Arial, sans-serif;
-$font-logo: $font-body;
+$font-logo: 'Open Sans Condensed', sans-serif;
 $font-code: "Monaco","Consolas",'Courier',monospace;
 $font-navi: $font-body;
-$font-head: 'Open Sans Condensed', sans-serif;
+$font-head: $font-body;
 
 $color-base: #333;
 $color-key:  #069;
@@ -11,6 +11,7 @@ $color-light-gray: #999;
 $color-darkgray : #111;
 $color-link: $color-key;
 $color-hover: "";
+$color-bg: #eee;
 
 $line-height: 1.6;
 $line-height-code: 1.4;
