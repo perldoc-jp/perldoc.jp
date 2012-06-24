@@ -15,7 +15,7 @@ git pull origin master
 
 rm $BASE/index-module.pl
 
-cd $HOME/code/
+cd $HOME/git/PJP
 
 perl -Ilib -e 'use PJP::M::Index::Module; use PJP; my $c = PJP->bootstrap; PJP::M::Index::Module->generate_and_save($c)'
 

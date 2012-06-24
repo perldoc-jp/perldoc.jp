@@ -7,4 +7,5 @@
     'Text::Xslate' => {
         path => ['tmpl/'],
     },
+    'assets_dir' => "$ENV{HOME}/assets/",
 };

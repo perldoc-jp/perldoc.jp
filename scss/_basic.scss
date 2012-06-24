@@ -1,0 +1,35 @@
+html {
+  @include respond-to(medium) {
+    font-size: 90%;
+  }
+}
+
+body {
+  font-family: $font-body;
+  line-height: $line-height;
+  color: $color-base;
+  background: $color-bg;
+}
+
+a {
+  @include hover-link;
+  @include link-colors($color-link, $color-link, adjust-saturation($color-link,20), adjust-saturation($color-link,-60));
+}
+
+pre, code, kbd, samp {
+  font-family: $font-code;
+  line-height: $line-height-code;
+}
+
+pre {
+  margin: $margin*1em 0;
+}
+
+p {
+  @extend .margin;
+}
+
+dd {
+  margin: 0 0 0 $margin*1em;
+}
+

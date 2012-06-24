@@ -9,7 +9,7 @@ use Log::Minimal;
 builder {
     enable 'Plack::Middleware::Static',
         path => qr{^(/static/|/favicon\.ico|/robots\.txt)},
-        root => './htdocs/';
+        root => './';
     enable 'Plack::Middleware::ReverseProxy';
     enable sub {
         my $app = shift;
