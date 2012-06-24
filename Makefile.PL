@@ -25,6 +25,8 @@ requires(
 	'JSON' => 0,
 	'File::Find::Rule' => 0,
 	'Module::Find' => 0,
+        'Server::Starter' => 0,
+        'Starlet' => 0,
 );
 
 can_run('cronlog') or do {
