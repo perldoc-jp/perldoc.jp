@@ -41,7 +41,7 @@ sub get {
 
 sub cache_path {
     my ($class, $c) = @_;
-    return catfile($c->base_dir(), 'assets', 'index-module.pl');
+    return catfile($c->assets_dir(), 'index-module.pl');
 }
 
 sub generate_and_save {
@@ -66,9 +66,9 @@ sub generate {
 
     # 情報をかきあつめる
     my @mods;
-    for my $base (qw(
-        assets/perldoc.jp/docs/modules/
-        assets/module-pod-jp/docs/modules/
+    for my $base (map { File::Spec->catdir( $c->assets_dir(), $_) } qw(
+        perldoc.jp/docs/modules/
+        module-pod-jp/docs/modules/
     )) {
         push @mods, $class->_generate($c, $base);
     }
@@ -123,6 +123,7 @@ sub _generate {
         my $row = {distvname => $e, name => $dist, version => $version};
 
         # get information from FrePAN
+=pod
         my $data = $c->cache->get_or_set("frepanapi:1:$e", sub {
             my $res = $ua->get('http://frepan.org/api/v1/dist/show.json?dist_name=' . uri_escape($dist));
             if ($res->is_success) {
@@ -138,6 +139,7 @@ sub _generate {
             $row->{latest_version} = $data->{version};
             $row->{abstract}       = $data->{abstract};
         }
+=cut
 
         # ファイル名のいちばん短い pod ファイルが代表格といえる
         my ($pod_file) = sort { length($a) <=> length($b) }

@@ -1,5 +1,6 @@
 new.perldoc.jp のソースです。
 
+
 自前でうごかす方法
 ==================
 
@@ -33,4 +34,83 @@ Scss の生成は gem の Sass が必要なので
 してから変更してください。
 
 main.css の方を変更してはいけません。
+
+Dotcloud
+========
+
+    # http://packages.ubuntu.com/natty/cvs
+    curl -LO http://archive.ubuntu.com/ubuntu/pool/main/c/cvs/cvs_1.12.13.orig.tar.gz
+    tar xzvf ...
+    curl -LO http://archive.ubuntu.com/ubuntu/pool/main/c/cvs/cvs_1.12.13-12ubuntu1.diff.gz
+    zcat *.diff.gz | patch -p1
+    cd ...
+    ./configure --prefix=/home/dotcloud/perl5/
+    make
+    make install
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

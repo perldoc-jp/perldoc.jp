@@ -7,6 +7,8 @@ use Pod::Simple::XHTML;
 use Log::Minimal;
 use Text::Xslate::Util qw/mark_raw html_escape/;
 use Encode ();
+use HTML::Entities ();
+use Amon2::Declare;
 
 sub parse_name_section {
     my ($class, $stuff) = @_;
@@ -25,10 +27,13 @@ sub parse_name_section {
     $src =~ s/=begin\s+original.+?=end\s+original\n//gsm;
     $src =~ s/X<[^>]+>//g;
     $src =~ s/=encoding\s+\S+\n//gsm;
+    $src =~ s/\r\n/\n/g;
+
     my ($package, $description) = ($src =~ m/
-        ^=head1\s+(?:NAME|名前|名前\ \(NAME\))[ \t]*\n(?:名前\n)?\n+
+        ^=head1\s+(?:NAME|名前|名前\ \(NAME\))[ \t]*\n(?:名前\n)?\s*\n+\s*
         \s*(\S+)(?:\s*-+\s*([^\n]+))?
     /msx);
+
     $package     =~ s/[A-Z]<(.+?)>/$1/g if $package;        # remove tags
     $description =~ s/[A-Z]<(.+?)>/$1/g if $description;    # remove tags
     return ($package, $description || '');
@@ -38,9 +43,8 @@ sub pod2html {
 	my ($class, $stuff) = @_;
 	$stuff or die "missing mandatory argument: $stuff";
 
-    no warnings 'redefine';
-    local *Pod::Simple::XHTML::encode_entities = \&Text::Xslate::Util::html_escape;
     my $parser = PJP::Pod::Parser->new();
+    $parser->html_encode_chars(q{&<>"'});
     $parser->accept_targets_as_text('original');
     $parser->html_header('');
     $parser->html_footer('');
@@ -61,7 +65,7 @@ sub get_file_list {
 
     my @path = reverse sort { eval { version->parse($a->[1]) } <=> eval { version->parse($b->[1]) } } map {
         +[ $_, map { local $_=$_; s!.*/perl/!!; s!/$name.pod!!; $_ } $_ ]
-    } glob("assets/perldoc.jp/docs/perl/*/$name.pod");
+    } glob("@{[ c()->assets_dir() ]}/perldoc.jp/docs/perl/*/$name.pod");
 	return @path;
 }
 
@@ -73,6 +77,7 @@ sub get_latest_file_path {
 
 {
     package PJP::Pod::Parser;
+    use Pod::Simple::XHTML;
     use parent qw/Pod::Simple::XHTML/;
     use URI::Escape qw/uri_escape_utf8/;
 
