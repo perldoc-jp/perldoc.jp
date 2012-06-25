@@ -14,6 +14,7 @@ my $mode_name  = $pjp->mode_name || 'development';
 my $assets_dir = $config->{'assets_dir'} || die "no assets_dir setting in config/" . $mode_name . '.pl';
 my $code_dir   = $config->{'code_dir'}   || die "no code_dir setting in config/"   . $mode_name . '.pl';
 my $perl       = $config->{perl} || 'perl -Ilib';
+my($sqlite_db) = $config->{DB}->[0] =~m{dbname=(.+)$};
 
 if (! -d $assets_dir) {
     mkdir $assets_dir;
@@ -29,7 +30,7 @@ cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
 _SHELL_
 
 } else {
-    system(qq{cd $assets_dir/perldoc.jp/; cvs up -dP});
+    system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
 }
 
 
@@ -42,6 +43,9 @@ system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
 unlink "$assets_dir/index-module.pl";
 
 chdir $code_dir;
+if (! -e $sqlite_db) {
+  system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql});
+}
 
 PJP::M::Index::Module->generate_and_save($pjp);
 PJP::M::BuiltinFunction->generate($pjp);
