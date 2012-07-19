@@ -67,6 +67,8 @@ sub generate {
     # 情報をかきあつめる
     my @mods;
     for my $base (map { File::Spec->catdir( $c->assets_dir(), $_) } qw(
+        Moose-Doc-JA/
+        MooseX-Getopt-Doc-JA/
         perldoc.jp/docs/modules/
         module-pod-jp/docs/modules/
     )) {
@@ -109,8 +111,8 @@ sub _generate {
 
     my $repository = do {
         local $_ = $base;
-        s!assets/!!;
-        s!/.+!!;
+        s!^.+?assets/!!;
+        s!^([\w\-.]+)/.+!$1!;
         $_;
     };
 
@@ -119,7 +121,18 @@ sub _generate {
     while (defined(my $e = readdir $dh)) {
         next if $e =~ /^\./;
         next if $e =~ /^CVS$/;
-        my ($dist, $version) = CPAN::DistnameInfo::distname_info($e);
+
+        my ($dist, $version);
+
+        if ($e eq 'Moose') {
+            open my $fh, $base . '/META.yml' or die $!;
+            chomp($version = <$fh>);
+            close $fh;
+            $version =~s{^version: }{};
+            $dist = $e;
+        } else {
+            ($dist, $version) = CPAN::DistnameInfo::distname_info($e);
+        }
         my $row = {distvname => $e, name => $dist, version => $version};
 
         # get information from FrePAN

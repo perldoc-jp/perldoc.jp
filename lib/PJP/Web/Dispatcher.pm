@@ -18,7 +18,42 @@ use PJP::M::PodFile;
 get '/' => sub {
     my $c = shift;
 
-    return $c->render('index.tt');
+    return $c->render('index.tt', {
+                                   categorized_modules => do "data/category_data.pl"
+                                  });
+};
+
+get '/about' => sub {
+    my $c = shift;
+    return $c->render('about.tt');
+};
+
+get '/category' => sub {
+    my $c = shift;
+
+    return $c->render('category.tt', {
+                                   categorized_modules => do "data/category_data.pl"
+                                  });
+};
+
+
+get '/category/:name' => sub {
+    my ($c, $args) = @_;
+    my $modules =  do "data/category_data.pl";
+    return $c->render('category/index.tt', {
+                                      category => $args->{name},
+                                      modules   => $modules->{category_modules}->{$args->{name}},
+                                     });
+};
+
+get '/category/:name/:name2' => sub {
+    my ($c, $args) = @_;
+    my $modules =  do "data/category_data.pl";
+    my $name = $args->{name} . '/' . $args->{name2};
+    return $c->render('category/index.tt', {
+                                      category  => $name,
+                                      modules   => $modules->{category_modules}->{$name},
+                                     });
 };
 
 get '/index/core' => sub {

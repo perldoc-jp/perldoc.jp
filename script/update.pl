@@ -33,18 +33,25 @@ _SHELL_
     system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
 }
 
-
 if (! -d $assets_dir . '/module-pod-jp/') {
     system(qq{git clone git://github.com/perldoc-jp/module-pod-jp.git $assets_dir/module-pod-jp/});
 }
 
 system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
 
+foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {
+    if (! -d $assets_dir . "/$jpa_module/") {
+	system(qq{cd $assets_dir; git clone git://github.com/jpa/$jpa_module.git});
+    }
+
+    system(qq{cd $assets_dir/$jpa_module; git pull origin master});
+}
+
 unlink "$assets_dir/index-module.pl";
 
 chdir $code_dir;
 if (! -e $sqlite_db) {
-  system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql});
+    system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql});
 }
 
 PJP::M::Index::Module->generate_and_save($pjp);

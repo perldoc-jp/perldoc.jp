@@ -1,0 +1,21 @@
+[% WRAPPER 'layout.html' %]
+
+<h1>カテゴリ一覧</h1>
+
+<div style="height:250px; clear:both">
+<ul style="float:left">
+[% FOREACH category IN categorized_modules.category_names %]
+     <li>
+     [% IF categorized_modules.category_modules.$category.in_category.size() + categorized_modules.category_modules.$category.others.size()%]
+         <a href="category/[% category %]">[% category %]</a>
+     [% ELSE %][% category %]cd [% END %]
+         ([% categorized_modules.category_modules.$category.in_category.size() + categorized_modules.category_modules.$category.others.size()%])
+     </li>
+   [% IF loop.count % 9 == 0 %]
+</ul>
+<ul style="float:left">
+   [% END %]
+[% END %]
+</div>
+
+[% END %]

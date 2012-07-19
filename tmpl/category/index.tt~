@@ -1,0 +1,15 @@
+[% WRAPPER 'layout.html' %]
+
+<h2>[% category %]</h2>
+<ul>
+  [% FOREACH module IN modules.in_category %]
+    <li><a href="/docs/[% module.path %]">[% module.package %] - [% module.description %]</a></li>
+  [% END %]
+</ul>
+<ul>
+  [% FOREACH module IN modules.others %]
+    <li><a href="/docs/[% module.path %]">[% module.package %] - [% module.description %]</a></li>
+  [% END %]
+</ul>
+
+[% END %]

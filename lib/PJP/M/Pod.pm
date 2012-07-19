@@ -30,7 +30,7 @@ sub parse_name_section {
     $src =~ s/\r\n/\n/g;
 
     my ($package, $description) = ($src =~ m/
-        ^=head1\s+(?:NAME|名前|名前\ \(NAME\))[ \t]*\n(?:名前\n)?\s*\n+\s*
+        ^=head1\s+(?:NAME|題名|名前|名前\ \(NAME\))[ \t]*\n(?:名前\n)?\s*\n+\s*
         \s*(\S+)(?:\s*-+\s*([^\n]+))?
     /msx);
 
@@ -40,8 +40,8 @@ sub parse_name_section {
 }
 
 sub pod2html {
-	my ($class, $stuff) = @_;
-	$stuff or die "missing mandatory argument: $stuff";
+        my ($class, $stuff) = @_;
+        $stuff or die "missing mandatory argument: $stuff";
 
     my $parser = PJP::Pod::Parser->new();
     $parser->html_encode_chars(q{&<>"'});
@@ -49,30 +49,30 @@ sub pod2html {
     $parser->html_header('');
     $parser->html_footer('');
     $parser->index(1); # display table of contents
-	$parser->perldoc_url_prefix('/pod/');
+        $parser->perldoc_url_prefix('/pod/');
     $parser->output_string(\my $out);
     # $parser->html_h_level(3);
-	if (ref $stuff eq 'SCALAR') {
-		$parser->parse_string_document($$stuff);
-	} else {
-		$parser->parse_file($stuff);
-	}
-	return mark_raw($out);
+        if (ref $stuff eq 'SCALAR') {
+                $parser->parse_string_document($$stuff);
+        } else {
+                $parser->parse_file($stuff);
+        }
+        return mark_raw($out);
 }
 
 sub get_file_list {
-	my ($class, $name) = @_;
+        my ($class, $name) = @_;
 
     my @path = reverse sort { eval { version->parse($a->[1]) } <=> eval { version->parse($b->[1]) } } map {
         +[ $_, map { local $_=$_; s!.*/perl/!!; s!/$name.pod!!; $_ } $_ ]
     } glob("@{[ c()->assets_dir() ]}/perldoc.jp/docs/perl/*/$name.pod");
-	return @path;
+        return @path;
 }
 
 sub get_latest_file_path {
-	my ($class, $name) = @_;
-	my ($latest) = $class->get_file_list($name);
-	return $latest;
+        my ($class, $name) = @_;
+        my ($latest) = $class->get_file_list($name);
+        return $latest;
 }
 
 {

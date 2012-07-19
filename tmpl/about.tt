@@ -1,0 +1,24 @@
+[% WRAPPER 'layout.html' %]
+
+<h1>このサイトについて</h1>
+
+<p>
+このサイトは Perl の公式ドキュメントを日本語翻訳したものを表示するサイトです。<br />
+サイト内の翻訳データは、 Japanized Perl Resources Project(通称JPRP) 、github上のリポジトリ、JPAの翻訳文書から取っています。<br />
+</p>
+
+<h2>JPRP のサイト</h2>
+<ul>
+    <li><a href="http://perldocjp.sourceforge.jp/">Japanized Perl Resources Project</a></li>
+    <li><a href="http://sourceforge.jp/projects/perldocjp/">Japanized Perl Resources Project(sf.jp のプロジェクトページ)</a></li>
+</ul>
+
+<h2>git のレポジトリ</h2>
+<p>
+    git がいいという場合は<a href="https://github.com/perldoc-jp/module-pod-jp">github のレポジトリ</a>においてください。<br />
+    <br />
+    このリポジトリは、JPRP とは関係がありません。こちらの方がよりゆるい管理態勢になっています。
+</p>
+
+
+[% END %]
