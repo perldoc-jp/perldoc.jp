@@ -124,7 +124,7 @@ sub _generate {
 
         my ($dist, $version);
 
-        if ($e eq 'Moose') {
+        if ($e =~ m{^Moose} and -e $base . '/META.yml') {
             open my $fh, $base . '/META.yml' or die $!;
             chomp($version = <$fh>);
             close $fh;
