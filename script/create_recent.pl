@@ -10,6 +10,7 @@ use lib qw(./lib);
 use PJP;
 use Module::Find qw/useall/;
 use XML::RSS;
+use Time::Piece;
 
 useall 'PJP::M';
 
@@ -33,8 +34,7 @@ sub create_recent_data {
     my $code_dir   = $config->{'code_dir'}   || die "no code_dir setting in config/"   . $mode_name . '.pl';
 
     my $date = Time::Piece->new;
-    # $date -= 365 * 86400;
-    $date -= 2000 * 86400;
+    $date -= 365 * 86400;
 
     my $cvs = qx{cd ${assets_dir}perldoc.jp/docs/; cvs history -x AMR -l -a -D '$date'|sort};
     my @updates;
@@ -87,7 +87,7 @@ sub create_rss {
     mkdir 'static/rss' or die $! if not -d 'static/rss';
 
     my $mtime = (stat "data/recent.pl")[9];
-    my $date  = scalar gmtime $mtime;
+    my $date = (localtime $mtime)->strftime("%a, %d %b %Y %H:%M:%S +0900");
 
     my $rss = XML::RSS->new(version => '2.0');
     $rss->channel(
@@ -103,7 +103,7 @@ sub create_rss {
 	);
 
     my $recent = do "data/recent.pl";
-    foreach my $module (@$recent) {
+    foreach my $module (@{$recent}[0 .. 50]) {
 	$rss->add_item(
 	    title       => $module->{name},
 	    permaLink   => "http://www.perldoc.jp" . $module->{path},
