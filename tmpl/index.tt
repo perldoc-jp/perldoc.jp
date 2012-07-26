@@ -1,7 +1,15 @@
 [% WRAPPER 'layout.html' %]
 
 <p>
-このサイトは Perl の公式ドキュメントを日本語翻訳したものを表示するサイトです。<br />
+このサイトは Perl の公式ドキュメント、モジュールを日本語翻訳したものを表示するサイトです。<br />
 </p>
+
+<h2>最近の更新</h2>
+CVS及びgitのcommitログから取得していますので、翻訳者とcommitした人が違う場合があります。
+<ul>
+[% FOREACH module IN recent %]
+<li>[% module.date %] <a href="[% module.path %]">[% module.name %]</a> by [% module.author %]</li>
+[% END %]
+</ul>
 
 [% END %]

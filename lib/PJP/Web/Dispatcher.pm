@@ -19,13 +19,18 @@ get '/' => sub {
     my $c = shift;
 
     return $c->render('index.tt', {
-                                   categorized_modules => do "data/category_data.pl"
+                                   recent => do "data/recent.pl"
                                   });
 };
 
 get '/about' => sub {
     my $c = shift;
     return $c->render('about.tt');
+};
+
+get '/manners' => sub {
+    my $c = shift;
+    return $c->render('manners.tt');
 };
 
 get '/category' => sub {

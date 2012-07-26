@@ -1,0 +1,109 @@
+[% WRAPPER 'layout.html' %]
+<h1>翻訳の作法<h1>
+<h2>ディレクトリ構成</h2>
+<h3>コアドキュメント</h3>
+<p>
+docs/perl/バージョン/ファイル名.pod
+</p>
+<h3>モジュール</h3>
+<p>
+docs/modules/モジュール名-バージョン/　以下に、モジュールの tar.gz を展開し、各.pm を .pod に変更します。
+</p>
+</dl>
+<h2>podの抽出方法</h2>
+<pre>
+% perldoc -u Test::More
+% perldoc -u Test/More.pm
+</pre>
+のようにすることで、pod を抽出することができます。
+<h2>原文の残し方</h2>
+ファイル内に原文を残す場合は、
+<pre>
+=begin original
+ 
+原文...
+  
+=end original
+</pre>
+のように、=begin original 〜 =end original で囲みます。<br />
+
+<h2>コード部分の翻訳</h3>
+
+コード部分は訳さずそのまま残しておいた方が良いです。
+<pre>
+=head1 SYNOPSIS
+
+=begin original
+
+The following is example of usage of Hoge.
+Example1:
+
+=end original
+
+日本語訳....
+例1:
+
+ $hoge = Hoge->new;
+ $hoge->foo;
+
+=begin original
+
+Example2:
+
+=end original
+
+例2
+
+=head1 DESCRIPTION
+
+ $hoge->bar
+</pre>
+
+<h2>翻訳の際の文字コード</h3>
+<p>
+やむをえいない事情がない限りは 文字コードはutf-8にしてください。<br />
+pod ファイルの先頭で、以下のように、encoding を指定します。
+</p>
+<pre>
+=encoding utf8
+</pre>
+
+<h2>連絡先の記述</h2>
+<p>連絡先を書く場合は、翻訳文の最後に以下のように付記すると良いでしょう(特に決まりはありません)。</p>
+<pre>
+=head1 翻訳について
+
+翻訳者：名前 (account@example.com)
+</pre>
+<p>
+翻訳リポジトリの場所や、翻訳プロジェクトの名前やURLを書き足しても良いかと思います。
+</p>
+
+<h2>誤訳の報告</h2>
+<p>
+以下から報告できます。翻訳者の連絡先がある場合は、そちらにメールしても良いかも知れません。
+</p>
+<h3>JPRP</h3>
+<p>
+<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">sourceforge.jp の BTS</a>
+</p>
+<h3>gitリポジトリ</h3>
+<p>
+<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">github の issues</a>
+</p>
+
+<h2>翻訳の報告</h2>
+<p>
+JPRPの場合、<a href="http://www.freeml.com/perldocjp/0000504">RFCメール</a>をMLに送るという方法を取っています。<br />
+また、JPRP、gitリポジトリで翻訳している場合は、当サイトのRSSフィードで配信されます。
+</p>
+
+<h2>JPRPの参考文書</h2>
+<p>
+JPRPの個別に関係することは、以下を参照してください。
+</p>
+<ul>
+<li><a href="http://perldocjp.sourceforge.jp/perldocjp-faq">FAQ</a></li>
+<li><a href="http://sourceforge.jp/projects/perldocjp/docman/">その他文書</a></li>
+</ul>
+[% END %]

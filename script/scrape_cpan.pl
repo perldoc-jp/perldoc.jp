@@ -28,7 +28,7 @@ sub main {
         $tt_structure{$category}{in_category} = [grep {not $tmp{$_->{package}}++} grep $_, @in_category];
         $tt_structure{$category}{others}      = [grep {not $tmp{$_->{package}}++} grep $_, @others];
     }
-    mkdir './data';
+    mkdir './data' or die $! if not -d './data';
     open my $fh, '>', "data/category_data.pl.new" or die $!;
     print $fh '+{category_names => ';
     print $fh Dumper($category_names);

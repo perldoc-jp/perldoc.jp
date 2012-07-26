@@ -1,6 +1,8 @@
 [% WRAPPER 'layout.html' %]
 
-&lt; <a href="/category">カテゴリ一覧</a>
+<div class="BreadList">
+    <a href="/category">カテゴリ一覧</a> &gt; [% category %]
+</div>
 
 <h2>[% category %]</h2>
 <ul>
