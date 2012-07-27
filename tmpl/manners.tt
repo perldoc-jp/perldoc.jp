@@ -1,5 +1,9 @@
 [% WRAPPER 'layout.html' %]
-<h1>翻訳の作法<h1>
+<h1>翻訳の作法</h1>
+<p>
+Perlのドキュメントを翻訳する上での留意事項を書いています。特にプロジェクトに特化した内容ではありませんが、Japanized Perl Resources Project(通称JPRP)をベースにしています。<br />
+翻訳したい方は、一度目を通していただけると良いかと思います。
+</p>
 <h2>ディレクトリ構成</h2>
 <h3>コアドキュメント</h3>
 <p>
@@ -40,7 +44,7 @@ Example1:
 
 =end original
 
-日本語訳....
+Hogeの使い方の例です。
 例1:
 
  $hoge = Hoge->new;
@@ -54,9 +58,11 @@ Example2:
 
 例2
 
+ $result =  $hoge->bar
+ print $result->to_string;
+
 =head1 DESCRIPTION
 
- $hoge->bar
 </pre>
 
 <h2>翻訳の際の文字コード</h3>
@@ -79,28 +85,21 @@ pod ファイルの先頭で、以下のように、encoding を指定します�
 翻訳リポジトリの場所や、翻訳プロジェクトの名前やURLを書き足しても良いかと思います。
 </p>
 
-<h2>誤訳の報告</h2>
+<h2>翻訳することについての報告</h2>
 <p>
-以下から報告できます。翻訳者の連絡先がある場合は、そちらにメールしても良いかも知れません。
-</p>
-<h3>JPRP</h3>
-<p>
-<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">sourceforge.jp の BTS</a>
-</p>
-<h3>gitリポジトリ</h3>
-<p>
-<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">github の issues</a>
+元々のドキュメントの著者に、翻訳することを報告する必要はほとんどの場合、ライセンス上必要ありません。<br />
+ライセンスが不明な場合は、著者に連絡を取ってください。
 </p>
 
 <h2>翻訳の報告</h2>
 <p>
 JPRPの場合、<a href="http://www.freeml.com/perldocjp/0000504">RFCメール</a>をMLに送るという方法を取っています。<br />
-また、JPRP、gitリポジトリで翻訳している場合は、当サイトのRSSフィードで配信されます。
+JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィードで配信されます。
 </p>
 
 <h2>JPRPの参考文書</h2>
 <p>
-JPRPの個別に関係することは、以下を参照してください。
+JPRPに関する個別の決まりなどは、以下を参照してください。
 </p>
 <ul>
 <li><a href="http://perldocjp.sourceforge.jp/perldocjp-faq">FAQ</a></li>

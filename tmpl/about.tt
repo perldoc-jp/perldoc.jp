@@ -25,4 +25,17 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
     このリポジトリは、JPRP とは関係がありません。こちらの方がよりゆるい管理態勢になっています。
 </p>
 
+<h2>誤訳の報告</h2>
+<p>
+以下から報告できます。翻訳者の連絡先がある場合は、そちらにメールしても良いかも知れません。
+</p>
+<h3>JPRP</h3>
+<p>
+<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">sourceforge.jp の BTS</a>
+</p>
+<h3>gitリポジトリ</h3>
+<p>
+<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">github の issues</a>
+</p>
+
 [% END %]
