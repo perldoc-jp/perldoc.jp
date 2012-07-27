@@ -20,6 +20,9 @@ main();
 
 sub main {
     my $updates = create_recent_data();
+    if ($#{$updates} > 50) {
+        $updates = [@{$updates}[0 .. 50]];
+    }
     if (create_file($updates)) {
         create_rss($updates);
     }
@@ -39,24 +42,31 @@ sub create_recent_data {
     my $cvs = qx{cd ${assets_dir}perldoc.jp/docs/; cvs history -x AMR -l -a -D '$date'|sort};
     my @updates;
 
-    1 while $cvs =~ s{^. (\d{4}-\d{2}-\d{2}) \d{2}:\d{2} \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
-        push @updates, {
-            date   => $1,
-            author => $2,
-            path   => "$4/$3",
-            name   => file2name("$4/$3"),
+    1 while $cvs =~ s{^. (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
+        my ($date, $author, $path) = ($1 . ':00', $2, "$4/$3");
+        if ( $path =~ m{^docs} ) {
+            my $datetime = Time::Piece->strptime($date, '%Y-%m-%d %H:%M:%S');
+            $datetime += 3600 * 9;
+            push @updates, {
+                date   => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
+                author => $author,
+                path   => $path,
+                name   => file2name($path),
+            }
         }
     }em;
 
     foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA/) {
         foreach my $file (File::Find::Rule->file()->name('*.pod')->in("$assets_dir$repos")) {
             my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date'} or next;
-            my ($date, $author) = $git =~m{^(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2} \+\d{4} -- (.+)$} or die $git;
+            my ($date, $author) = $git =~m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
             $file =~s{^.+?assets/}{};
             $file =~s{^\Q$repos/\E}{};
             push @updates, {date => $date, author => $author, path => 'docs/modules/' . $file, name => file2name($file)};
         }
     }
+    my %tmp;
+    @updates = ( sort {($tmp{$b} ||= $b->{date}) cmp ($tmp{$a} ||= $a->{date})} @updates );
     return \@updates;
 }
 
@@ -66,8 +76,7 @@ sub create_file {
     mkdir './data' or die $! if not -d './data';
 
     open my $fh, '>', "data/recent.pl.new" or die $!;
-    my %tmp;
-    print $fh Dumper([( sort {($tmp{$b} ||= $b->{date}) cmp ($tmp{$a} ||= $a->{date})} @$updates )[0 .. 50]]);
+    print $fh Dumper($updates);
     close $fh;
     if (! -e "data/recent.pl" or qx{diff data/recent.pl data/recent.pl.new}) {
         rename "data/recent.pl.new", "data/recent.pl";
@@ -99,7 +108,7 @@ sub create_rss {
         webMaster      => 'ktat@perlassociations.jp',
         );
 
-    foreach my $module (@{$updates}[0 .. 50]) {
+    foreach my $module (@{$updates}) {
         my $datetime = Time::Piece->strptime($module->{date}, '%Y-%m-%d %H:%M:%S');
         $rss->add_item(
             title       => $module->{name},
@@ -115,7 +124,7 @@ sub create_rss {
 
 sub file2name {
     my $name = shift;
-    $name =~ s{^docs/modules/[^/]+/lib/}{};
+    $name =~ s{^docs/modules/[^/]+/(lib/)?}{};
     $name =~ s{^docs/perl/[^/]+/}{};
     $name =~ s{\.pod$}{};
     $name =~ s{/+}{/}g;
