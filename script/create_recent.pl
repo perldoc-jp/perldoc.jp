@@ -49,9 +49,6 @@ sub create_recent_data {
     }em;
 
     foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA/) {
-        # Mon Oct 26 12:04:50 2009 -- BUILDARGS-DEMOLISH -- BUILDARGS, DEMOLISH -- lestrrat
-        #
-        # Moose/Manual/Construction.pod
         foreach my $file (File::Find::Rule->file()->name('*.pod')->in("$assets_dir$repos")) {
             my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date'} or next;
             my ($date, $author) = $git =~m{^(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2} \+\d{4} -- (.+)$} or die $git;
@@ -102,12 +99,11 @@ sub create_rss {
         webMaster      => 'ktat@perlassociations.jp',
         );
 
-    my $recent = do "data/recent.pl";
-    foreach my $module (@{$recent}[0 .. 50]) {
+    foreach my $module (@{$updates}[0 .. 50]) {
         my $datetime = Time::Piece->strptime($module->{date}, '%Y-%m-%d %H:%M:%S');
         $rss->add_item(
             title       => $module->{name},
-            link        => "http://www.perldoc.jp" . $module->{path},
+            link        => "http://perldoc.jp/" . $module->{path},
             description => "$module->{name} が、$module->{author} により commit されました。",
             pubDate     => $datetime->strftime("%a, %d %b %Y %H:%M:%S +0900"),
             );
