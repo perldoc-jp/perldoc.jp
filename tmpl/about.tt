@@ -35,7 +35,7 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 </p>
 <h3>gitリポジトリ</h3>
 <p>
-<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">github の issues</a>
+<a href="https://github.com/perldoc-jp/module-pod-jp/issues">github の issues</a>
 </p>
 
 [% END %]
