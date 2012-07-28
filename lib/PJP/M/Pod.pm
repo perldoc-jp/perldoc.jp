@@ -84,8 +84,27 @@ sub get_latest_file_path {
     sub new {
         my $self = shift->SUPER::new(@_);
         $self->{translated_toc} = +{
-            NAME        => '名前',
-            DESCRIPTION => '概要',
+            'NAME'                  => '名前',
+            'SYNOPSIS'              => '概要',
+            'DESCRIPTION'           => '説明',
+            'AUTHOR'                => '作者',
+            'AUTHORS'               => '作者',
+            'OPTION'                => 'オプション',
+            'OPTIONS'               => 'オプション',
+            'METHOD'                => 'メソッド',
+            'METHODS'               => 'メソッド',
+            'FUNCTION'              => '関数',
+            'FUNCTIONS'             => '関数',
+            'EXAMPLE'               => '例',
+            'EXAMPLES'              => '例',
+            'COPYRIGHT AND LICENSE' => 'コピーライト & ライセンス',
+            'COPYRIGHT & LICENSE'   => 'コピーライト & ライセンス',
+            'COPYRIGHT'             => 'コピーライト',
+            'LICENSE'               => 'ライセンス',
+            'BUGS'                  => 'バグ',
+            'CAUTION'               => '警告',
+            'ACKNOWLEDGEMENTS'      => '謝辞',
+            'SUPPORT'               => 'サポート',
         };
         return $self;
     }
