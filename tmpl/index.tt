@@ -8,7 +8,7 @@
 CVS及びgitのcommitログから取得していますので、翻訳者とcommitした人が違う場合があります。
 <ul>
 [% FOREACH module IN recent %]
-<li>[% module.date %] <a href="[% module.path %]">[% module.name %]</a> by [% module.author %]</li>
+<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] <a href="[% module.path %]">[% module.name %]</a> by [% module.author %]</li>
 [% END %]
 </ul>
 

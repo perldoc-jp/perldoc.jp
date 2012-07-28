@@ -19,51 +19,79 @@ docs/modules/モジュール名-バージョン/　以下に、モジュール�
 % perldoc -u Test::More
 % perldoc -u Test/More.pm
 </pre>
+<p>
 のようにすることで、pod を抽出することができます。
+</p>
 <h2>原文の残し方</h2>
 ファイル内に原文を残す場合は、
 <pre>
+<div style="color:blue">
 =begin original
  
 原文...
   
 =end original
+</div>
 </pre>
 のように、=begin original 〜 =end original で囲みます。<br />
 
 <h2>コード部分の翻訳</h3>
 
-コード部分は訳さずそのまま残しておいた方が良いです。
+コード部分は訳さずそのまま残しておいた方が良いです。<br />
+下記の赤色の部分はコード部分ですが、これらは、originalには含みません。
 <pre>
 =head1 SYNOPSIS
-
+<div style="color:blue">
 =begin original
 
 The following is example of usage of Hoge.
 Example1:
 
 =end original
-
+</div>
 Hogeの使い方の例です。
 例1:
-
+<div style="color:red">
  $hoge = Hoge->new;
  $hoge->foo;
-
+</div>
+<div style="color:blue">
 =begin original
 
 Example2:
 
 =end original
-
-例2
-
+</div>
+例2:
+<div style="color:red">
  $result =  $hoge->bar
  print $result->to_string;
-
+</div>
 =head1 DESCRIPTION
 
 </pre>
+
+<h2>=head1の翻訳</h2>
+<div>
+NAME, SYNOPSYS, DESCRIPTION などですが、代表的なものは、perldoc.jpでは、自動的に翻訳されて表示されます。<br />
+翻訳される場合は、original ブロックで残さずに、上書きして翻訳した方が良いかと思います。<br />
+以下、代表的なものの一覧です。
+</div>
+<table>
+<tr><td>NAME</td><td>名前</td></tr>
+<tr><td>SYNOPSIS</td><td>概要</td></tr>
+<tr><td>DESCRIPTION</td><td>説明</td></tr>
+<tr><td>OPTIONS</td><td>オプション</td></tr>
+<tr><td>METDODS</td><td>メソッド</td></tr>
+<tr><td>FUNCTIONS</td><td>関数</td></tr>
+<tr><td>EXAMPLE</td><td>例</td></tr>
+<tr><td>AUTDOR</td><td>作者</td></tr>
+<tr><td>COPYRIGHT & LICENSE</td><td>コピーライト & ライセンス</td></tr>
+<tr><td>BUGS</td><td>バグ</td></tr>
+<tr><td>CAUTION</td><td>警告</td></tr>
+<tr><td>ACKNOWLEDGEMENTS</td><td>謝辞</td></tr>
+<tr><td>SUPPORT</td><td>サポート</td></tr>
+</table>
 
 <h2>翻訳の際の文字コード</h3>
 <p>
@@ -82,13 +110,13 @@ pod ファイルの先頭で、以下のように、encoding を指定します�
 翻訳者：名前 (account@example.com)
 </pre>
 <p>
-翻訳リポジトリの場所や、翻訳プロジェクトの名前やURLを書き足しても良いかと思います。
+翻訳リポジトリの場所や、翻訳プロジェクトの名前やURL、誤訳の報告先などを書き足しても良いかと思います。
 </p>
 
 <h2>翻訳することについての報告</h2>
 <p>
-元々のドキュメントの著者に、翻訳することを報告する必要はほとんどの場合、ライセンス上必要ありません。<br />
-ライセンスが不明な場合は、著者に連絡を取ってください。
+元々のドキュメントの著者に翻訳することを報告する必要はほとんどの場合、ライセンス上必要ありません。。<br />
+ライセンスが不明な場合や、改変と再配布が不可なライセンスの場合には、著者に連絡を取ってください。
 </p>
 
 <h2>翻訳の報告</h2>
@@ -99,7 +127,7 @@ JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィ�
 
 <h2>JPRPの参考文書</h2>
 <p>
-JPRPに関する個別の決まりなどは、以下を参照してください。
+JPRPに関する個別の決め事などは、以下を参照してください。
 </p>
 <ul>
 <li><a href="http://perldocjp.sourceforge.jp/perldocjp-faq">FAQ</a></li>

@@ -1,14 +1,45 @@
 [% WRAPPER 'layout.html' %]
 
-<h1>カテゴリ一覧</h1>
+[% en2ja = {
+  'Archiving Compression Conversion'   => "アーカイブ・圧縮・変換",
+  'File Name Systems Locking'          => "File Name Systems Locking",
+  'Option Parameter Config Processing' => "オプション・パラメータ・設定の処理",
+  'Bundles (and SDKs)'                 => "バンドル(とSDK)",
+  'Graphics'                           => "グラフィック",
+  'Perl6'                              => "Perl6",
+  'Commercial Software Interfaces'     => "商用ソフトウェアのインターフェース",
+  'Internationalization Locale'        => "国際化・ロケール",
+  'Pragmas'                            => "プラグマ",
+  'Control Flow Utilities'             => "フロー制御ユーティリティ",
+  'Language Extensions'                => "言語拡張",
+  'Security'                           => "セキュリティ",
+  'Data and Data Types'                => "データ・データイプ",
+  'Language Interfaces'                => "言語インターフェース",
+  'Server Daemon Utilities'            => "サーバーデーモンユーティリティ",
+  'Database Interfaces'                => "データベースインターフェース",
+  'Mail and Usenet News'               => "メールとUsenetニュース",
+  'String Language Text Processing'    => "文字・言語・テキスト処理",
+  'Development Support'                => "開発サポート",
+  'Miscellaneous'                      => "その他",
+  'User Interfaces'                    => "ユーザーインターフェース",
+  'Documentation'                      => "ドキュメント",
+  'Networking Devices IPC'             => "ネットワークデバイス・IPC",
+  'World Wide Web'                     => "ワールド ワイド ウェブ",
+  'File Handle Input/Output'           => "ファイルハンドル入出力",
+  'Operating System Interfaces'        => "OSインターフェース",
+} %]
 
+<h1>カテゴリ一覧</h1>
+<p>
+CPANのカテゴリに合わせた分類になります。
+</p>
 <table class="category_list">
 <tr>
 [% FOREACH category IN categorized_modules.category_names %]
      <td>
      [% IF categorized_modules.category_modules.$category.in_category.size() + categorized_modules.category_modules.$category.others.size()%]
-         <a href="category/[% category %]">[% category %]</a>
-     [% ELSE %][% category %][% END %]
+         <a href="category/[% category %]">[% en2ja.$category || category %]</a>
+     [% ELSE %][% en2ja.$category || category %][% END %]
          ([% categorized_modules.category_modules.$category.in_category.size() + categorized_modules.category_modules.$category.others.size()%])
      </td>
    [% IF loop.count % 3 == 0 %]
