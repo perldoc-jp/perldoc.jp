@@ -2,7 +2,7 @@
 
 [% en2ja = {
   'Archiving Compression Conversion'   => "アーカイブ・圧縮・変換",
-  'File Name Systems Locking'          => "File Name Systems Locking",
+  'File Name Systems Locking'          => "ファイル名、システム関連、ロック等",
   'Option Parameter Config Processing' => "オプション・パラメータ・設定の処理",
   'Bundles (and SDKs)'                 => "バンドル(とSDK)",
   'Graphics'                           => "グラフィックス",
