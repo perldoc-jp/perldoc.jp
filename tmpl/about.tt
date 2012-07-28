@@ -4,7 +4,7 @@
 
 <p>
 このサイトは Perl の公式ドキュメント、モジュールを日本語翻訳したものを表示するサイトです。<br />
-miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、現在は<a href="http://japan.perlassociation.org/">Japan Perl Association</a>(JPA)の管轄になっています。<br />
+miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、現在は<a href="http://japan.perlassociation.org/">Japan Perl Association</a>(JPA)が管理しています。<br />
 </p>
 <p>
 サイト内の翻訳データは、 Japanized Perl Resources Project(通称JPRP) 、github上のリポジトリ、JPAの翻訳文書から取っています。<br />
@@ -38,4 +38,8 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 <a href="https://github.com/perldoc-jp/module-pod-jp/issues">github の issues</a>
 </p>
 
+<h2>サイトの不具合の報告</h2>
+<p>
+<a href="https://github.com/jpa-perl/perldoc.jp/issues">github の issues</a>からご連絡ください。
+</p>
 [% END %]
