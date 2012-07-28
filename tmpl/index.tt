@@ -1,14 +1,15 @@
 [% WRAPPER 'layout.html' WITH top_page = 1 %]
 
 <p>
-このサイトは Perl の公式ドキュメント、モジュールを日本語翻訳したものを表示するサイトです。<br />
+このサイトは Perl の公式ドキュメント、モジュールドキュメントを日本語に翻訳したものを表示するサイトです。<br />
+サイト内の翻訳データは、Japanized Perl Resources Project(JPRP)で翻訳されたもの、有志が翻訳しているgithubのリポジトリ、JPAの翻訳文書から取得しています。
 </p>
 
 <h2>最近の更新</h2>
-CVS及びgitのcommitログから取得していますので、翻訳者とcommitした人が違う場合があります。
+CVS及びgitのcommitログから最新の50件を取得しています。稀に翻訳者とcommitした人が違う場合や、修正のcommitも含まれます。
 <ul>
 [% FOREACH module IN recent %]
-<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] <a href="[% module.path %]">[% module.name %]</a> by [% module.author %]</li>
+<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] <a href="[% module.path %]">[% module.name %]</a> / [% module.author %]</li>
 [% END %]
 </ul>
 

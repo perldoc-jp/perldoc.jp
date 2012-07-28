@@ -7,7 +7,7 @@
 miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、現在は<a href="http://japan.perlassociation.org/">Japan Perl Association</a>(JPA)が管理しています。<br />
 </p>
 <p>
-サイト内の翻訳データは、 Japanized Perl Resources Project(通称JPRP) 、github上のリポジトリ、JPAの翻訳文書から取っています。<br />
+サイト内の翻訳データは、Japanized Perl Resources Project(JPRP)で翻訳されたもの、有志が翻訳しているgithubのリポジトリ、JPAの翻訳文書から取得しています。
 </p>
 <p>
 翻訳に参加したい方は、以下のサイトを参照してください。どのように翻訳すればわからない方のために、<a href="manners">翻訳の作法</a>を大まかにまとめていますので、興味のある方は参照してください。
@@ -31,7 +31,7 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 </p>
 <h3>JPRP</h3>
 <p>
-<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type=589&#38;type_mode=eq">sourceforge.jp の BTS</a>
+<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type%5B%5D=589&type_mode%5B%5D=eq&status%5B%5D=1">sourceforge.jp の BTS</a>
 </p>
 <h3>gitリポジトリ</h3>
 <p>
