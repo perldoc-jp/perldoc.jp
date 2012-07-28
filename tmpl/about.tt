@@ -42,4 +42,17 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 <p>
 <a href="https://github.com/jpa-perl/perldoc.jp/issues">github の issues</a>からご連絡ください。
 </p>
+
+<h2>謝辞</h2>
+<dl>
+    <dt>翻訳者の方</dt>
+    <dd>全ての翻訳者の方に敬意と感謝を。</dt>
+    <dt>miyagawaさん</dt>
+    <dd>miyagawaさんがperldoc.jpを始められるまでは、翻訳を閲覧できる場所がCVSのリポジトリしかありませんでした。</dt>
+    <dt>tokuhiromさん</dt>
+    <dd>miyagawaさんから引き継ぎ、新規にコードを書き上げてられました。現在のサイトもほぼtokuhiromさんのコードで動いています。</dt>
+    <dt><a href="http://josdc.github.com/">Japan Open Source Design Committee(JOSDC)</a></dt>
+    <dd>JPA管理になった際に、サイトデザインをしていただきました。</dt>
+</dl>
+
 [% END %]
