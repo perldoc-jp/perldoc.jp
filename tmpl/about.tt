@@ -17,32 +17,27 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
     <li><a href="http://perldocjp.sourceforge.jp/">ホームページ</a>
     <li><a href="http://sourceforge.jp/projects/perldocjp/">sourceforge.jp のプロジェクトページ</a></li>
 </ul>
-
-<h2>git レポジトリ(github)</h2>
 <p>
-    git がいいという場合は<a href="https://github.com/perldoc-jp/module-pod-jp">github のレポジトリ</a>においてください。<br />
-    <br />
+参加方法はホームページからたどれます。sourceforge.jpのアカウントが必要になります。
+</p>
+<h2>git レポジトリ(github)</h2>
+<ul>
+<li><a href="https://github.com/perldoc-jp/module-pod-jp">github のレポジトリ</a></li>
+</ul>
+<p>
+    git がいいという場合はにこちらにおいてください。<br />
     このリポジトリは、JPRP とは関係がありません。こちらの方がよりゆるい管理態勢になっています。
 </p>
 
-<h2>誤訳の報告</h2>
+<h2>誤訳・サイトの不具合の報告</h2>
 <p>
 以下から報告できます。翻訳者の連絡先がある場合は、そちらにメールしても良いかも知れません。
 </p>
-<h3>JPRP</h3>
-<p>
-<a href="http://sourceforge.jp/projects/perldocjp/ticket/?type%5B%5D=589&type_mode%5B%5D=eq&status%5B%5D=1">sourceforge.jp の BTS</a>
-</p>
-<h3>gitリポジトリ</h3>
-<p>
-<a href="https://github.com/perldoc-jp/module-pod-jp/issues">github の issues</a>
-</p>
-
-<h2>サイトの不具合の報告</h2>
-<p>
-<a href="https://github.com/jpa-perl/perldoc.jp/issues">github の issues</a>からご連絡ください。
-</p>
-
+<ul>
+<li><a href="http://sourceforge.jp/projects/perldocjp/ticket/?type%5B%5D=589&type_mode%5B%5D=eq&status%5B%5D=1">JPRPの誤訳の報告</a></li>
+<li><a href="https://github.com/perldoc-jp/module-pod-jp/issues">gitリポジトリの誤訳の報告</a></li>
+<li><a href="https://github.com/jpa-perl/perldoc.jp/issues">サイトの不具合の報告</a></li>
+</ul>
 <h2>謝辞</h2>
 <dl>
     <dt>翻訳者の方</dt>

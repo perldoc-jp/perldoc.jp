@@ -20,8 +20,9 @@ main();
 
 sub main {
     my $updates = create_recent_data();
-    if ($#{$updates} > 50) {
-        $updates = [@{$updates}[0 .. 50]];
+    my $max = 50;
+    if ($#{$updates} > $max) {
+        $updates = [@{$updates}[0 .. $max]];
     }
     if (create_file($updates)) {
         create_rss($updates);
@@ -48,10 +49,11 @@ sub create_recent_data {
             my $datetime = Time::Piece->strptime($date, '%Y-%m-%d %H:%M:%S');
             $datetime += 3600 * 9;
             push @updates, {
-                date   => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
-                author => $author,
-                path   => $path,
-                name   => file2name($path),
+                date    => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
+                author  => $author,
+                path    => $path,
+                name    => file2name($path),
+                version => file2version($path),
             }
         }
     }em;
@@ -62,7 +64,13 @@ sub create_recent_data {
             my ($date, $author) = $git =~m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
             $file =~s{^.+?assets/}{};
             $file =~s{^\Q$repos/\E}{};
-            push @updates, {date => $date, author => $author, path => 'docs/modules/' . $file, name => file2name($file)};
+            push @updates, {
+                date    => $date,
+                author  => $author,
+                path    => 'docs/modules/' . $file,
+                name    => file2name($file),
+                version => file2version($file)
+            };
         }
     }
     my %tmp;
@@ -130,4 +138,14 @@ sub file2name {
     $name =~ s{/+}{/}g;
     $name =~ s{/}{::}g;
     return $name;
+}
+
+sub file2version {
+    my $name = shift;
+    if ($name =~ s{^docs/perl/([^/]+)/}{}) {
+        return $1;
+    } elsif ($name =~ s{^docs/modules/.+-([\d\._]+)/(lib/)?}{}) {
+        return $1;
+    }
+    return '';
 }

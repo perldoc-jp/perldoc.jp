@@ -6,10 +6,10 @@
 </p>
 
 <h2>最近の更新</h2>
-CVS及びgitのcommitログから最新の50件を取得しています。稀に翻訳者とcommitした人が違う場合や、修正のcommitも含まれます。
+CVS及びgitのcommitログから最新の50件を取得しています。稀に翻訳者とcommitした人が違う場合があります。また、修正のcommit、登録しただけで未翻訳のものも含まれる場合があります。
 <ul>
 [% FOREACH module IN recent %]
-<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] <a href="[% module.path %]">[% module.name %]</a> / [% module.author %]</li>
+<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] <a href="[% module.path %]">[% module.name %]</a>[% IF module.version %]([% module.version %])[% END %] / [% module.author %]</li>
 [% END %]
 </ul>
 

@@ -1,3 +1,4 @@
 [% WRAPPER 'layout.html' %]
+組込関数の翻訳です。「perldoc -f 関数名」で表示されるものの翻訳になります。
 [% toc %]
 [% END %]

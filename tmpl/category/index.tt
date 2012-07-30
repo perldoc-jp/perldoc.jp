@@ -1,10 +1,10 @@
 [% WRAPPER 'layout.html' %]
 
 <div class="BreadList">
-    <a href="/category">カテゴリ一覧</a> &gt; [% category %]
+    <a href="/category">カテゴリ一覧</a> &gt; [% en2ja.$category || category %]
 </div>
 
-<h2>[% category %]</h2>
+<h2>[% en2ja.$category || category %]</h2>
 <ul>
   [% FOREACH module IN modules.in_category %]
     <li><a href="/docs/[% module.path %]">[% module.package %] - [% module.description %]</a></li>
