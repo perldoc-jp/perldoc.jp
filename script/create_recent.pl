@@ -121,7 +121,7 @@ sub create_rss {
         $rss->add_item(
             title       => $module->{name},
             link        => "http://perldoc.jp/" . $module->{path},
-            description => "$module->{name} が、$module->{author} により commit されました。",
+            description => "$module->{name}" . ($module->{version} ? "($module->{version})": '') . "が、$module->{author} により commit されました。",
             pubDate     => $datetime->strftime("%a, %d %b %Y %H:%M:%S +0900"),
             );
     }
