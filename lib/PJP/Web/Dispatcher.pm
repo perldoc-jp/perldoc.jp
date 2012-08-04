@@ -14,6 +14,7 @@ use PJP::M::TOC;
 use PJP::M::Index::Module;
 use PJP::M::Pod;
 use PJP::M::PodFile;
+use Text::Diff::FormattedHTML;
 
 get '/' => sub {
     my $c = shift;
@@ -31,6 +32,11 @@ get '/about' => sub {
 get '/manners' => sub {
     my $c = shift;
     return $c->render('manners.tt');
+};
+
+get '/translators' => sub {
+    my $c = shift;
+    return $c->render('translators.tt', {years => do 'data/years.pl'});
 };
 
 get '/category' => sub {
@@ -178,6 +184,26 @@ get '/docs/{path:(modules|perl)/.+\.pod}.pod' => sub {
         ],
         [$content]
     );
+};
+
+get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
+    my ($c, $p) = @_;
+    my $origin = $p->{path};
+    my $target = $c->req->param('target');
+
+    my $origin_content = PJP::M::PodFile->slurp($origin) // return $c->res_404();
+    my $target_content = PJP::M::PodFile->slurp($target) // return $c->res_404();
+
+    my ($origin_charset) = ($origin_content =~ /=encoding\s+(euc-jp|utf-?8)/);
+        $origin_charset //= 'utf-8';
+    my ($target_charset) = ($target_content =~ /=encoding\s+(euc-jp|utf-?8)/);
+        $target_charset //= 'utf-8';
+
+    $origin_content = Encode::decode($origin_charset, $origin_content);
+    $target_content = Encode::decode($target_charset, $target_content);
+
+    my $diff = diff_strings { vertical => 1 }, $target_content, $origin_content;
+    return $c->render('diff.tt', {diff => $diff, origin => $origin, target => $target});
 };
 
 get '/docs/{path:(modules|perl)/.+\.pod}' => sub {

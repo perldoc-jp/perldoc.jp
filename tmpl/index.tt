@@ -5,11 +5,11 @@
 サイト内の翻訳データは、Japanized Perl Resources Project(JPRP)で翻訳されたもの、有志が翻訳しているgithubのリポジトリ、JPAの翻訳文書から取得しています。
 </p>
 
-<h2>最近の更新</h2>
+<h2>最近の更新 / <a href="/static/rss/recent.rss">RSS</a></h2>
 CVS及びgitのcommitログから最新の50件を取得しています。稀に翻訳者とcommitした人が違う場合があります。また、修正のcommit、登録しただけで未翻訳のものも含まれる場合があります。
 <ul>
 [% FOREACH module IN recent %]
-<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] <a href="[% module.path %]">[% module.name %]</a>[% IF module.version %]([% module.version %])[% END %] / [% module.author %]</li>
+<li>[% module.date.replace(' \d{2}:\d{2}:\d{2}', '')%] [% IF module.in != 'perl' %][% module.in%] [% END %]<a href="[% module.path %]">[% module.name %]</a>[% IF module.version %]([% module.version %])[% END %] / [% module.author %]</li>
 [% END %]
 </ul>
 

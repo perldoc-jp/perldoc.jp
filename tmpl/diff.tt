@@ -1,0 +1,12 @@
+[% WRAPPER 'layout.html' WITH diff_page = 1 %]
+<h1>
+[% origin.replace('^[\w/-]+?[-/](?=\d)').replace('(?<=\d)/.+\.pod') %]
+と
+[% target.replace('^[\w/-]+?[-/](?=\d)').replace('(?<=\d)/.+\.pod') %]
+の差分
+</h1>
+
+[% diff | raw %]
+
+
+[% END %]

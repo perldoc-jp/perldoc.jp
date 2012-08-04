@@ -12,6 +12,9 @@
     <link rel="alternate" type="application/rss+xml" title="perldoc.jp 最近の更新" href="http://www.perldoc.jp/static/rss/recent.rss" />
     [% END %]
     <link href="/static/css/screen.css" media="screen, projection" rel="stylesheet" type="text/css" />
+    [% IF diff_page %]
+    <link href="/static/css/diff.css" media="screen, projection" rel="stylesheet" type="text/css" />
+    [% END %]
     <link href="/static/css/print.css" media="print" rel="stylesheet" type="text/css" />
     <!--[if IE]>
     <link href="/static/css/ie.css" media="screen, projection" rel="stylesheet" type="text/css" />
@@ -44,6 +47,7 @@
             <li><a href="/index/function">関数</a></li>
             <li><a href="/index/module">モジュール</a></li>
             <li><a href="/category">カテゴリ別</a></li>
+            <li><a href="/translators">翻訳者</a></li>
             <li><a href="/manners">翻訳の作法</a></li>
             <li><a href="/about">このサイトについて</a></li>
             </ul>

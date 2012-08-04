@@ -19,7 +19,9 @@ local $Data::Dumper::Terse = 1;
 main();
 
 sub main {
-    my $updates = create_recent_data();
+    my $pjp  = PJP->bootstrap;
+    my $date = Time::Piece->new - 365 * 86400;;
+    my $updates = PJP::M::Repository->recent_data($pjp, $date);
     my $max = 50;
     if ($#{$updates} > $max) {
         $updates = [@{$updates}[0 .. $max]];
@@ -27,55 +29,6 @@ sub main {
     if (create_file($updates)) {
         create_rss($updates);
     }
-}
-
-sub create_recent_data {
-    my $pjp        = PJP->bootstrap;
-    my $config     = $pjp->config;
-    my $mode_name  = $pjp->mode_name || 'development';
-
-    my $assets_dir = $config->{'assets_dir'} || die "no assets_dir setting in config/" . $mode_name . '.pl';
-    my $code_dir   = $config->{'code_dir'}   || die "no code_dir setting in config/"   . $mode_name . '.pl';
-
-    my $date = Time::Piece->new;
-    $date -= 365 * 86400;
-
-    my $cvs = qx{cd ${assets_dir}perldoc.jp/docs/; cvs history -x AMR -l -a -D '$date'|sort};
-    my @updates;
-
-    1 while $cvs =~ s{^. (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
-        my ($date, $author, $path) = ($1 . ':00', $2, "$4/$3");
-        if ( $path =~ m{^docs} ) {
-            my $datetime = Time::Piece->strptime($date, '%Y-%m-%d %H:%M:%S');
-            $datetime += 3600 * 9;
-            push @updates, {
-                date    => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
-                author  => $author,
-                path    => $path,
-                name    => file2name($path),
-                version => file2version($path),
-            }
-        }
-    }em;
-
-    foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA/) {
-        foreach my $file (File::Find::Rule->file()->name('*.pod')->in("$assets_dir$repos")) {
-            my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date'} or next;
-            my ($date, $author) = $git =~m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
-            $file =~s{^.+?assets/}{};
-            $file =~s{^\Q$repos/\E}{};
-            push @updates, {
-                date    => $date,
-                author  => $author,
-                path    => 'docs/modules/' . $file,
-                name    => file2name($file),
-                version => file2version($file)
-            };
-        }
-    }
-    my %tmp;
-    @updates = ( sort {($tmp{$b} ||= $b->{date}) cmp ($tmp{$a} ||= $a->{date})} @updates );
-    return \@updates;
 }
 
 sub create_file {
@@ -128,24 +81,4 @@ sub create_rss {
     open my $fh, '>', 'static/rss/recent.rss' or die $!;
     print $fh $rss->as_string;
     close $fh;
-}
-
-sub file2name {
-    my $name = shift;
-    $name =~ s{^docs/modules/[^/]+/(lib/)?}{};
-    $name =~ s{^docs/perl/[^/]+/}{};
-    $name =~ s{\.pod$}{};
-    $name =~ s{/+}{/}g;
-    $name =~ s{/}{::}g;
-    return $name;
-}
-
-sub file2version {
-    my $name = shift;
-    if ($name =~ s{^docs/perl/([^/]+)/}{}) {
-        return $1;
-    } elsif ($name =~ s{^docs/modules/.+-([\d\._]+)/(lib/)?}{}) {
-        return $1;
-    }
-    return '';
 }

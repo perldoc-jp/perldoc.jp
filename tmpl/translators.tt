@@ -1,0 +1,27 @@
+[% WRAPPER 'layout.html' %]
+
+年間の翻訳者と、コミット数の一覧です(コミットした人と翻訳した人が別の場合があります)。<br />
+また、その年に始めて翻訳されたコアドキュメントやモジュール。
+
+[% FOREACH year IN years.keys().nsort().reverse() %]
+
+<h2>[% year %]年</h2>
+<ul>
+[% FOREACH name_count IN years.$year.commit_count %]
+  <li>[% name_count.0 %] (全コミット [% name_count.1 || 0 %], 新規コミット [% name_count.2 || 0%])</li>
+[% END %]
+</ul>
+
+[% FOREACH module IN years.$year.modules %]
+  [% IF module.in == 'perl' %]
+    <a href="[% module.path %]">[% module.name %]</a> [% IF module.version; '(' _ module.version _')'; END %]
+  [% ELSE %]
+    <a href="[% module.path %]">[% module.in %]</a> [% IF module.version; '(' _ module.version _')'; END %]
+  [% END %]
+  [% UNLESS loop.last %] / [% END %]
+[% END %]
+
+
+[% END %]
+
+[% END %]
