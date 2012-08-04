@@ -2,7 +2,11 @@
 
 <div class="content">
     <div class="PodPage">
-        [% IF distvname AND !package.match('^perl') %]
+        [% IF is_article %]
+        <div class="BreadList">
+            <a href="/index/article">その他の翻訳</a> &gt; [% package %]
+        </div>
+        [% ELSIF distvname AND !package.match('^perl') %]
         <div class="BreadList">
             <a href="/docs/modules/[% distvname %]">[% distvname %]</a> &gt; [% package %]
         </div>
@@ -10,10 +14,10 @@
 
         <div class="PodInfo">
             <div class="PodVersion">[% PodVersion %]</div>
-        [% IF package %]
+        [% IF package && ! is_article  %]
             <div class="CheckAtCPAN"><a href="http://search.cpan.org/perldoc?[% package %]">CPANで確認する</a></div>
         [% END %]
-        [% IF others AND others.size() > 0 %]
+        [% IF ! is_article AND others AND others.size() > 0 %]
             <div class="OtherVersions">
             Other versions:<br />
             [% FOR v IN others %]

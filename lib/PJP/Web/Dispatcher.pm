@@ -12,6 +12,7 @@ use Text::Xslate::Util qw/mark_raw/;
 
 use PJP::M::TOC;
 use PJP::M::Index::Module;
+use PJP::M::Index::Article;
 use PJP::M::Pod;
 use PJP::M::PodFile;
 use Text::Diff::FormattedHTML;
@@ -110,6 +111,27 @@ get '/index/module' => sub {
     );
 };
 
+# 記事の目次
+get '/index/article' => sub {
+    my $c = shift;
+
+    my $content = $c->cache->file_cache("index/article", PJP::M::Index::Article->cache_path($c), sub {
+        my $index = PJP::M::Index::Article->get($c);
+        $c->create_view->render(
+            'index/article.tt' => {
+                index => $index,
+            }
+        );
+    });
+
+    $c->render(
+        'layout.html' => {
+            title => 'その他の翻訳 - perldoc.jp',
+            content => mark_raw($content),
+        }
+    );
+};
+
 # 添付 pod の表示
 get '/pod/*' => sub {
     my ($c, $p) = @_;
@@ -191,6 +213,8 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     my $origin = $p->{path};
     my $target = $c->req->param('target');
 
+    my $pod = PJP::M::PodFile->retrieve($origin);
+
     my $origin_content = PJP::M::PodFile->slurp($origin) // return $c->res_404();
     my $target_content = PJP::M::PodFile->slurp($target) // return $c->res_404();
 
@@ -203,10 +227,48 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     $target_content = Encode::decode($target_charset, $target_content);
 
     my $diff = diff_strings { vertical => 1 }, $target_content, $origin_content;
-    return $c->render('diff.tt', {diff => $diff, origin => $origin, target => $target});
+    return $c->render('diff.tt',
+                      {
+                       diff      => mark_raw( $diff ),
+                       origin    => $origin,
+                       target    => $target,
+                       package   => $pod->{package},
+                       distvname => $pod->{distvname},
+                      }
+                     );
 };
 
-get '/docs/{path:(modules|perl)/.+\.pod}' => sub {
+get '/docs/{path:articles/.+\.html}' => sub {
+    my ($c, $p) = @_;
+    my $pod = PJP::M::PodFile->retrieve($p->{path}) // return $c->res_404();
+    my $html = PJP::M::PodFile->slurp($p->{path})   // return $c->res_404();
+
+
+    $html =~s{^.*<(?:body).*?>}{}s;
+    $html =~s{</(?:body)>.*$}{}s;
+
+    # todo: use proper module
+    $html =~s{<(?:script|style).+?</(?:script|style)>}{}gsi;
+    $html =~s{<(?:script|style|link|meta)[^>]+>}{}gsi;
+    $html =~s{<[^>]+on\w+[^>]+>.*$}{}gsi;
+    $html =~s{<[^>]+style[^>]+>.*$}{}gsi;
+
+    return $c->render('pod.tt',
+                      {
+                       is_article   => 1,
+                       body         => mark_raw( $html ),
+                       distvname    => $pod->{distvname},
+                       package      => $pod->{package},
+                       description  => $pod->{description},
+                       'PodVersion' => $pod->{distvname},
+                       'title'      => "$pod->{package} - $pod->{description} 【perldoc.jp】",
+                       repository   => $pod->{repository},
+                       path         => $pod->{path},
+                      }
+                     );
+};
+
+get '/docs/{path:(modules|perl|articles)/.+\.pod}' => sub {
     my ($c, $p) = @_;
 
     my $pod = PJP::M::PodFile->retrieve($p->{path});
@@ -221,6 +283,7 @@ get '/docs/{path:(modules|perl)/.+\.pod}' => sub {
         };
         return $c->render(
             'pod.tt' => {
+                is_article   => ($p->{path} =~m{articles} ? 1 : 0),
                 body         => mark_raw( $pod->{html} ),
                 others       => \@others,
                 distvname    => $pod->{distvname},

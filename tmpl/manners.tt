@@ -5,15 +5,33 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 翻訳したい方は、一度目を通していただけると良いかと思います。
 </p>
 <h2>ディレクトリ構成</h2>
+
 <h3>コアドキュメント</h3>
-<p>
+<pre>
 docs/perl/バージョン/ファイル名.pod
-</p>
+</pre>
 <h3>モジュール</h3>
+<pre>
+docs/modules/モジュール名-バージョン/
+</pre>
 <p>
-docs/modules/モジュール名-バージョン/　以下に、モジュールの tar.gz を展開し、各.pm を .pod に変更します。
+以下に、モジュールの tar.gz を展開し、各.pm を .pod に変更します。
+<p>
+
+<h4>その他</h3>
+pod / html いずれでも構いません。以下のように配置してください。
+<pre>
+docs/articles/perl/名前.pod
+docs/articles/ドメイン/パス/ファイル名.html
+</pre>
+<p>
+具体的には、以下のようになります。
 </p>
-</dl>
+<pre>
+/docs/articles/perl/perlunicook.pod
+/docs/articles/perl.com/pub/2012/06/perlunicook-further-resources.html
+</pre>
+
 <h2>podの抽出方法</h2>
 <pre>
 % perldoc -u Test::More
@@ -25,7 +43,7 @@ docs/modules/モジュール名-バージョン/　以下に、モジュール�
 
 <h2>文字コード</h3>
 <p>
-やむをえいない事情がない限りは 文字コードはutf-8にしてください。<br />
+やむをえない事情がない限りは 文字コードはutf-8にしてください。<br />
 pod ファイルの先頭で、以下のように、encoding を指定します。
 </p>
 <pre>
@@ -43,7 +61,20 @@ pod ファイルの先頭で、以下のように、encoding を指定します�
 =end original
 </div>
 </pre>
+<p>
 のように、=begin original 〜 =end original で囲みます。<br />
+</p>
+<p>
+HTMLの場合は、原文がかこまれているタグのクラス名を original としてください。
+</p>
+<pre>
+<div style="color:blue">&lt;h1 class="original"&gt;Title&lt;/h1&gt;</div>&lt;h1&gt;タイトル&lt;/h1&gt;
+<div style="color:blue">&lt;div class="original"&gt;
+原文
+&lt;/div&gt;</div>&lt;div&gt;
+翻訳文
+&lt;/div&gt;
+</pre>
 
 <h2>コード部分の翻訳</h3>
 

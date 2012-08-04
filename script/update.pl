@@ -30,7 +30,7 @@ cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
 _SHELL_
 
 } else {
-    system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
+#    system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
 }
 
 if (! -d $assets_dir . '/module-pod-jp/') {
@@ -44,16 +44,18 @@ foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {
 	system(qq{cd $assets_dir; git clone git://github.com/jpa/$jpa_module.git});
     }
 
-    system(qq{cd $assets_dir/$jpa_module; git pull origin master});
+#    system(qq{cd $assets_dir/$jpa_module; git pull origin master});
 }
 
 unlink "$assets_dir/index-module.pl";
+unlink "$assets_dir/index-article.pl";
 
 chdir $code_dir;
 if (! -e $sqlite_db) {
     system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql});
 }
 
+PJP::M::Index::Article->generate_and_save($pjp);
 PJP::M::Index::Module->generate_and_save($pjp);
 PJP::M::BuiltinFunction->generate($pjp);
 PJP::M::PodFile->generate($pjp);

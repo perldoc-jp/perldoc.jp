@@ -9,6 +9,8 @@ use File::Find::Rule;
 use PJP::M::Pod;
 use Log::Minimal;
 use File::Basename;
+use version;
+use PJP::M::Index::Article;
 
 sub slurp {
     my ($class, $path) = @_;
@@ -42,10 +44,16 @@ sub retrieve {
         );
 }
 
+sub _version {
+    my ($v) = @_;
+    $v =~ s{^.+?-(?=\d)}{};
+    return version->new($v);
+}
+
 sub other_versions {
         my ($class, $package) = @_;
         my $c = c();
-        @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
+        sort { _version($b->{distvname}) <=> _version($a->{distvname}) } @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
 }
 
 sub get_latest {
@@ -101,15 +109,23 @@ sub generate {
                     );
         for my $base (@bases) {
                 my $repository = $base;
-                $repository =~ s{^.+?/assets/}{};
+                my $extention_exp;
+                if ($repository =~ s{^.+?/assets/}{}) {
+                    $extention_exp = qr/\.(pod|html)$/;
+                } else {
+                    $extention_exp = '*.pod';
+                }
                 $repository =~ s{^([\w\-.]+)/.+}{$1};
 
                 my @files = File::Find::Rule->file()
-                    ->name('*.pod')
+                    ->name($extention_exp)
                     ->in($base);
-
                 for my $file (@files) {
+                    if ($file =~ m{\.pod$}) {
                         $class->generate_one_file($c, $file, $base, $repository);
+                    } else {
+                        $class->generate_one_file_html($c, $file, $base, $repository);
+                    }
                 }
         }
         $txn->commit;
@@ -131,6 +147,7 @@ sub generate_one_file {
                         $package = $relpath;
                         $package =~ s/\.pod$//;
                         $package =~ s!^modules/!!;
+                        $package =~ s!^articles/!!;
                     }
                     ( my $distvname = $relpath ) =~ s!^modules/!!;
 
@@ -157,5 +174,35 @@ sub generate_one_file {
         );
 }
 
+# it is not pod, but html ...
+sub generate_one_file_html {
+        my ($class, $c, $file, $base, $repository) = @_;
+        infof("Processing: %s", $file);
+        my $args = $c->cache->file_cache(
+                "path:26",
+                $file,
+                sub {
+                    my $html = PJP::M::Index::Article::slurp($file);
+                    my $relpath = abs2rel( $file, $base );
+                    my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/.*?/([^/]+)\.html$};
+
+                    $package or die "cannot get package name: $relpath";
+
+                    $distvname =~ s!/.+!!;
+                    +{
+                        path        => $relpath,
+                        package     => $package,
+                        distvname   => $distvname,
+                        html        => $html,
+                    };
+                }
+        );
+        $c->dbh->replace(
+                pod => +{
+                        repository => $repository,
+                        %$args
+                },
+        );
+}
 1;
 
