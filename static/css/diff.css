@@ -1,0 +1,55 @@
+table.diff {
+   border-collapse: collapse;
+   border-top: solid 1px #999999;
+   border-left: solid 1px #999999;
+}
+
+table.diff td {
+   padding: 2px;
+   padding-left: 5px;
+   padding-right: 5px;
+   border-right: solid 1px #999999;
+   border-bottom: solid 1px #999999;
+}
+
+table.diff td:nth-child(1),
+table.diff td:nth-child(2) {
+   background-color: #deedff;
+}
+
+table.diff tr.change,
+table.diff tr.disc_a,
+table.diff tr.disc_b {
+   background-color: #ffffdd;
+}
+
+table.diff tr.del {
+  background-color: #ffeeee;
+}
+
+table.diff tr.ins {
+  background-color: #eeffee;
+}
+
+
+table.diff td:nth-child(3),
+table.diff td:nth-child(4) {
+   font-family: monospace;
+   white-space: pre;
+}
+
+table.diff td ins {
+   padding: 2px;
+   color: #009900;
+   background-color: #ccffcc;
+   text-decoration: none;
+   font-weight: bold;
+}
+
+table.diff td del {
+   padding: 2px;
+   color: #990000;
+   background-color: #ffcccc;
+   text-decoration: none;
+   font-weight: bold;
+}

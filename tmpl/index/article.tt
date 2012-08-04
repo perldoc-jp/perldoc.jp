@@ -1,0 +1,25 @@
+<div class="content">
+    <p class="about">Perlに関連するその他の翻訳です。</p>
+
+    <div class="IndexModuleContainer">
+        <h1>その他の翻訳</h1>
+
+        <div class="IndexModuleContent">
+            [%# TODO: 各モジュールのリリース日と、最新版のバージョン番号を表示させたい %]
+
+            <table>
+            [% FOR v IN index %]
+                <tr>
+                    <td nowrap="nowrap">
+                        <a href="/docs/articles/[% v.distvname %]">[% v.name %]</a>
+                        [% IF v.repository=='module-pod-jp' %]
+                            <img src="/static/img/github.png" width="16" height="16" />
+                        [% END %]
+                    </td>
+                    <td>[% v.abstract %]</td>
+                </tr>
+            [% END %]
+            </table>
+        </div>
+    </div>
+</div>
