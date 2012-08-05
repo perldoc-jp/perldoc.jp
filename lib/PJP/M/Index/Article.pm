@@ -110,17 +110,17 @@ sub _generate {
 	    my ($row, $package, $dist, $distvname);
 	    $distvname = $file;
 	    $distvname =~ s{^.*?articles/}{};
-	    if ($file =~ m{^.*?articles/([^/]+)/.*?/([^/]+)\.html$}) {
+	    if ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
 		$is_pod = 0;
 		($package, $dist) = ($1, $2);
 
 		my $html = slurp($file);
-		if ($html =~ m{<h1>(.*?)</h1>}) {
+                if ($html =~ m{<title>(.*?)</title>}) {
 		    $dist = $1;
-		} elsif ($html =~ m{<title>(.*?)</title>}) {
+		} elsif ($html =~ m{<h1>(.*?)</h1>}) {
 		    $dist = $1;
 		}
-	    } elsif ($file =~ m{^.*?articles/([^/]+)/([^/]+?)\.pod$}) {
+	    } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
 		$is_pod  = 1;
 		($package, $dist) = ($1, $2);
 	    }

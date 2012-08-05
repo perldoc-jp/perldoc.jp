@@ -190,7 +190,7 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
 };
 
 # .pod.pod の場合は生のソースを表示する
-get '/docs/{path:(modules|perl)/.+\.pod}.pod' => sub {
+get '/docs/{path:(modules|perl|articles)/.+\.(pod|html)}.pod' => sub {
     my ($c, $p) = @_;
 
     my $content = PJP::M::PodFile->slurp($p->{path}) // return $c->res_404();
@@ -252,6 +252,14 @@ get '/docs/{path:articles/.+\.html}' => sub {
     $html =~s{<(?:script|style|link|meta)[^>]+>}{}gsi;
     $html =~s{<[^>]+on\w+[^>]+>.*$}{}gsi;
     $html =~s{<[^>]+style[^>]+>.*$}{}gsi;
+    $html =~s{class\s*=\s*(?:(["'])?([ \w]+)\1?)}{
+      my $c = lc($2);
+      if ($c =~ m{\boriginal\b}) {
+          'class="original"';
+      } else {
+          "";
+      }
+    }gsie;
 
     return $c->render('pod.tt',
                       {

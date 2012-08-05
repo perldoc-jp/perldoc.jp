@@ -63,7 +63,7 @@ sub _file2name {
     if ($name =~ s{^docs/modules/(.+?)-[\d\._]+(?:[-\w]+)?/(?:lib/)?}{}) {
         $in = $1;
         $in =~s{-}{::};
-    } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+)/([^/]+)\.(?:pod|html)$}{$2}) {
+    } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)\.(?:pod|html)$}{$2}) {
         $in = $1;
     } elsif ($name =~ s{^docs/(perl|core)/[^/]+/}{}) {
         $in = 'perl';

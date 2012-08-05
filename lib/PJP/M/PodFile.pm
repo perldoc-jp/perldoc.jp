@@ -149,7 +149,7 @@ sub generate_one_file {
                         $package =~ s!^modules/!!;
                         $package =~ s!^articles/!!;
                     }
-                    ( my $distvname = $relpath ) =~ s!^modules/!!;
+                    ( my $distvname = $relpath ) =~ s!^(modules|articles)/!!;
 
                     if ($repository =~ m{^Moose}) {
                         $relpath = 'modules/' . $relpath;
@@ -184,7 +184,7 @@ sub generate_one_file_html {
                 sub {
                     my $html = PJP::M::Index::Article::slurp($file);
                     my $relpath = abs2rel( $file, $base );
-                    my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/.*?/([^/]+)\.html$};
+                    my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.html$};
 
                     $package or die "cannot get package name: $relpath";
 
