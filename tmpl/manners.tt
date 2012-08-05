@@ -1,8 +1,9 @@
 [% WRAPPER 'layout.html' %]
 <h1>翻訳の作法</h1>
 <p>
-Perlのドキュメントを翻訳する上での留意事項を書いています。特にプロジェクトに特化した内容ではありませんが、Japanized Perl Resources Project(通称JPRP)をベースにしています。また、<a href="http://search.cpan.org/~argrath/Pod-L10N-0.07/lib/Pod/L10N/Format.pod">Pod::L10N 対応フォーマット仕様</a>も参考にしています。<br />
-翻訳したい方は、一度目を通していただけると良いかと思います。
+Perlのドキュメントを翻訳する上での留意事項を書いています。翻訳したい方は、一度目を通していただけると良いかと思います。<br />
+特にプロジェクトに特化した内容ではありませんが、Japanized Perl Resources Project(通称JPRP)をベースにしています。また、<a href="http://search.cpan.org/~argrath/Pod-L10N-0.07/lib/Pod/L10N/Format.pod">Pod::L10N 対応フォーマット仕様</a>も参考にしています。<br />
+
 </p>
 <h2>ディレクトリ構成</h2>
 
@@ -49,6 +50,31 @@ pod ファイルの先頭で、以下のように、encoding を指定します�
 <pre>
 =encoding utf8
 </pre>
+
+<h2>翻訳文の行数</h3>
+<p>
+英語の文章の順番と日本語の文章の順番は違いますが、行数はある程度合わせた方が良いです。<br />
+英語が数行にわたって書かれている場合、日本語訳も数行に分けて書いたほうが良いです。
+</p>
+<pre>
+Similar to C<%+>, this variable allows access to the named capture buffers
+in the last successful match in the currently active dynamic scope. To
+each capture buffer name found in the regular expression, it associates a
+reference to an array containing the list of values captured by all
+buffers with that name (should there be several of them), in the order
+where they appear.
+</pre>
+<p>原文が上記のようであれば、(行数が違いますが)以下のように複数行で書きます。</p>
+<pre>
+C&lt;%+&gt; と同様、この変数は現在アクティブな動的スコープで最後に成功した
+マッチングの名前付き捕捉バッファへのアクセスを可能にします。
+正規表現中に捕捉バッファ名が現れるごとに、その名前のバッファ全てで
+(複数あるでしょう)捕捉されている値のリストを出現順で含む配列への
+リファレンスと関連付けられます。
+</pre>
+<p>
+翻訳文をバージョンアップした際に、diff を見てチェックする場合などがありますが、その際に一行にまとめていると diff が見辛くなります。
+</p>
 
 <h2>原文の残し方</h2>
 ファイル内に原文を残す場合は、
@@ -191,6 +217,15 @@ original sentence.
 翻訳文章
 </pre>
 
+<h2>HTMLの翻訳についての特別な処理</h3>
+<p>
+perldoc.jpでは、HTMLの翻訳の場合、以下の処理を行っています。
+</p>
+<ul>
+<li>翻訳文書のタイトルを、titleタグから取得します、titleタグがない場合は、最初のh1タグから取得します</li>
+<li>originalという名前のclassがついてあるものは、非表示になります</li>
+<li>style、JavaScript、class(original以外のもの)は取り除かれます</li>
+</ul>
 <h2>連絡先の記述</h2>
 <p>連絡先を書く場合は、翻訳文の最後に以下のように付記すると良いでしょう(特に決まりはありません)。</p>
 <pre>
