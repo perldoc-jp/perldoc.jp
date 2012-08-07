@@ -158,6 +158,7 @@ get '/func/*' => sub {
     if ($version && $html) {
         return $c->render(
             'pod.tt' => {
+                has_original => ($html =~m{class="original"} ? 1 : 0),
                 body         => mark_raw($html),
                 title        => "$name 【perldoc.jp】",
                 'PodVersion' => "perl-$version",
@@ -264,6 +265,7 @@ get '/docs/{path:articles/.+\.html}' => sub {
     return $c->render('pod.tt',
                       {
                        is_article   => 1,
+                       has_original => ($html =~ m{class="original"} ? 1 : 0),
                        body         => mark_raw( $html ),
                        distvname    => $pod->{distvname},
                        package      => $pod->{package},
@@ -292,6 +294,7 @@ get '/docs/{path:(modules|perl|articles)/.+\.pod}' => sub {
         return $c->render(
             'pod.tt' => {
                 is_article   => ($p->{path} =~m{articles} ? 1 : 0),
+                has_original => ($pod->{html} =~ m{class="original"} ? 1 : 0),
                 body         => mark_raw( $pod->{html} ),
                 others       => \@others,
                 distvname    => $pod->{distvname},

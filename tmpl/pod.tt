@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html' WITH use_jquery = 1 %]
 
 <div class="content">
     <div class="PodPage">
@@ -31,6 +31,14 @@
             <div class="Source"><a href="[% c().req.uri() %].pod">Source</a></div>
             [% IF repository=="module-pod-jp" %]
             <div class="Edit"><a href="https://github.com/perldoc-jp/module-pod-jp/blob/master/docs/[% path %]">edit on github</a></div>
+            [% END %]
+            [% IF has_original %]
+            <script>
+              var display_original = false;
+            </script>
+            <div>
+            <a href="#" onclick="$('.original').css('display', display_original ? 'none' : 'block'); display_original = display_original ? false : true; return false;">原文を表示/隠す</a>
+            </div>
             [% END %]
         </div>
 

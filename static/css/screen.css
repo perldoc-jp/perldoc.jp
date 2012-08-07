@@ -674,6 +674,8 @@ dd {
 /* line 70, ../../scss/_class.scss */
 .original {
   display: none;
+  background-color:#eee;
+  padding: 5px;
 }
 
 /* line 74, ../../scss/_class.scss */
