@@ -5,9 +5,10 @@
 <p>
 このサイトは Perl の公式ドキュメント、モジュールを日本語翻訳したものを表示するサイトです。<br />
 miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、現在は<a href="http://japan.perlassociation.org/">Japan Perl Association</a>(JPA)が管理しています。<br />
+※JPAは内容については関知しません
 </p>
 <p>
-サイト内の翻訳データは、Japanized Perl Resources Project(JPRP)で翻訳されたもの、有志が翻訳しているgithubのリポジトリ、JPAの翻訳文書から取得しています。
+サイト内の翻訳データは、Japanized Perl Resources Project(JPRP)で翻訳されたもの、有志が翻訳しているgithubのリポジトリ、JPAの翻訳文書から取得しています。<br />
 </p>
 <p>
 翻訳に参加したい方は、以下のサイトを参照してください。どのように翻訳すればわからない方のために、<a href="manners">翻訳の作法</a>を大まかにまとめていますので、興味のある方は参照してください。
