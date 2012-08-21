@@ -1,3 +1,4 @@
+use utf8;
 +{
   'Archiving Compression Conversion'   => "アーカイブ・圧縮・変換",
   'File Name Systems Locking'          => "ファイル名、システム関連、ロック等",
