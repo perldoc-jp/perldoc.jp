@@ -16,41 +16,45 @@ sub recent_data {
 
   my $cvs = qx{cd ${assets_dir}perldoc.jp/docs/; cvs history -x AM -l -a -D '$date'|sort};
   my @updates;
+  my %uniq;
 
-  1 while $cvs =~ s{^. (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
-    my ($date, $author, $path) = ($1 . ':00', $2, "$4/$3");
-    if ( $path =~ m{^docs} ) {
-        my $datetime = Time::Piece->strptime($date, '%Y-%m-%d %H:%M:%S');
-        $datetime += 3600 * 9;
+  1 while $cvs =~ s{^. (\d{4}-\d{2}-\d{2})( \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
+      my ($date, $time, $author, $path) = ($1, $2 . ':00', $3, "$5/$4");
 
-        my ($name, $in) = _file2name($path);
-        push @updates, {
-                        date    => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
-                        author  => $author,
-                        path    => $path,
-                        name    => $name,
-                        in      => $in,
-                        version => _file2version($path),
-                       }
-    }
+      if (not $uniq{$date}{$path}++ and $path =~ m{^docs} ) {
+          my $datetime = Time::Piece->strptime($date . $time, '%Y-%m-%d %H:%M:%S');
+          $datetime += 3600 * 9;
+
+          my ($name, $in) = _file2name($path);
+          push @updates, {
+                          date    => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
+                          author  => $author,
+                          path    => $path,
+                          name    => $name,
+                          in      => $in,
+                          version => _file2version($path),
+                         }
+      }
   }em;
 
   foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA/) {
-    foreach my $file (File::Find::Rule->file()->name('*.pod')->in("$assets_dir$repos")) {
-      my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date'} or next;
-      my ($date, $author) = $git =~m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
-      $file =~s{^.+?assets/}{};
-      $file =~s{^\Q$repos/\E}{};
-      my ($name, $in) = _file2name($file);
-      push @updates, {
-                      date    => $date,
-                      author  => $author,
-                      path    => 'docs/modules/' . $file,
-                      name    => $name,
-                      in      => $in,
-                      version => _file2version($file)
-                     };
-    }
+      foreach my $file (File::Find::Rule->file()->name('*.pod')->in("$assets_dir$repos")) {
+          my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date'} or next;
+          my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
+          if (not $uniq{$date . $time}{$file}++) {
+              $file =~s{^.+?assets/}{};
+              $file =~s{^\Q$repos/\E}{};
+              my ($name, $in) = _file2name($file);
+              push @updates, {
+                              date    => $date . $time,
+                              author  => $author,
+                              path    => 'docs/modules/' . $file,
+                              name    => $name,
+                              in      => $in,
+                              version => _file2version($file)
+                             };
+          }
+      }
   }
   my %tmp;
   @updates = ( sort {($tmp{$b} ||= $b->{date}) cmp ($tmp{$a} ||= $a->{date})} @updates );
