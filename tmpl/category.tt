@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html' WITH title='カテゴリ別' %]
 
 <h1>カテゴリ一覧</h1>
 <p>

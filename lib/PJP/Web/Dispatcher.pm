@@ -75,7 +75,7 @@ get '/index/core' => sub {
 
     my $toc = PJP::M::TOC->render($c);
     return $c->render('index/core.tt', {
-        title => 'コアドキュメント - perldoc.jp',
+        title => 'コアドキュメント',
         toc   => $toc,
     });
 };
@@ -85,7 +85,7 @@ get '/index/function' => sub {
 
     my $toc = PJP::M::TOC->render_function($c);
     return $c->render('index/function.tt' => {
-        title => '組み込み関数 - perldoc.jp',
+        title => '組み込み関数',
         toc   => $toc,
     });
 };
@@ -105,7 +105,7 @@ get '/index/module' => sub {
 
     $c->render(
         'layout.html' => {
-            title => '翻訳済モジュール - perldoc.jp',
+            title => '翻訳済モジュール',
             content => mark_raw($content),
         }
     );
@@ -126,7 +126,7 @@ get '/index/article' => sub {
 
     $c->render(
         'layout.html' => {
-            title => 'その他の翻訳 - perldoc.jp',
+            title => 'その他の翻訳',
             content => mark_raw($content),
         }
     );
@@ -160,7 +160,7 @@ get '/func/*' => sub {
             'pod.tt' => {
                 has_original => ($html =~m{class="original"} ? 1 : 0),
                 body         => mark_raw($html),
-                title        => "$name 【perldoc.jp】",
+                title        => "$name",
                 'PodVersion' => "perl-$version",
             },
         );
@@ -185,7 +185,7 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
         'directory_index.tt' => {
             index     => \@rows,
             distvname => $distvname,
-            'title'   => "$distvname 【perldoc.jp】",
+            'title'   => "$distvname",
         }
     );
 };
@@ -271,7 +271,7 @@ get '/docs/{path:articles/.+\.html}' => sub {
                        package      => $pod->{package},
                        description  => $pod->{description},
                        'PodVersion' => $pod->{distvname},
-                       'title'      => "$pod->{package} - $pod->{description} 【perldoc.jp】",
+                       'title'      => "$pod->{package} - $pod->{description}",
                        repository   => $pod->{repository},
                        path         => $pod->{path},
                       }
@@ -302,7 +302,7 @@ get '/docs/{path:(modules|perl|articles)/.+\.pod}' => sub {
                 description  => $pod->{description},
                 'PodVersion' => $pod->{distvname},
                 'title' =>
-                  "$pod->{package} - $pod->{description} 【perldoc.jp】",
+                  "$pod->{package} - $pod->{description}",
                 repository => $pod->{repository},
                 path       => $pod->{path},
             }

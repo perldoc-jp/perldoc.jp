@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html' WITH title='このサイトについて' %]
 
 <h1>このサイトについて</h1>
 

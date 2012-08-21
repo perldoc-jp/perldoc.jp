@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html'  WITH title='翻訳の作法' %]
 <h1>翻訳の作法</h1>
 <p>
 Perlのドキュメントを翻訳する上での留意事項を書いています。翻訳したい方は、一度目を通していただけると良いかと思います。<br />
