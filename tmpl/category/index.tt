@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html' WITH title = en2ja.$category || category %]
 
 <div class="BreadList">
     <a href="/category">カテゴリ一覧</a> &gt; [% en2ja.$category || category %]
