@@ -108,7 +108,7 @@ sub _generate {
 
         my $is_pod;
         foreach my $file (@files) {
-            my ($row, $package, $dist, $distvname, $abstract, $linkto);
+            my ($row, $package, $dist, $distvname, $abstract);
             $distvname = $file;
             $distvname =~ s{^.*?articles/}{};
             if ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
@@ -123,16 +123,6 @@ sub _generate {
                 }
                 if ($html =~ m{<meta\s+name="description"\s+content="([^"]+)">}) {
                     $abstract = $1;
-                }
-                if ($html =~ m{<!--\s+linkto:\s*(http[^\s]+)\s+-->}) {
-                    $linkto = $1;
-                    if ($linkto =~ m/$RE{URI}{HTTP}/) {
-                        if ($abstract) {
-                            $abstract = qq{<a href="$linkto">$abstract</a>}
-                        } else {
-                            $abstract = qq{<a href="$linkto">linkto</a>}
-                        }
-                    }
                 }
             } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
                 $is_pod  = 1;
