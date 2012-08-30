@@ -16,6 +16,7 @@ use PJP::M::Index::Article;
 use PJP::M::Pod;
 use PJP::M::PodFile;
 use Text::Diff::FormattedHTML;
+use Regexp::Common qw/URI/;
 
 get '/' => sub {
     my $c = shift;
@@ -244,6 +245,11 @@ get '/docs/{path:articles/.+\.html}' => sub {
     my $pod = PJP::M::PodFile->retrieve($p->{path}) // return $c->res_404();
     my $html = PJP::M::PodFile->slurp($p->{path})   // return $c->res_404();
 
+    if (my ($linkto) = $html =~ m{<!--\s+linkto:\s*(http[^\s]+)\s+-->}) {
+        if ($linkto =~ m/$RE{URI}{HTTP}/) {
+            return $c->redirect($linkto);
+        }
+    }
 
     $html =~s{^.*<(?:body).*?>}{}s;
     $html =~s{</(?:body)>.*$}{}s;
@@ -255,8 +261,11 @@ get '/docs/{path:articles/.+\.html}' => sub {
     $html =~s{<[^>]+style[^>]+>.*$}{}gsi;
     $html =~s{class\s*=\s*(?:(["'])?([ \w]+)\1?)}{
       my $c = lc($2);
+      my $pretty = $c =~ m{\bprettyprint\b};
       if ($c =~ m{\boriginal\b}) {
           'class="original"';
+      } elsif (defined $pretty and $pretty) {
+          'class="prettyprint"';
       } else {
           "";
       }

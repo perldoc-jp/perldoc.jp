@@ -17,6 +17,7 @@ use version;
 use autodie;
 use PJP::M::Pod;
 use Data::Dumper;
+use Regexp::Common qw/URI/;
 
 sub slurp {
     if (@_==1) {
@@ -74,14 +75,14 @@ sub generate {
     }
 
     return  map {
-	+{
-	  name     => $_->{name},
-	  abstract => $_->{abstract},
-	  repository => $_->{repository},
-	  distvname  => $_->{distvname},
-	  latest_version => 0,
-	  versions => [],
-	 }
+        +{
+          name     => $_->{name},
+          abstract => $_->{abstract},
+          repository => $_->{repository},
+          distvname  => $_->{distvname},
+          latest_version => 0,
+          versions => [],
+         }
     } @articles
 }
 
@@ -105,44 +106,58 @@ sub _generate {
             ->name(qr/\.(pod|html)$/)
             ->in("$base/$e");
 
-	my $is_pod;
-	foreach my $file (@files) {
-	    my ($row, $package, $dist, $distvname);
-	    $distvname = $file;
-	    $distvname =~ s{^.*?articles/}{};
-	    if ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
-		$is_pod = 0;
-		($package, $dist) = ($1, $2);
+        my $is_pod;
+        foreach my $file (@files) {
+            my ($row, $package, $dist, $distvname, $abstract, $linkto);
+            $distvname = $file;
+            $distvname =~ s{^.*?articles/}{};
+            if ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
+                $is_pod = 0;
+                ($package, $dist) = ($1, $2);
 
-		my $html = slurp($file);
+                my $html = slurp($file);
                 if ($html =~ m{<title>(.*?)</title>}) {
-		    $dist = $1;
-		} elsif ($html =~ m{<h1>(.*?)</h1>}) {
-		    $dist = $1;
-		}
-	    } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
-		$is_pod  = 1;
-		($package, $dist) = ($1, $2);
-	    }
-	    $row = {
-		    name       => $dist,
-		    version    => 0,
-		    package    => $package,
-		    distvname  => $distvname,
-		    repository => $repository,
-		   };
+                    $dist = $1;
+                } elsif ($html =~ m{<h1>(.*?)</h1>}) {
+                    $dist = $1;
+                }
+                if ($html =~ m{<meta\s+name="description"\s+content="([^"]+)">}) {
+                    $abstract = $1;
+                }
+                if ($html =~ m{<!--\s+linkto:\s*(http[^\s]+)\s+-->}) {
+                    $linkto = $1;
+                    if ($linkto =~ m/$RE{URI}{HTTP}/) {
+                        if ($abstract) {
+                            $abstract = qq{<a href="$linkto">$abstract</a>}
+                        } else {
+                            $abstract = qq{<a href="$linkto">linkto</a>}
+                        }
+                    }
+                }
+            } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
+                $is_pod  = 1;
+                ($package, $dist) = ($1, $2);
+            }
+            $row = {
+                    name       => $dist,
+                    version    => 0,
+                    package    => $package,
+                    distvname  => $distvname,
+                    repository => $repository,
+                    abstract   => $abstract,
+                   };
 
-	    if ($is_pod) {
-		infof("parsing %s", $file);
-		my ($name, $desc) = PJP::M::Pod->parse_name_section($file);
-		if ($desc) {
-		    infof("Japanese Description: %s, %s", $name, $desc);
-		    $row->{abstract} = $desc;
-		}
-	    }
+            if ($is_pod) {
+                infof("parsing %s", $file);
+                my ($name, $desc) = PJP::M::Pod->parse_name_section($file);
+                if ($desc) {
+                    infof("Japanese Description: %s, %s", $name, $desc);
+                    $row->{abstract} = $desc;
+                }
+            }
 
-	    push @mods, $row;
-	}
+            push @mods, $row;
+        }
     }
 
     return @mods;

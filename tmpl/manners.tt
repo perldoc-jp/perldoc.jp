@@ -1,10 +1,26 @@
 [% WRAPPER 'layout.html'  WITH title='翻訳の作法' %]
 <h1>翻訳の作法</h1>
+
 <p>
 Perlのドキュメントを翻訳する上での留意事項を書いています。翻訳したい方は、一度目を通していただけると良いかと思います。<br />
 特にプロジェクトに特化した内容ではありませんが、Japanized Perl Resources Project(通称JPRP)をベースにしています。また、<a href="http://search.cpan.org/~argrath/Pod-L10N-0.07/lib/Pod/L10N/Format.pod">Pod::L10N 対応フォーマット仕様</a>も参考にしています。<br />
-
 </p>
+<ul>
+<li><a href="#dir">ディレクトリ構成</a></li>
+<li><a href="#abstract_pod">podの抽出方法</a></li>
+<li><a href="#charset">文字コード</h3></li>
+<li><a href="#translation_lines">翻訳文の行数</h3></li>
+<li><a href="#leave_original">原文の残し方</a></li>
+<li><a href="#code_translation">コード部分の翻訳</h3></li>
+<li><a href="#head1_translation">=head1の翻訳</a></li>
+<li><a href="#item_translation">=itemの翻訳</a></li>
+<li><a href="#html">HTMLの翻訳についての特別な処理</a></li>
+<li><a href="#info">連絡先の記述</a></li>
+<li><a href="#info2author">翻訳することについての報告</a></li>
+<li><a href="#inro2translation">翻訳の報告</a></li>
+<li><a href="#see_also">JPRPの参考文書</a></li>
+</ul>
+<a name="dir"></a>
 <h2>ディレクトリ構成</h2>
 
 <h3>コアドキュメント</h3>
@@ -33,6 +49,7 @@ docs/articles/ドメイン/パス/ファイル名.html
 /docs/articles/perl.com/pub/2012/06/perlunicook-further-resources.html
 </pre>
 
+<a name="abstract_pod"></a>
 <h2>podの抽出方法</h2>
 <pre>
 % perldoc -u Test::More
@@ -42,6 +59,7 @@ docs/articles/ドメイン/パス/ファイル名.html
 のようにすることで、pod を抽出することができます。
 </p>
 
+<a name="charset"></a>
 <h2>文字コード</h3>
 <p>
 やむをえない事情がない限りは 文字コードはutf-8にしてください。<br />
@@ -51,6 +69,7 @@ pod ファイルの先頭で、以下のように、encoding を指定します�
 =encoding utf8
 </pre>
 
+<a name="translation_lines"></a>
 <h2>翻訳文の行数</h3>
 <p>
 英語の文章の順番と日本語の文章の順番は違いますが、行数はある程度合わせた方が良いです。<br />
@@ -76,6 +95,7 @@ C&lt;%+&gt; と同様、この変数は現在アクティブな動的スコー�
 翻訳文をバージョンアップした際に、diff を見てチェックする場合などがありますが、その際に一行にまとめていると diff が見辛くなります。
 </p>
 
+<a name="leave_original"></a>
 <h2>原文の残し方</h2>
 ファイル内に原文を残す場合は、
 <pre>
@@ -102,6 +122,7 @@ HTMLの場合は、原文がかこまれているタグのクラス名を origin
 &lt;/div&gt;
 </pre>
 
+<a name="code_translation"></a>
 <h2>コード部分の翻訳</h3>
 
 コード部分は訳さずそのまま残しておいた方が良いです。<br />
@@ -139,6 +160,7 @@ Example2:
 
 </pre>
 
+<a name="head1_translation"></a>
 <h2>=head1の翻訳</h2>
 <p>
 NAME, SYNOPSYS, DESCRIPTION などですが、代表的なものは、perldoc.jpでは、自動的に翻訳されて表示されます。<br />
@@ -174,6 +196,7 @@ NAME, SYNOPSYS, DESCRIPTION などですが、代表的なものは、perldoc.jp
 <tr><td>SUPPORT</td><td>サポート</td></tr>
 </table>
 
+<a name="item_translation"></a>
 <h2>=itemの翻訳</h2>
 <p>
 =item を =begin original 〜 =end original で囲むと、PODのパースに失敗する場合があるので、=head1と同様に、()で訳文を入れた方が良いです。
@@ -217,15 +240,30 @@ original sentence.
 翻訳文章
 </pre>
 
-<h2>HTMLの翻訳についての特別な処理</h3>
+<a name="html"></a>
+<h2>HTMLの翻訳についての特別な処理</h2>
 <p>
 perldoc.jpでは、HTMLの翻訳の場合、以下の処理を行っています。
 </p>
+<h3>タイトル/概要の抜き出し</h3>
+<p>
+タイトルは、titleタグから、タイトルタグがない場合は、最初のh1タグから取得します。<br />
+概要は、meta タグで description が指定されてあれば、そちらを使用します。
+</p>
+<h3>JavaScript, stlye、class の削除</h3>
+<p>
+JavaScript, style, classは削除されます。以下の class については、残されます。
+</p>
 <ul>
-<li>翻訳文書のタイトルを、titleタグから取得します、titleタグがない場合は、最初のh1タグから取得します</li>
-<li>originalという名前のclassがついてあるものは、非表示になります</li>
-<li>style、JavaScript、class(original以外のもの)は取り除かれます</li>
+<li> original ... 原文用のブロックに使います。このclassのついたブロックは非表示になります
+<li> prettyprint ... コード部分のブロックで使うとコードがハイライトされるようになります
 </ul>
+<h3>特殊なコメント &lt;!-- linkto: http://... --&gt;</h3>
+<p>
+原著者のポリシーなどで、perldoc.jp 上にホスト出来ず、原著者のサイトでホストしたいといった要望がある場合に、使ってください。<br />
+翻訳文を表示する代わりに、指定のURLへリダイレクトします。
+</p>
+<a name="info"></a>
 <h2>連絡先の記述</h2>
 <p>連絡先を書く場合は、翻訳文の最後に以下のように付記すると良いでしょう(特に決まりはありません)。</p>
 <pre>
@@ -236,18 +274,21 @@ perldoc.jpでは、HTMLの翻訳の場合、以下の処理を行っています
 <p>
 翻訳リポジトリの場所や、翻訳プロジェクトの名前やURL、誤訳の報告先などを書き足しても良いかと思います。
 </p>
+<a name="info2author"></a>
 <h2>翻訳することについての報告</h2>
 <p>
 ほとんどのモジュールが改変と再配布が許可されているライセンスなので、元々のドキュメントの著者に翻訳の報告をする必要はありません。<br />
 ライセンスが不明な場合や、改変と再配布が許可されていないライセンスの場合には、著者に連絡を取ってください。
 </p>
 
+<a name="inro2translation"></a>
 <h2>翻訳の報告</h2>
 <p>
 JPRPの場合、<a href="http://www.freeml.com/perldocjp/0000504">RFCメール</a>をMLに送るという方法を取っています。<br />
 JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィードで配信されます。
 </p>
 
+<a name="see_also"></a>
 <h2>JPRPの参考文書</h2>
 <p>
 JPRPに関する個別の決め事などは、以下を参照してください。
