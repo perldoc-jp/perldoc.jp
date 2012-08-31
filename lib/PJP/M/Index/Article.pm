@@ -114,16 +114,7 @@ sub _generate {
             if ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
                 $is_pod = 0;
                 ($package, $dist) = ($1, $2);
-
-                my $html = slurp($file);
-                if ($html =~ m{<title>(.*?)</title>}) {
-                    $dist = $1;
-                } elsif ($html =~ m{<h1>(.*?)</h1>}) {
-                    $dist = $1;
-                }
-                if ($html =~ m{<meta\s+name="description"\s+content="([^"]+)">}) {
-                    $abstract = $1;
-                }
+                ($dist, $abstract) = $c->abstract_title_description(scalar slurp($file));
             } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
                 $is_pod  = 1;
                 ($package, $dist) = ($1, $2);

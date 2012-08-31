@@ -253,6 +253,7 @@ get '/docs/{path:articles/.+\.html}' => sub {
         }
     }
 
+    my ($title, $abstract) = $c->abstract_title_description($html);
     $html =~s{^.*<(?:body).*?>}{}s;
     $html =~s{</(?:body)>.*$}{}s;
 
@@ -280,9 +281,9 @@ get '/docs/{path:articles/.+\.html}' => sub {
                        body         => mark_raw( $html ),
                        distvname    => $pod->{distvname},
                        package      => $pod->{package},
-                       description  => $pod->{description},
+                       description  => $abstract,
                        'PodVersion' => $pod->{distvname},
-                       'title'      => "$pod->{package} - $pod->{description}",
+                       'title'      => Encode::decode('utf8', $title . ' - ' . $pod->{package}),
                        repository   => $pod->{repository},
                        path         => $pod->{path},
                       }

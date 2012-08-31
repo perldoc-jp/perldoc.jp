@@ -51,4 +51,19 @@ sub show_403 {
     return $c->create_response(403, ['Content-Type' => 'text/html; charset=utf-8'], ['forbidden']);
 }
 
+sub abstract_title_description {
+  my ($c, $html) = @_;
+  my $title;
+  if ($html =~ m{<title>(.*?)</title>}) {
+    $title = $1;
+  } elsif ($html =~ m{<h1>(.*?)</h1>}) {
+    $title = $1;
+  }
+  my $abstract;
+  if ($html =~ m{<meta\s+name="description"\s+content="([^"]+)">}i) {
+    $abstract = $1;
+  }
+  return ($title, $abstract)
+}
+
 1;
