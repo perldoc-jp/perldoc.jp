@@ -5,7 +5,6 @@
         <h1>その他の翻訳</h1>
 
         <div class="IndexModuleContent">
-            [%# TODO: 各モジュールのリリース日と、最新版のバージョン番号を表示させたい %]
 
             <table>
             [% FOR v IN index %]

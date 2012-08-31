@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' WITH use_jquery = 1 %]
+[% WRAPPER 'layout.html' WITH use_jquery = 1 description = description %]
 
 <div class="content">
     <div class="PodPage">

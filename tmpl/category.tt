@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' WITH title='カテゴリ別' %]
+[% WRAPPER 'layout.html' WITH title='カテゴリ別' description="翻訳のカテゴリ別一覧" %]
 
 <h1>カテゴリ一覧</h1>
 <p>

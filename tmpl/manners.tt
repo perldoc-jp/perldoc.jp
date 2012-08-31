@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html'  WITH title='翻訳の作法' %]
+[% WRAPPER 'layout.html'  WITH title='翻訳の作法' description="Perlのドキュメントの翻訳における一般的なルールとperldoc.jpで表示される上でのルール。" %]
 <h1>翻訳の作法</h1>
 
 <p>

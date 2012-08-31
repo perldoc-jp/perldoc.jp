@@ -108,6 +108,7 @@ get '/index/module' => sub {
         'layout.html' => {
             title => '翻訳済モジュール',
             content => mark_raw($content),
+            description => '翻訳されたモジュールの一覧',
         }
     );
 };
@@ -129,6 +130,7 @@ get '/index/article' => sub {
         'layout.html' => {
             title => 'その他の翻訳',
             content => mark_raw($content),
+            description => '翻訳されたPerlに関係するWebPageの一覧',
         }
     );
 };

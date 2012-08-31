@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html' WITH description= name _ "はまだ翻訳されていません。" %]
 
 <p>
 なんということでしょう! '[% name %]' はまだ翻訳されていないようです!<br />

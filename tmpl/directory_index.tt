@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' %]
+[% WRAPPER 'layout.html' WITH description = distvname _ "の翻訳済みドキュメント一覧。" %]
 
 <div class="DirectoryIndexContainer">
     <p class="about">[% distvname %]の翻訳済ドキュメントの一覧です</p>
