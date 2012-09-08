@@ -78,6 +78,33 @@ sub get_latest {
         return $path;
 }
 
+sub get_latest_pod {
+    my $class = shift;
+    my ($package, $pod_path);
+
+    if (@_ == 1) {
+        ($pod_path) = @_;
+        $package  = $pod_path;
+        $package  =~ s{\.pod}{};
+    } else {
+        ($package, $pod_path) = @_;
+        $package =~s{-}{::}g;
+        $pod_path =~ s{$package-[^/]+}{$package\%};
+    }
+
+    my $c = c();
+    my $pod = $c->dbh->single('pod',
+                              {
+                               package => $package,
+                               path    => {'like' => '%' . $pod_path},
+                              },
+                              {
+                               order_by => ['distvname desc'],
+                              }
+                             );
+    return $pod;
+}
+
 sub search_by_distvname {
         my ($class, $distvname) = @_;
         my $c = c();

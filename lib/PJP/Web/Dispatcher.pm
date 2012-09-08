@@ -179,9 +179,14 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
     my $distvname = $p->{distvname};
 
     my @rows = PJP::M::PodFile->search_by_distvname($distvname);
-    unless (@rows) {
-        warnf("Unknonwn distvname: $distvname");
-        return $c->res_404();
+    if (not @rows) {
+        my $package = $distvname;
+        $package =~s{-}{::}g;
+        @rows = PJP::M::PodFile->search_by_packages([$package]);
+        if (not @rows) {
+            warnf("Unknonwn distvname: $distvname");
+            return $c->res_404();
+        }
     }
 
     return $c->render(
@@ -290,10 +295,16 @@ get '/docs/{path:articles/.+\.html}' => sub {
                      );
 };
 
-get '/docs/{path:(modules|perl|articles)/.+\.pod}' => sub {
+
+my $display_pod = sub {
     my ($c, $p) = @_;
 
-    my $pod = PJP::M::PodFile->retrieve($p->{path});
+    my $path = $p->{path};
+    my $pod = PJP::M::PodFile->retrieve($path);
+    if (not $pod and $p->{path} =~m{^modules/([^/]+)/(.+\.pod)$}) {
+        my ($package, $pod_path) = ($1, $2);
+        $pod = PJP::M::PodFile->get_latest_pod($package, $pod_path);
+    }
     if ($pod) {
         my @others = do {
             if ($pod->{package}) {
@@ -305,7 +316,7 @@ get '/docs/{path:(modules|perl|articles)/.+\.pod}' => sub {
         };
         return $c->render(
             'pod.tt' => {
-                is_article   => ($p->{path} =~m{articles} ? 1 : 0),
+                is_article   => ($path =~m{articles} ? 1 : 0),
                 has_original => ($pod->{html} =~ m{class="original"} ? 1 : 0),
                 body         => mark_raw( $pod->{html} ),
                 others       => \@others,
@@ -323,6 +334,14 @@ get '/docs/{path:(modules|perl|articles)/.+\.pod}' => sub {
         return $c->res_404();
     }
 };
+
+get '/docs/perl/{path:.[^/]+\.pod}' => sub { # perl
+    my ($c, $p) = @_;
+    my $pod = PJP::M::PodFile->get_latest_pod($p->{path}) or return $c->res_404;;
+    return $display_pod->($c, {path => $pod->{path}});
+};
+
+get '/docs/{path:(modules|perl|articles)/.+\.pod}' => $display_pod;
 
 get '/perl*' => sub {
     my ($c, $p) = @_;
