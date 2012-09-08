@@ -1,0 +1,5 @@
+[% WRAPPER 'layout.html' WITH title = '404 Not Found' %]
+
+[% message || '該当のページは見つかりませんでした。' %]
+
+[% END %]

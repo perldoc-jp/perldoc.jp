@@ -46,6 +46,11 @@ sub show_error {
     $c->render('error.tt', {message => $msg});
 }
 
+sub res_404 {
+    my ($c, $msg) = @_;
+    $c->render('404.tt', {message => $msg});
+}
+
 sub show_403 {
     my ($c) = @_;
     return $c->create_response(403, ['Content-Type' => 'text/html; charset=utf-8'], ['forbidden']);

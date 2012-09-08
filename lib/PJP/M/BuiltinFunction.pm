@@ -21,7 +21,7 @@ our @FUNCTIONS = qw(
   semctl semget semop send setgrent sethostent setnetent setpgrp setpriority setprotoent setpwent setservent setsockopt shift
   shmctl shmget shmread shmwrite shutdown sin size sleep socket socketpair sort splice split sprintf sqrt srand stat state
   study sub substr symlink syscall sysopen sysread sysseek system syswrite tell telldir tie tied time times tr truncate uc
-  ucfirst umask undef unlink unpack unshift untie use utime values vec vector wait waitpid wantarray warn write y
+  ucfirst umask undef unlink unpack unshift untie use utime values vec vector wait waitpid wantarray warn write y exit
 );
 
 sub retrieve {
