@@ -115,14 +115,14 @@ sub search_by_packages {
         my ($class, $packages) = @_;
         my $c = c();
         my $place_holder = join ',', (('?') x @$packages);
-        @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description FROM pod WHERE package in ($place_holder) ORDER BY package}, {Slice => {}}, @$packages) };
+        @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description, distvname FROM pod WHERE package in ($place_holder) ORDER BY package, distvname desc}, {Slice => {}}, @$packages) };
 }
 
 sub search_by_packages_like {
         my ($class, $packages) = @_;
         my $c = c();
         my $where = join ' or ', (('package like ?') x @$packages);
-        @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description FROM pod WHERE $where ORDER BY package}, {Slice => {}}, @$packages) };
+        @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description, distvname FROM pod WHERE $where ORDER BY package, distvname desc}, {Slice => {}}, @$packages) };
 }
 
 sub generate {

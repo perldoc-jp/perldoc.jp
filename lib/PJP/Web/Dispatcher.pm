@@ -182,7 +182,9 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
     if (not @rows) {
         my $package = $distvname;
         $package =~s{-}{::}g;
-        @rows = PJP::M::PodFile->search_by_packages([$package]);
+        if (@rows = PJP::M::PodFile->search_by_packages([$package])) {
+            @rows = PJP::M::PodFile->search_by_distvname($rows[0]->{distvname});
+        }
         if (not @rows) {
             warnf("Unknonwn distvname: $distvname");
             return $c->res_404();
