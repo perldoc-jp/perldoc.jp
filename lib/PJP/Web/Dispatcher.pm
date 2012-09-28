@@ -261,15 +261,15 @@ get '/docs/{path:articles/.+\.html}' => sub {
     }
 
     my ($title, $abstract) = $c->abstract_title_description($html);
-    $html =~s{^.*<(?:body).*?>}{}s;
-    $html =~s{</(?:body)>.*$}{}s;
+    $html =~ s{^.*<(?:body)[^>]*>}{}si;
+    $html =~ s{</(?:body)>.*$}{}si;
 
     # todo: use proper module
-    $html =~s{<(?:script|style).+?</(?:script|style)>}{}gsi;
-    $html =~s{<(?:script|style|link|meta)[^>]+>}{}gsi;
-    $html =~s{<[^>]+ on[^>]+=[^>]+>.*$}{}gsi;
-    $html =~s{<[^>]+ style[^>]+>.*$}{}gsi;
-    $html =~s{class\s*=\s*(?:(["'])?([ \w]+)\1?)}{
+    $html =~ s{<(script|style).+?</\1>}{}gsi;
+    $html =~ s{<(?:script|style|link|meta)[^>]+>}{}gsi;
+    $html =~ s{(<[^>]+) on[^>]+=\s*(["']).*?\2([^>]*>)}{$1$3}gsi;
+    $html =~ s{(<[^>]+) (?:id|style)\s*=\s*(["']).*?\2([^>]*>)}{$1$3}gsi;
+    $html =~ s{class\s*=\s*(?:(["'])?([ \w]+)\1?)}{
       my $c = lc($2);
       my $pretty = $c =~ m{\bprettyprint\b};
       if ($c =~ m{\boriginal\b}) {
