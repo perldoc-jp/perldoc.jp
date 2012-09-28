@@ -80,7 +80,11 @@ FAQ
 更新履歴
 
     perlhist - Perl の歴史的記録
-    perldelta - perl v5.14.0 での変更点
+    perldelta - perl v5.16.1 での変更点
+    perl5160delta - perl v5.16.0 での変更点
+    perl5142delta - perl v5.14.2 での変更点
+    perl5141delta - perl v5.14.1 での変更点
+    perl5140delta - perl v5.14.0 での変更点
     perl5123delta - perl v5.12.3 での変更点
     perl5122delta - perl v5.12.2 での変更点
     perl5121delta - perl v5.12.1 での変更点
@@ -96,7 +100,6 @@ FAQ
     perl583delta - perl v5.8.3 での変更点
     perl582delta - perl v5.8.2 での変更点
     perl581delta - perl v5.8.1 での変更点
-    perldelta - perl v5.8.1 での変更点
     perl58delta - perl v5.8.0 での変更点
 
 プラグマ
