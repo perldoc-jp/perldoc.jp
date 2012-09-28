@@ -13,7 +13,9 @@ sub connect {
 	if ($dsn =~ /^dbi:SQLite:/) {
 		$attr->{sqlite_unicode} //= 1;
 	}
-	return $self->SUPER::connect($dsn, $user, $pass, $attr);
+	my $dbh = $self->SUPER::connect($dsn, $user, $pass, $attr);
+        $dbh->do('PRAGMA synchronous = OFF');
+        return $dbh;
 }
 
 package PJP::DBI::db;

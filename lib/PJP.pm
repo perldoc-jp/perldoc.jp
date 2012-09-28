@@ -33,8 +33,8 @@ sub abstract_title_description {
     $title = $1;
   }
   my $abstract;
-  if ($html =~ m{<meta\s+name="description"\s+content="([^"]+)">}i) {
-    $abstract = $1;
+  if ($html =~ m{<meta\s+name=(['"])description\1\s+content=(['"])([^"]+)\2[^>]*>}si) {
+    $abstract = $3;
   }
   return ($title, $abstract)
 }

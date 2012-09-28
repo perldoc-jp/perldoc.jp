@@ -267,8 +267,8 @@ get '/docs/{path:articles/.+\.html}' => sub {
     # todo: use proper module
     $html =~s{<(?:script|style).+?</(?:script|style)>}{}gsi;
     $html =~s{<(?:script|style|link|meta)[^>]+>}{}gsi;
-    $html =~s{<[^>]+on[^>]+=[^>]+>.*$}{}gsi;
-    $html =~s{<[^>]+style[^>]+>.*$}{}gsi;
+    $html =~s{<[^>]+ on[^>]+=[^>]+>.*$}{}gsi;
+    $html =~s{<[^>]+ style[^>]+>.*$}{}gsi;
     $html =~s{class\s*=\s*(?:(["'])?([ \w]+)\1?)}{
       my $c = lc($2);
       my $pretty = $c =~ m{\bprettyprint\b};
