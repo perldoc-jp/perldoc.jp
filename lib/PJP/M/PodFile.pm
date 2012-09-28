@@ -47,7 +47,12 @@ sub retrieve {
 sub _version {
     my ($v) = @_;
     $v =~ s{^.+?-(?=\d)}{};
-    return version->new($v);
+    $v =~ s{\-RC\d+$}{};
+    my $version = eval { version->new($v) };
+    if ($@) {
+      die $@ . "(args: $v)"
+    }
+    return $version;
 }
 
 sub other_versions {
