@@ -1,6 +1,7 @@
 概要(overview)
 
-    perl - Perl の概要
+    perl - Perl 5 言語インタプリタ
+    perlintro - Perl の概要
     perlrun - perl コマンドの実行とオプションについて
 
 チュートリアル
@@ -9,6 +10,7 @@
     perlopentut - Perl でいろんなものを開くためのチュートリアル
     perlpacktut - pack と unpack のチュートリアル
     perlreftut - Mark によるリファレンスに関するとても短いチュートリアル
+    perlretut - Perl の正規表現のチュートリアル
     perlretut - Perl の正規表現のチュートリアル
     perlthrtut - Perl におけるスレッドのチュートリアル
     perlunitut - Perl における Unicode のチュートリアル
@@ -28,26 +30,36 @@
     perldata - Perl のデータ型
     perlsub - Perl のサブルーチン
     perlfunc - Perl 組み込み関数
+    perlutil - Perl 配布と共にパッケージされているユーティリティ
     perlunicode - Perl における Unicode サポート
     perlunifaq - Perl Unicode FAQ
     perluniintro - Perl Unicode の手引き
+    perlfilter - ソースフィルタ
     perlfork - Perl の fork エミュレーション
     perlcompile - Perlコンパイラ・トランスレータの解説
+    perldbmfilter - Perl DBM フィルタ
     perldebug - Perl のデバッグ
     perlipc - Perl のプロセス間通信 (シグナル, fifo, パイプ, 安全な副プロセス, ソケット, セマフォ)
     perllocale - Perl のロケール操作 (国際化と地域化)
     perlmod - Perl のモジュール (パッケージとシンボルテーブル)
     perlmodlib - 新たな Perl モジュールを作ったり、既にあるものを検索する
+    perlmodstyle - Perl モジュールスタイルガイド
     perlnewmod - 新しいモジュールを配布するには
     perltie - オブジェクトクラスを単純な変数に隠す方法
     perlnumber - Perl での数値と数値操作の意味論
     perlglossary - perl 用語集
+    perlperf - Perl の性能と最適化のテクニック
     perlpod - Plain Old Documentation フォーマット
     perlpodspec - Plain Old Documentation: フォーマット仕様とメモ
+    perlport - 移植性のある Perl を書く
+    perlpragma - ユーザープラグマの書き方
+    perlre - Perl 正規表現
     perldiag - さまざまな Perl 診断メッセージ
+    perllexwarn - Perl のレキシカルな警告
     perlform - Perlフォーマット
     perlobj - Perl のオブジェクト
     perlop - Perl の演算子と優先順位
+    perlre - Perl 正規表現
     perlref - Perlのリファレンスとネストしたデータ構造
     perlreref - Perl の正規表現のリファレンス
     perlsec - Perl のセキュリティ
@@ -60,7 +72,7 @@ XS
     # ↑ autodoc.pl の警告がみえちゃってる
     perlapio - perl の抽象入出力インターフェース
     perlxs - XS 言語リファレンスマニュアル
-    perlXStut - XSUB を書くためのチュートリアル
+    perlxstut - XSUB を書くためのチュートリアル
     perlembed - C プログラムへの Perl の埋め込み方
     perlguts - Perl API の紹介
 
@@ -105,14 +117,17 @@ FAQ
 プラグマ
 
     strict - 安全ではないコンストラクトを制限する Perl プラグマ
+    base - コンパイル時に基底クラスとの ISA 関係を構築する
     threads - インタプリタスレッドの使用を可能にするPerl拡張
     utf8 - ソースコード内に、UTF-8(か、UTF-EBCDIC)を有効/無効にするためのプラグマ
     warnings - 選択的な警告を調整する Perl プラグマ
     open - 入出力のためにデフォルトのPerlIOレイヤセットするためのPerlのプラグマ
     overload - Perl の演算子のオーバーロードを行うパッケージ
+    feature - 新しい構文上の機能を有効にするプラグマ
+    encoding - 非 ascii や非 utf8 でスクリプトを書けるようにする
 
 標準添付モジュール
 
     AutoLoader - 要求に応じてのみ、サブルーチンを読み込む。
-    Carp
-
+    Carp - 
+    CGI - 簡単なCGI（Common Gateway Interface）クラス
