@@ -265,6 +265,7 @@ JavaScript, style, classは削除されます。以下の class については�
 翻訳文を表示する代わりに、指定のURLへリダイレクトします。
 </p>
 <a name="info"></a>
+
 <h2>連絡先の記述</h2>
 <p>連絡先を書く場合は、翻訳文の最後に以下のように付記すると良いでしょう(特に決まりはありません)。</p>
 <pre>
@@ -279,8 +280,20 @@ JavaScript, style, classは削除されます。以下の class については�
 <h2>翻訳することについての報告</h2>
 <p>
 ほとんどのモジュールが改変と再配布が許可されているライセンスなので、元々のドキュメントの著者に翻訳の報告をする必要はありません。<br />
-ライセンスが不明な場合や、改変と再配布が許可されていないライセンスの場合には、著者に連絡を取ってください。
+ライセンスが不明な場合や、改変と再配布が許可されていないライセンスの場合には、著者に連絡を取ってください。<br />
+以下のような文章で聞くと良いかと思います。
 </p>
+<pre>
+Dear ***
+
+I'm *** ***.
+I read your document about *** at http://***.
+I want to introduce it to other Japanese Perl programmer.
+Now I'm translating it into Japanese.
+
+Can I distribute the translated document
+under the same terms as Perl itself?
+</pre>
 
 <a name="inro2translation"></a>
 <h2>翻訳の報告</h2>
