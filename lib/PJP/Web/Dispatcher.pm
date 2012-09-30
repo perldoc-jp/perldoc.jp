@@ -269,7 +269,7 @@ get '/docs/{path:articles/.+\.html}' => sub {
     $html =~ s{<(?:script|style|link|meta)[^>]+>}{}gsi;
     $html =~ s{(<[^>]+) on[^>]+=\s*(["']).*?\2([^>]*>)}{$1$3}gsi;
     $html =~ s{(<[^>]+) (?:id|style)\s*=\s*(["']).*?\2([^>]*>)}{$1$3}gsi;
-    $html =~ s{class\s*=\s*(?:(["'])?([ \w]+)\1?)}{
+    $html =~ s{class\s*=\s*(?:(["'])?([ \-\w]+)\1?)}{
       my $c = lc($2);
       my $pretty = $c =~ m{\bprettyprint\b};
       if ($c =~ m{\boriginal\b}) {
