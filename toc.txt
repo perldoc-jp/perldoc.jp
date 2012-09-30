@@ -125,6 +125,7 @@ FAQ
     overload - Perl の演算子のオーバーロードを行うパッケージ
     feature - 新しい構文上の機能を有効にするプラグマ
     encoding - 非 ascii や非 utf8 でスクリプトを書けるようにする
+    integer - 浮動小数点ではなく整数算術を使うための Perl プラグマ
 
 標準添付モジュール
 
