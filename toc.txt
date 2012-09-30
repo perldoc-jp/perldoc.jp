@@ -11,7 +11,6 @@
     perlpacktut - pack と unpack のチュートリアル
     perlreftut - Mark によるリファレンスに関するとても短いチュートリアル
     perlretut - Perl の正規表現のチュートリアル
-    perlretut - Perl の正規表現のチュートリアル
     perlthrtut - Perl におけるスレッドのチュートリアル
     perlunitut - Perl における Unicode のチュートリアル
     perlcheat - perl チートシート
