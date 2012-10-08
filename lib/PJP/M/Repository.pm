@@ -48,7 +48,7 @@ sub recent_data {
               push @updates, {
                               date    => $date . $time,
                               author  => $author,
-                              path    => 'docs/modules/' . $file,
+                              path    => ($file =~m{^docs} ? $file : 'docs/modules/' . $file),
                               name    => $name,
                               in      => $in,
                               version => _file2version($file)
