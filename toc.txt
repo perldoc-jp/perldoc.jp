@@ -3,6 +3,7 @@
     perl - Perl 5 言語インタプリタ
     perlintro - Perl の概要
     perlrun - perl コマンドの実行とオプションについて
+    perlpolicy - Perlコアにまつわるさまざまな方針、公約
 
 チュートリアル
 
