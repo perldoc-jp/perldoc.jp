@@ -1,9 +1,18 @@
+my $master_db = '/var/lib/jpa/perldoc.jp/db/perldocjp.db';
+my $slave_db  = '/var/lib/jpa/perldoc.jp/db/perldocjp.slave.db';
 +{
-        DB => [
-                "dbi:SQLite:dbname=/var/lib/jpa/perldoc.jp/db/perldocjp.db",
-                '',
-                '',
-        ],
+    master_db => $master_db,
+    slave_db  => $slave_db,
+    DB => [
+            "dbi:SQLite:dbname=" . $master_db,
+            '',
+            '',
+    ],
+    DBSlave => [
+            "dbi:SQLite:dbname=" . $slave_db,
+            '',
+            '',
+    ],
     'Text::Xslate' => {
         cache_dir => "/tmp/perldoc.jp-xslate.cache/",
     },
