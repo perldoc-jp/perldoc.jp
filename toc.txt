@@ -117,15 +117,25 @@ FAQ
 プラグマ
 
     strict - 安全ではないコンストラクトを制限する Perl プラグマ
+    warnings - 選択的な警告を調整する Perl プラグマ
+    autodie - 関数を、成功しなければ die する等価物に置き換える
+    autouse - 関数が使われるまでモジュールの読み込みを延期する
     base - コンパイル時に基底クラスとの ISA 関係を構築する
+    bigint - Perl 用の透過的な BigInteger 対応
+    bignum - Perl 用の透過的な BigNumber 対応
+    bigrat - Perl 用の透過的な BigNumber/BigRational 対応
+    charnames - \N{named} 文字列リテラルエスケープのための文字名を定義する
+    constant - 定数を宣言するための Perl プラグマ
+    diagnostics - 詳細な警告診断メッセージを出力する
+    encoding - 非 ascii や非 utf8 でスクリプトを書けるようにする
+    feature - 新しい構文上の機能を有効にするプラグマ
+    integer - 浮動小数点ではなく整数算術を使うための Perl プラグマ
+    mro - メソッド解決順序(Method Resolution Order)
+    open - 入出力のためにデフォルトのPerlIOレイヤセットするためのPerlのプラグマ
+    open - 入出力のためのデフォルトの PerlIO 層をセットするための perl プラグマ
+    overload - Perl の演算子のオーバーロードを行うパッケージ
     threads - インタプリタスレッドの使用を可能にするPerl拡張
     utf8 - ソースコード内に、UTF-8(か、UTF-EBCDIC)を有効/無効にするためのプラグマ
-    warnings - 選択的な警告を調整する Perl プラグマ
-    open - 入出力のためにデフォルトのPerlIOレイヤセットするためのPerlのプラグマ
-    overload - Perl の演算子のオーバーロードを行うパッケージ
-    feature - 新しい構文上の機能を有効にするプラグマ
-    encoding - 非 ascii や非 utf8 でスクリプトを書けるようにする
-    integer - 浮動小数点ではなく整数算術を使うための Perl プラグマ
 
 標準添付モジュール
 
