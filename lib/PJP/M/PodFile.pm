@@ -198,7 +198,7 @@ sub generate_one_file {
                     };
                 }
         );
-        $c->dbh->replace(
+        $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,
                         %$args
@@ -229,7 +229,7 @@ sub generate_one_file_html {
                     };
                 }
         );
-        $c->dbh->replace(
+        $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,
                         %$args

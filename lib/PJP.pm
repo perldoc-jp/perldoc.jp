@@ -15,6 +15,12 @@ sub cache { $cache }
 use PJP::DBI;
 sub dbh {
         my $c = shift;
+        my $conf = ($c->config->{DBSlave} || $c->config->{DB}) // die "Missing mandatory configuraion parameter: DB or DBSlave";
+        return $c->{db} //= PJP::DBI->connect(@$conf);
+}
+
+sub dbh_master {
+        my $c = shift;
         my $conf = $c->config->{DB} // die "Missing mandatory configuraion parameter: DB";
         return $c->{db} //= PJP::DBI->connect(@$conf);
 }

@@ -60,4 +60,8 @@ PJP::M::Index::Module->generate_and_save($pjp);
 PJP::M::BuiltinFunction->generate($pjp);
 PJP::M::PodFile->generate($pjp);
 
+if ($config->{master_db} and -e $config->{master_db} and $config->{slave_db}) {
+  system('cp ' . $config->{master_db} . ' ' . $config->{slave_db});
+}
+
 print $mode_name, "\n";

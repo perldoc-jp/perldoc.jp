@@ -25,34 +25,34 @@ our @FUNCTIONS = qw(
 );
 
 sub retrieve {
-	my ($class, $name) = @_;
-	return c->dbh->selectrow_array(q{SELECT version, html FROM func WHERE name=?}, {}, $name);
+        my ($class, $name) = @_;
+        return c->dbh->selectrow_array(q{SELECT version, html FROM func WHERE name=?}, {}, $name);
 }
 
 sub generate {
-	my ($class, $c) = @_;
+    my ($class, $c) = @_;
 
     my $path_info = PJP::M::Pod->get_latest_file_path('perlfunc');
     my ($path, $version) = @$path_info;
 
-	my $txn = $c->dbh->txn_scope();
-	$c->dbh->do(q{DELETE FROM func});
-	for my $name (@FUNCTIONS) {
-		my @dynamic_pod;
-		my $perldoc = Pod::Perldoc->new(opt_f => $name);
-		$perldoc->search_perlfunc([$path], \@dynamic_pod);
-		my $pod = join("", "=encoding euc-jp\n\n=over 4\n\n", @dynamic_pod, "=back\n");
-		$pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/func/$1>!g;
-		my $html = PJP::M::Pod->pod2html(\$pod);
-		$c->dbh->insert(
-			func => {
-				name => $name,
-				version => $version,
-				html => $html,
-			},
-		);
-	}
-	$txn->commit();
+    my $txn = $c->dbh_master->txn_scope();
+    $c->dbh_master->do(q{DELETE FROM func});
+    for my $name (@FUNCTIONS) {
+        my @dynamic_pod;
+        my $perldoc = Pod::Perldoc->new(opt_f => $name);
+        $perldoc->search_perlfunc([$path], \@dynamic_pod);
+        my $pod = join("", "=encoding euc-jp\n\n=over 4\n\n", @dynamic_pod, "=back\n");
+        $pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/func/$1>!g;
+        my $html = PJP::M::Pod->pod2html(\$pod);
+        $c->dbh_master->insert(
+                               func => {
+                                        name => $name,
+                                        version => $version,
+                                        html => $html,
+                                       },
+                              );
+    }
+    $txn->commit();
 }
 
 1;
