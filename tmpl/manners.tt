@@ -5,7 +5,8 @@
 Perlのドキュメントを翻訳する上での留意事項を書いています。翻訳したい方は、一度目を通していただけると良いかと思います。<br />
 特にプロジェクトに特化した内容ではありませんが、Japanized Perl Resources Project(通称JPRP)をベースにしています。また、<a href="http://search.cpan.org/~argrath/Pod-L10N-0.07/lib/Pod/L10N/Format.pod">Pod::L10N 対応フォーマット仕様</a>も参考にしています。<br />
 </p>
-<ul>
+
+<ul class="pod_toc">
 <li><a href="#dir">ディレクトリ構成</a></li>
 <li><a href="#abstract_pod">podの抽出方法</a></li>
 <li><a href="#charset">文字コード</h3></li>
@@ -20,6 +21,7 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#inro2translation">翻訳の報告</a></li>
 <li><a href="#see_also">JPRPの参考文書</a></li>
 </ul>
+
 <a name="dir"></a>
 <h2>ディレクトリ構成</h2>
 
