@@ -13,7 +13,7 @@ our @FUNCTIONS = qw(
   -S -b -c -t -u -g -k -T -B -M -A -C
   abs accept alarm atan2 bind binmode bless break caller chdir chmod chomp chop chown chr chroot close closedir connect
   continue cos crypt dbmclose dbmopen defined delete die do dump each endgrent endhostent endnetent endprotoent endpwent
-  endservent eof eval getprotoent getpwent getpwnam getpwuid getservbyname getservbyport getservent
+  endservent eof eval exec exit fork getprotoent getpwent getpwnam getpwuid getservbyname getservbyport getservent
   getsockname getsockopt glob gmtime goto grep hex import index int ioctl join keys kill last lc lcfirst length link
   listen local localtime lock log lstat m map mkdir msgctl msgget msgrcv msgsnd my next no oct open opendir ord order
   our pack package pipe pop pos precision print printf prototype push q qq qr quotemeta qw qx rand read readdir readline
@@ -21,7 +21,7 @@ our @FUNCTIONS = qw(
   semctl semget semop send setgrent sethostent setnetent setpgrp setpriority setprotoent setpwent setservent setsockopt shift
   shmctl shmget shmread shmwrite shutdown sin size sleep socket socketpair sort splice split sprintf sqrt srand stat state
   study sub substr symlink syscall sysopen sysread sysseek system syswrite tell telldir tie tied time times tr truncate uc
-  ucfirst umask undef unlink unpack unshift untie use utime values vec vector wait waitpid wantarray warn write y exit
+  ucfirst umask undef unlink unpack unshift untie use utime values vec vector wait waitpid wantarray warn write y
 );
 
 sub retrieve {
