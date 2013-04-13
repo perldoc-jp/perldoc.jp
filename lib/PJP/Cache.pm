@@ -5,38 +5,39 @@ use utf8;
 package PJP::Cache;
 use Cache::FileCache;
 use File::stat;
+use File::Spec;
 
 sub new {
-	my $class = shift;
-	bless {
-		cache => Cache::FileCache->new(),
-	}, $class;
+    my $class = shift;
+    bless {
+           cache => Cache::FileCache->new({cache_root => File::Spec->tmpdir() . '/perldoc.jp-file_cache/'}),
+          }, $class;
 }
 
 sub file_cache {
-	my ($self, $prefix, $file, $cb) = @_;
-	my $cache = $self->{cache};
-	my $key = "2:${prefix}::${file}";
+    my ($self, $prefix, $file, $cb) = @_;
+    my $cache = $self->{cache};
+    my $key = "2:${prefix}::${file}";
     $key .= rand() if $ENV{DEBUG};
-	my $data = $cache->get($key);
-	my $stat = stat($file) or die "Cannot stat $file: $!";
-	if ($data && $data->[0] eq $stat->mtime) {
-		return $data->[1];
-	} else {
-		my $out = $cb->();
-		$cache->set($key => [$stat->mtime, $out]);
-		return $out;
-	}
+    my $data = $cache->get($key);
+    my $stat = stat($file) or die "Cannot stat $file: $!";
+    if ($data && $data->[0] eq $stat->mtime) {
+        return $data->[1];
+    } else {
+        my $out = $cb->();
+        $cache->set($key => [$stat->mtime, $out]);
+        return $out;
+    }
 }
 
 sub get_or_set {
-	my ($self, $key, $cb, $xt) = @_;
+    my ($self, $key, $cb, $xt) = @_;
 
-	my $val = $self->{cache}->get($key);
-	return $val if defined $val;
+    my $val = $self->{cache}->get($key);
+    return $val if defined $val;
 
-	$val = $cb->();
-	$self->{cache}->set($key, $val, $xt || '1 day');
+    $val = $cb->();
+    $self->{cache}->set($key, $val, $xt || '1 day');
 }
 
 1;
