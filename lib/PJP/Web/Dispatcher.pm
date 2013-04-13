@@ -157,6 +157,12 @@ get '/func/*' => sub {
     my ($c, $p) = @_;
     my ($name) = @{$p->{splat}};
 
+    if (not PJP::M::BuiltinFunction->exists($name)) {
+        my $res = $c->show_error("'$name' は Perl の組み込み関数ではありません。");
+        $res->code(404);
+        return $res;
+    }
+
     my ($version, $html) = PJP::M::BuiltinFunction->retrieve($name);
     if ($version && $html) {
         return $c->render(
@@ -168,9 +174,39 @@ get '/func/*' => sub {
             },
         );
     } else {
-        my $res = $c->show_error("'$name' は Perl の組み込み関数ではありません。");
+        my $res = $c->show_error("'$name' は まだ翻訳されていません。");
         $res->code(404);
         return $res;
+    }
+};
+
+use PJP::M::BuiltinVariable;
+get '/variable/*' => sub {
+    my ($c, $p) = @_;
+    my ($name) = @{$p->{splat}};
+
+    if (not PJP::M::BuiltinVariable->exists($name)) {
+        my $res = $c->show_error("'$name' は Perl の組み込み変数ではありません。");
+        $res->code(404);
+        return $res;
+    }
+
+    my ($version, $html) = PJP::M::BuiltinVariable->retrieve($name);
+    if ($version && $html) {
+        return $c->render(
+            'pod.tt' => {
+                has_original => ($html =~m{class="original"} ? 1 : 0),
+                body         => mark_raw($html),
+                title        => "$name",
+                'PodVersion' => "perl-$version",
+            },
+        );
+    } else {
+        if (PJP::M::BuiltinVariable->exists($name)) {
+            my $res = $c->show_error("'$name' は まだ翻訳されていません。");
+            $res->code(404);
+            return $res;
+        }
     }
 };
 
@@ -316,6 +352,7 @@ my $display_pod = sub {
                 ();
             }
         };
+
         return $c->render(
             'pod.tt' => {
                 is_article   => ($path =~m{articles} ? 1 : 0),
@@ -326,10 +363,9 @@ my $display_pod = sub {
                 package      => $pod->{package},
                 description  => $pod->{description},
                 'PodVersion' => $pod->{distvname},
-                'title' =>
-                  "$pod->{package} - $pod->{description}",
-                repository => $pod->{repository},
-                path       => $pod->{path},
+                'title'      => "$pod->{package} - $pod->{description}",
+                repository   => $pod->{repository},
+                path         => $pod->{path},
             }
         );
     } else {
@@ -351,25 +387,22 @@ get '/perl*' => sub {
     return $c->redirect("/pod/perl$splat");
 };
 
-my $re = join('|', qw(
-  -r -w -x -o -R -W -X -O -e -z -s -f -d -l -p
-  -S -b -c -t -u -g -k -T -B -M -A -C
-  abs accept alarm atan bind binmode bless break caller chdir chmod chomp chop chown chr chroot close closedir connect
-  continue cos crypt dbmclose dbmopen defined delete die do dump each endgrent endhostent endnetent endprotoent endpwent
-  endservent eof eval bynumber getprotoent getpwent getpwnam getpwuid getservbyname getservbyport getservent
-  getsockname getsockopt glob gmtime goto grep hex import index int ioctl join keys kill last lc lcfirst length link
-  listen local localtime lock log lstat m map mkdir msgctl msgget msgrcv msgsnd my next no oct open opendir ord order
-  our pack package pipe pop pos precision print printf prototype push q qq qr quotemeta qw qx rand read readdir readline
-  readlink readpipe recv redo ref rename require reset return reverse rewinddir rindex rmdir s say scalar seek seekdir select
-  semctl semget semop send setgrent sethostent setnetent setpgrp setpriority setprotoent setpwent setservent setsockopt shift
-  shmctl shmget shmread shmwrite shutdown sin size sleep socket socketpair sort splice split sprintf sqrt srand stat state
-  study sub substr symlink syscall sysopen sysread sysseek system syswrite tell telldir tie tied time times tr truncate uc
-  ucfirst umask undef unlink unpack unshift untie use utime values vec vector wait waitpid wantarray warn write y
-));
-get "/{name:$re}" => sub {
-    my ($c, $p) = @_;
+# to avoid warning 'Complex regular subexpression recursion limit (32766) exceeded'
+foreach my $function_regexp (@PJP::M::BuiltinFunction::REGEXP) {
+    get "/{name:$function_regexp}" => sub {
+        my ($c, $p) = @_;
 
-    return $c->redirect("/func/$p->{name}");
+        return $c->redirect("/func/$p->{name}");
+    };
+}
+
+get '/{name:[A-Z-a-z][\w:]+}' => sub {
+    my ($c, $p) = @_;
+    if (my $path = PJP::M::PodFile->get_latest($p->{name})) {
+        return $c->redirect('/docs/' . $path);
+    }
+
+    return $c->redirect('/func/' . $p->{name});
 };
 
 1;

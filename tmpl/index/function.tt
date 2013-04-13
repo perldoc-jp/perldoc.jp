@@ -1,4 +1,5 @@
 [% WRAPPER 'layout.html' WITH description="Perl組込関数一覧"%]
-組込関数の翻訳です。「perldoc -f 関数名」で表示されるものの翻訳になります。
+代表的な組込関数の翻訳です。「perldoc -f 関数名」で表示されるものの翻訳になります。<br />
+完全な組込関数のリストは、<a href="/perlfunc">perfunc</a>を参照してください。<br />
 [% toc %]
 [% END %]

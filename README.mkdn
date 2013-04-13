@@ -29,7 +29,7 @@ Scss の生成は gem の Sass が必要なので
 
 して、
 
-    % sass --watch htdocs/static/css/main.scss:htdocs/static/css/main.css
+    % sass  --compass -l --style expanded --watch scss/main.scss:static/css/main.css scss/screen.scss:static/css/screen.css 
 
 してから変更してください。
 

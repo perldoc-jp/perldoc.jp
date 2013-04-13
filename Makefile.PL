@@ -10,6 +10,7 @@ requires 'Plack::Middleware::ReverseProxy';
 requires 'Time::Piece';
 requires 'Pod::Simple' => 3.16;
 requires 'Pod::Simple::XHTML';
+requires 'Pod::Functions';
 requires 'Log::Minimal';
 requires 'Cache::FileCache';
 requires 'CPAN::DistnameInfo';
@@ -19,6 +20,9 @@ requires 'Try::Tiny';
 requires 'DBD::SQLite';
 requires 'SQL::Maker' => 0.14;
 requires 'DBIx::TransactionManager';
+requires 'Regexp::Common';
+requires 'Regexp::Assemble';
+requires 'Text::Diff::FormattedHTML';
 requires(
 	'SQL::Interp' => 0,
 	'Carp::Clan' => 0,

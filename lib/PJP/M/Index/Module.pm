@@ -17,16 +17,7 @@ use version;
 use autodie;
 use PJP::M::Pod;
 use Data::Dumper;
-
-sub slurp {
-    if (@_==1) {
-        my ($stuff) = @_;
-        open my $fh, '<', $stuff or die "Cannot open file: $stuff";
-        do { local $/; <$fh> };
-    } else {
-        die "not implemented yet.";
-    }
-}
+use PJP::Util qw/slurp/;
 
 sub get {
     my ($class, $c) = @_;

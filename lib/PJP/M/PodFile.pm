@@ -11,6 +11,7 @@ use Log::Minimal;
 use File::Basename;
 use version;
 use PJP::M::Index::Article;
+use PJP::M::BuiltinFunction;
 
 sub slurp {
     my ($class, $path) = @_;
@@ -50,7 +51,7 @@ sub _version {
     $v =~ s{\-RC\d+$}{};
     my $version = eval { version->new($v) };
     if ($@) {
-      die $@ . "(args: $v)"
+      Carp::croak $@ . "(args: $v)";
     }
     return $version;
 }
@@ -171,6 +172,12 @@ sub generate_one_file {
                 $file,
                 sub {
                     my $html = PJP::M::Pod->pod2html($file);
+                    if ($file =~ m{/perlfunc\.pod$}) {
+                        foreach my $regexp (@PJP::M::BuiltinFunction::REGEXP) {
+                            $html =~ s{<code>($regexp)</code>}{<code><a href="/func/$1" target="_blank">$1</a></code>}g;
+                        }
+                        $html =~ s{<code>(qq|q|tr|y|m|s|qr|qw|qx)(///?)</code>}{<code><a href="/func/$1" target="_blank">$1$2</a></code>}g;
+                    }
                     my $relpath = abs2rel( $file, $base );
                     my ( $package, $description ) =
                       PJP::M::Pod->parse_name_section($file);
