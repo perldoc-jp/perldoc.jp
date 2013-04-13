@@ -17,6 +17,7 @@ use PJP::M::Pod;
 use PJP::M::PodFile;
 use Text::Diff::FormattedHTML;
 use Regexp::Common qw/URI/;
+use URI::Escape qw/uri_escape/;
 
 get '/' => sub {
     my $c = shift;
@@ -395,6 +396,12 @@ foreach my $function_regexp (@PJP::M::BuiltinFunction::REGEXP) {
         return $c->redirect("/func/$p->{name}");
     };
 }
+
+get "/{name:[\$\@\%].+}" => sub {
+    my ($c, $p) = @_;
+
+    return $c->redirect("/variable/" . uri_escape($p->{name}));
+};
 
 get '/{name:[A-Z-a-z][\w:]+}' => sub {
     my ($c, $p) = @_;

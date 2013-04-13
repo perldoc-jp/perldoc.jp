@@ -6,6 +6,7 @@ package PJP::M::BuiltinVariable;
 use PJP::M::Pod;
 use Pod::Perldoc;
 use Amon2::Declare;
+use Regexp::Assemble;
 use English ();
 
 # pod -u perlvar |grep '^X<'
