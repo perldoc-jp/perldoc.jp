@@ -7,7 +7,9 @@ use PJP::M::Pod;
 use Pod::Perldoc;
 use Amon2::Declare;
 use Regexp::Assemble;
-use constant FUNCTION_LIST_FILE => "functions.txt";
+use constant FUNCTION_LIST_FILE => ($ENV{PLACK_ENV} and $ENV{PLACK_ENV} eq 'deployment')
+                                   ? '/var/lib/jpa/perldoc.jp/code/functions.txt'
+                                   : 'functions.txt';
 use PJP::Util qw/slurp/;
 
 our @FUNCTIONS = sort split /\n/, slurp(FUNCTION_LIST_FILE);
@@ -89,9 +91,10 @@ sub generate {
                               );
     }
 
-    open my $fh, '>', FUNCTION_LIST_FILE . '.update' or die "Cannot open " . FUNCTION_LIST_FILE . ": $!";
+    open my $fh, '>', FUNCTION_LIST_FILE . '.update' or die "Cannot open " . FUNCTION_LIST_FILE . ".update: $!";
     print $fh join "\n", @functions;
     close $fh;
+    chmod 0644, FUNCTION_LIST_FILE . '.update' or die "Cannot chmod " . FUNCTION_LIST_FILE . ".update: $!";
     rename FUNCTION_LIST_FILE . '.update' => FUNCTION_LIST_FILE;
     $txn->commit();
 }
