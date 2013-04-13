@@ -17,7 +17,7 @@ our @VARIABLES = (qw{
   $^W ${^WARNING_BITS} $! %! $? $@ $* $[ $] $.}, '$#', '$,');
 
 my %VARIABLES;
-@VARIABLES{@VARIABLES, grep {s{^\*}{\$}} @English::COMPLETE_EXPORT} = ();
+@VARIABLES{@VARIABLES, map {s{^\*}{} ? ('$'. $_, '%' . $_, '@' . $_) : $_} @English::COMPLETE_EXPORT} = ();
 
 sub exists {
     my ($class, $name) = @_;
@@ -39,8 +39,13 @@ sub generate {
     $c->dbh_master->do(q{DELETE FROM var});
     for my $name (keys %VARIABLES) {
         my @dynamic_pod;
-        my $perldoc = Pod::Perldoc->new(opt_v => $name);
-        $perldoc->search_perlvar([$path], \@dynamic_pod);
+	eval {
+	    my $perldoc = Pod::Perldoc->new(opt_v => $name);
+	    $perldoc->search_perlvar([$path], \@dynamic_pod);
+	};
+	if (not @dynamic_pod) {
+	    delete $VARIABLES{$name};
+	}
 
         my $pod = join("", "=encoding euc-jp\n\n=over 4\n\n", @dynamic_pod, "=back\n");
         $pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/variable/$1>!g;
