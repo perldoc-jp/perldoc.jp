@@ -10,7 +10,6 @@ requires 'Plack::Middleware::ReverseProxy';
 requires 'Time::Piece';
 requires 'Pod::Simple' => 3.16;
 requires 'Pod::Simple::XHTML';
-requires 'Pod::Functions';
 requires 'Log::Minimal';
 requires 'Cache::FileCache';
 requires 'CPAN::DistnameInfo';
