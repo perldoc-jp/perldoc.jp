@@ -1,0 +1,4 @@
+[% WRAPPER 'layout.html' WITH description="Perl組込変数一覧"%]
+組込変数の翻訳です。以下を含んだ組込変数全般に関する説明は<a href="/perlvar">perlvar</a>を参照してください。<br />
+[% toc %]
+[% END %]

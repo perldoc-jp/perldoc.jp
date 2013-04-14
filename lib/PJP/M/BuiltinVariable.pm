@@ -41,10 +41,11 @@ sub generate {
 
     my @candidate = do
         {
-            my @_candidate;
+            my @_candidate = map {s{^\*}{} ? ('$'. $_, '%' . $_, '@' . $_) : $_} @English::COMPLETE_EXPORT;
             open my $fh, '<', $path or die "Cannot open $path: $!";
             while (<$fh>) {
-                push @_candidate, m{X<(.*?)>}g;;
+                push @_candidate, m{X<< (.*?) >>}g;
+                push @_candidate, m{X<(.*?)>}g;
             }
             close $fh;
             my %tmp;

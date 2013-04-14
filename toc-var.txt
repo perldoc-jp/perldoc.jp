@@ -1,0 +1,146 @@
+# 環境変数
+        *dummy_name = %ENV ;
+
+# The ground of all being. @ARG is deprecated (5.005 makes @_ lexical)
+
+        *ARG                                    = *_    ;
+   # manualy added
+        *dummy_name = *ARGV ;
+
+# Matching.
+
+        *LAST_PAREN_MATCH                       = *+    ;
+        *LAST_MATCH_START                       = *-{ARRAY} ;
+        *LAST_MATCH_END                         = *+{ARRAY} ;
+        *LAST_SUBMATCH_RESULT                   = *^N ;
+
+   # manualy added
+        *MATCH                          = *&    ;
+        *dummy_name = ${^MATCH} ;
+        *PREMATCH                       = *`    ;
+        *POSTMATCH                      = *'    ;
+
+	*dummy_name                     = *1 ;
+            *2                     = *1 ;
+            *3                     = *1 ;
+        *dummy_name = $^N ; 
+                  *dummy_name = $LAST_SUBMATCH_RESULT ;
+        *dummy_name = $^R ; 
+                  *dummy_name = $LAST_REGEXP_CODE_RESULT ;
+        *dummy_name = ${^RE_DEBUG_FLAGS} ;
+        *dummy_name = ${^RE_TRIE_MAXBUF} ;
+# Input.
+
+        *INPUT_LINE_NUMBER                      = *.    ;
+            *NR                                 = *.    ;
+        *INPUT_RECORD_SEPARATOR                 = */    ;
+            *RS                                 = */    ;
+
+# Output.
+
+        *OUTPUT_AUTOFLUSH                       = *|    ;
+        *OUTPUT_FIELD_SEPARATOR                 = *,    ;
+            *OFS                                = *,    ;
+        *OUTPUT_RECORD_SEPARATOR                = *\    ;
+            *ORS                                = *\    ;
+
+   # manualy added
+# PerlIO
+        *dummy_name = ${^OPEN} ;
+
+# Interpolation "constants".
+
+        *LIST_SEPARATOR                         = *"    ;
+        *SUBSCRIPT_SEPARATOR                    = *;    ;
+            *SUBSEP                             = *;    ;
+
+# Formats
+
+        *FORMAT_PAGE_NUMBER                     = *%    ;
+        *FORMAT_LINES_PER_PAGE                  = *=    ;
+        *FORMAT_LINES_LEFT                      = *-    ;
+        *FORMAT_NAME                            = *~    ;
+        *FORMAT_TOP_NAME                        = *^    ;
+        *FORMAT_LINE_BREAK_CHARACTERS           = *:    ;
+        *FORMAT_FORMFEED                        = *^L   ;
+
+# Error status.
+
+        *CHILD_ERROR                            = *?    ;
+        *dummy_name = $^CHILD_ERROR_NATIVE ;
+        *OS_ERROR                               = *!    ;
+            *ERRNO                              = *!    ;
+        *EXTENDED_OS_ERROR                      = *^E   ;
+        *EVAL_ERROR                             = *@    ;
+
+# Process info.
+
+        *PROCESS_ID                             = *$    ;
+            *PID                                = *$    ;
+        *REAL_USER_ID                           = *<    ;
+            *UID                                = *<    ;
+        *EFFECTIVE_USER_ID                      = *>    ;
+            *EUID                               = *>    ;
+        *REAL_GROUP_ID                          = *(    ;
+            *GID                                = *(    ;
+        *EFFECTIVE_GROUP_ID                     = *)    ;
+            *EGID                               = *)    ;
+        *PROGRAM_NAME                           = *0    ;
+
+   # manualy added
+# シグナル
+        *dummy_name = %SIG ;
+
+# Internals.
+
+        *PERL_VERSION                           = *^V   ;
+        *ACCUMULATOR                            = *^A   ;
+        *COMPILING                              = *^C   ;
+        *DEBUGGING                              = *^D   ;
+        *SYSTEM_FD_MAX                          = *^F   ;
+        *INPLACE_EDIT                           = *^I   ;
+        *PERLDB                                 = *^P   ;
+        *LAST_REGEXP_CODE_RESULT                = *^R   ;
+        *EXCEPTIONS_BEING_CAUGHT                = *^S   ;
+        *BASETIME                               = *^T   ;
+
+   # manualy added
+        *WARNING                                = *^W   ;
+
+        *dummy_name = ${^WARNING_BITS} ;
+        *EXECUTABLE_NAME                        = *^X   ;
+        *OSNAME                                 = *^O   ;
+
+   # manualy added
+        *dummy_name = ${^GLOBAL_PHASE} ;
+        *dummy_name = *^H ;
+        *dummy_name = $^M ;
+        *dummy_name = ${^TAINT} ;
+
+   # manualy added
+# エンコーディング
+       *dummy_name = ${^ENCODING} ;
+       *dummy_name = ${^UTF8CACHE} ;
+       *dummy_name = ${^UTF8LOCALE} ;
+       *dummy_name = ${^UNICODE} ;
+
+# Package
+       *dummy_name = @INC ;
+       *dummy_name = %INC ;
+
+# Win32
+        *dummy_name = ${^WIN32_SLOPPY_STAT} ;
+
+# 比較
+        *dummy_name = *a ;
+        *dummy_name = *b ;
+
+# Deprecated.
+
+       *ARRAY_BASE                             = *[    ;
+       *OFMT                                   = *#    ;
+       *OLD_PERL_VERSION                       = *]    ;
+
+   # manualy added
+       *dummy_name = ** ;
+

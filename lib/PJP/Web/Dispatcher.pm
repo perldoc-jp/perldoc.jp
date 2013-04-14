@@ -92,6 +92,16 @@ get '/index/function' => sub {
     });
 };
 
+get '/index/variable' => sub {
+    my $c = shift;
+
+    my $toc = PJP::M::TOC->render_variable($c);
+    return $c->render('index/variable.tt' => {
+        title => '組み込み変数',
+        toc   => $toc,
+    });
+};
+
 # モジュールの目次
 get '/index/module' => sub {
     my $c = shift;

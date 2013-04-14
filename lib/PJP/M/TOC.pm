@@ -7,6 +7,7 @@ use Text::Xslate::Util qw/html_escape mark_raw/;
 use File::stat;
 use Log::Minimal;
 use Pod::Functions;
+use HTML::Entities qw/encode_entities/;
 
 sub render {
     my ($class, $c) = @_;
@@ -98,33 +99,83 @@ sub render_function {
     mark_raw($out);
 }
 
-sub _render_function {
-        my ($class) = @_;
+my %var_comment2jp = (
+                      'The ground of all being. @ARG is deprecated (5.005 makes @_ lexical)'
+                      => '引数',
+                      'Matching.'                     => 'マッチング',
+                      'Input.'                        => '入力',
+                      'Output.'                       => '出力',
+                      'Interpolation "constants".'    => '補完定数',
+                      'Formats'                       => 'フォーマット',
+                      'Error status.'                 => 'エラーステータス',
+                      'Process info.'                 => 'プロセス情報',
+                      'Internals.'                    => '内部変数',
+                      'Deprecated.'                   => '廃止',
+                     );
 
-        open my $fh, '<:utf8', 'toc-func.txt' or die "Cannot open toc-func.txt: $!";
-        my $out;
-        while (<$fh>) {
-                chomp;
-                if (!/\S/) {
-                        next;
-                } elsif (/^\s*\#/) {
-                        next; # comment line
-                } elsif (/^\((.+)\)/) { # name
-                        $out .= sprintf("<h2>%s</h2>\n", html_escape($1));
-                } elsif (/^C</) { # link
-                        my @outs;
-                        my $line = $_;
-                        while ($line =~ s/C<([^>]+)>//) {
-                my ($url, $text) = ($1, $1);
-                $url =~ s!/+$!!; # s/// みたいなやつは s にリンクするべき
-                push @outs,
-                  sprintf( '<a href="/func/%s">%s</a>', html_escape($url), html_escape($text) );
+my %SKIP_NAME = (
+                 '@' => {'+' => 0},
+                );
+my %ENG_NAME;
+
+sub render_variable {
+    my ($class, $c) = @_;
+    my $out = '';
+    my $pod;
+    open my $fh, '<:utf8', 'toc-var.txt' or die "Cannot open toc-var.txt: $!";
+    local $/;
+    $pod = <$fh>;
+    close $fh;
+
+    my %already_done;
+
+  LINE:
+    while ($pod) {
+        $pod =~ s{^(.*?)\n}{}s;
+        my $line = $1;
+
+        next if not $line or $line =~ m{^\s+#};
+
+        if ($line =~ m{^# (.+)}) {
+            my $title;
+            $title = $var_comment2jp{$1} || $1;
+            $out .= "</ul>\n"  if $out;
+
+            $out .= "<h2>$title</h2>\n";
+            $out .= "<ul>\n";
+        } elsif ($line =~ m{^\s*\*([^\s]+)\s+=\s+([\*\$%@])([^\s]+)\s*;}s) {
+            my ($english_name, $_sigil, $name) = ($1, $2, $3);
+            my @alias;
+            push @alias, $english_name if $english_name ne 'dummy_name';
+
+            while ($pod =~ m{^ {10}\s*\*([^\s]+)\s+=\s+[\*\$%@]([^\s]+)\s*; *}s) {
+                my ($english_name, $name) = ($1, $2, $3);
+                $pod =~ s{^(.*?)\n}{}s;
+                push @alias, $english_name;
+            }
+            foreach my $sigil ($name =~s{\{ARRAY\}}{} ?  ('@') : $_sigil ne '*' ? ($_sigil) :('$','@','%')) {
+                next LINE if exists $SKIP_NAME{$sigil}{$name} and not $SKIP_NAME{$sigil}{$name}++;
+                next LINE if $already_done{$sigil. $name}++;
+
+                if (PJP::M::BuiltinVariable->exists($sigil . $name)) {
+                    $out .= sprintf '<li><a href="/variable/%s">%s</a>', URI::Escape::uri_escape($sigil . $name), encode_entities($sigil . $name);
+                    $out .= ' ... '  if @alias;
+                    foreach my $alias (@alias) {
+                        if ($ENG_NAME{$sigil}{$alias}) {
+                            $out .= encode_entities(" ${sigil}$ENG_NAME{$sigil}{$alias},");
+                        } elsif (PJP::M::BuiltinVariable->exists($sigil . $alias)) {
+                            $out .= encode_entities(" $sigil$alias,");
                         }
-                        $out .= join(", ", @outs) . "<br />\n";
+                    }
+                    $out =~s{,$}{};
+                    $out .= "</li>\n";
                 }
+            }
+        } else {
+            die "--$line--";
         }
-        mark_raw($out);
+    }
+    mark_raw($out);
 }
 
 1;
-
