@@ -12,6 +12,7 @@
     perlpacktut - pack と unpack のチュートリアル
     perlreftut - Mark によるリファレンスに関するとても短いチュートリアル
     perlretut - Perl の正規表現のチュートリアル
+    perlrequick - Perl 正規表現のクイックスタート
     perlthrtut - Perl におけるスレッドのチュートリアル
     perlunitut - Perl における Unicode のチュートリアル
     perlcheat - perl チートシート
@@ -75,6 +76,7 @@ XS
     perlxstut - XSUB を書くためのチュートリアル
     perlembed - C プログラムへの Perl の埋め込み方
     perlguts - Perl API の紹介
+    perlclib - 標準 C ライブラリ関数の内部的な代用品
 
 FAQ
 
