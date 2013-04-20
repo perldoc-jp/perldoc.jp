@@ -40,7 +40,7 @@ sub _render {
             $out .= sprintf("<h3>%s</h3><ul>\n", html_escape($_));
         } else {                        # main line
             s/^\s+//;
-            my ($pkg, $desc) = split /\s*-\s*/, $_;
+            my ($pkg, $desc) = split /\s*-\s*/, $_, 2;
             $out .= sprintf('<li><a href="/pod/%s">%s</a>', (html_escape($pkg))x2);
             if ($desc) {
                 $out .= sprintf(' - %s', html_escape($desc));
