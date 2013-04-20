@@ -28,7 +28,9 @@
             <input type="submit" value="diff" />
             </form>
         [% END %]
-            <div class="Source"><a href="[% c().req.uri() %].pod">Source</a></div>
+            [% IF ! c().req.path.match('^/func') && ! c().req.path.match('^/variable') %]
+              <div class="Source"><a href="[% c().req.uri() %].pod">Source</a></div>
+            [% END %]
             [% IF repository=="module-pod-jp" %]
             <div class="Edit"><a href="https://github.com/perldoc-jp/module-pod-jp/blob/master/docs/[% path %]">edit on github</a></div>
             [% END %]
