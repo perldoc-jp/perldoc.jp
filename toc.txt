@@ -4,6 +4,8 @@
     perlintro - Perl の概要
     perlrun - perl コマンドの実行とオプションについて
     perlpolicy - Perlコアにまつわるさまざまな方針、公約
+    perlcommunity - Perl コミュニティの概要
+    perlbook - Perl およびそれに関連する本
 
 チュートリアル
 
@@ -55,6 +57,9 @@
     perlport - 移植性のある Perl を書く
     perlpragma - ユーザープラグマの書き方
     perlre - Perl 正規表現
+    perlrecharclass - Perl 正規表現文字クラス
+    perlrebackslash - Perl 正規表現逆スラッシュシーケンスとエスケープ
+    perlreref - Perl の正規表現のリファレンス
     perldiag - さまざまな Perl 診断メッセージ
     perllexwarn - Perl のレキシカルな警告
     perlform - Perlフォーマット
@@ -62,7 +67,6 @@
     perlop - Perl の演算子と優先順位
     perlre - Perl 正規表現
     perlref - Perlのリファレンスとネストしたデータ構造
-    perlreref - Perl の正規表現のリファレンス
     perlsec - Perl のセキュリティ
     perlvar - Perl の特殊変数
 
@@ -94,7 +98,7 @@ FAQ
 更新履歴
 
     perlhist - Perl の歴史的記録
-    perldelta - perl v5.16.3 での変更点
+    perldelta - 最新のperlでの変更点(最新の翻訳されているperldelta)
     perl5162delta - perl v5.16.2 での変更点
     perl5161delta - perl v5.16.1 での変更点
     perl5160delta - perl v5.16.0 での変更点
@@ -122,27 +126,52 @@ FAQ
 
     strict - 安全ではないコンストラクトを制限する Perl プラグマ
     warnings - 選択的な警告を調整する Perl プラグマ
+    warnings::register - import 関数の警告
     autodie - 関数を、成功しなければ die する等価物に置き換える
+#    autodie::exception - 
+#    autodie::exception::system -
+#    autodie::hints - 
     autouse - 関数が使われるまでモジュールの読み込みを延期する
     base - コンパイル時に基底クラスとの ISA 関係を構築する
+    parent - コンパイル時に基底クラスとの ISA 関係を構築する
+#    attributes - サブルーチンや変数の属性を設定/取得する
     bigint - Perl 用の透過的な BigInteger 対応
     bignum - Perl 用の透過的な BigNumber 対応
     bigrat - Perl 用の透過的な BigNumber/BigRational 対応
-    charnames - \N{named} 文字列リテラルエスケープのための文字名を定義する
+#    blib - MakeMaker の、インストールされていないバージョンのパッケージを使う
+#    bytes - 文字単位ではなくバイト単位の意味論を強制する Perl プラグマ
+#    charnames - \N{named} 文字列リテラルエスケープのための文字名を定義する
     constant - 定数を宣言するための Perl プラグマ
+#    deprecate - 
     diagnostics - 詳細な警告診断メッセージを出力する
     encoding - 非 ascii や非 utf8 でスクリプトを書けるようにする
+    encoding::warnings - 暗黙のエンコーディング変換時の警告
     feature - 新しい構文上の機能を有効にするプラグマ
+#    fields - コンパイル時のクラスフィールド
+    filetest - ファイルテスト権限演算子を制御する Perl プラグマ
+    if - 条件を満たした時にだけ Perl モジュールを use する
+#    inc::latest - 
     integer - 浮動小数点ではなく整数算術を使うための Perl プラグマ
+#    less - より少ない何かを要求する
+    lib - コンパイル時に @INC を操作する
+    locale - 組み込み演算子で POSIX ロケールを使う/使わないための Perl プラグマ
     mro - メソッド解決順序(Method Resolution Order)
     open - 入出力のためにデフォルトのPerlIOレイヤセットするためのPerlのプラグマ
-    open - 入出力のためのデフォルトの PerlIO 層をセットするための perl プラグマ
+    ops - コンパイル時に安全でない操作を制限する Perl プラグマ
     overload - Perl の演算子のオーバーロードを行うパッケージ
+#    overload::numbers - 
+    overloading - レキシカルにオーバーロードを制御する perl プラグマ
+    re - 正規表現の振る舞いを変えるための Perl プラグマ
+    sigtrap - 単純なシグナルハンドリングを有効にするための Perl プラグマ
+    subs - サブルーチンの名前を先行宣言するための Perl プラグマ
     threads - インタプリタスレッドの使用を可能にするPerl拡張
+    threads::shared - スレッド間でデータ構造を共有するためのPerl拡張
     utf8 - ソースコード内に、UTF-8(か、UTF-EBCDIC)を有効/無効にするためのプラグマ
+    vars - 大域変数名を先行宣言するための Perl プラグマ (古いもの)
+    vmsish - VMS 特有の言語機能を制御するための Perl プラグマ
 
 標準添付モジュール
 
     AutoLoader - 要求に応じてのみ、サブルーチンを読み込む。
-    Carp - 
+#    Carp - モジュールのための warn と die の代替
     CGI - 簡単なCGI（Common Gateway Interface）クラス
