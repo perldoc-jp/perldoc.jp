@@ -66,20 +66,20 @@ sub get_latest {
         my ($class, $package) = @_;
 
         my $c = c();
+        my ($where_operator, $search_package) = $package eq 'perldelta' ? ('like', 'perl%delta') : ('=', $package);
+        my %sort_tmp;
     my @versions =
-      map  { $_->[0] }
-      reverse sort { $a->[1] <=> $b->[1] }
-      map  { [ $_, eval { version->parse($_) } || 0 ] } map { @$_ } @{
-        $c->dbh->selectall_arrayref( q{SELECT distvname FROM pod WHERE package=?},
-            {}, $package )
+      sort  { ($sort_tmp{$b->[0]} ||= (eval { version->parse($b->[0]) } || 0)) <=> ($sort_tmp{$a->[0]} ||= (eval {version->parse($a->[0])} || 0)) } @{
+        $c->dbh->selectall_arrayref( qq{SELECT distvname,package FROM pod WHERE package $where_operator ?},
+            {}, $search_package )
       };
         unless (@versions) {
-                infof("Any versions not found in database: %s", $package);
+                infof("Any versions not found in database: %s", $search_package);
                 return undef;
         }
 
         my($path) = $c->dbh->selectrow_array(
-                q{SELECT path FROM pod WHERE package=? AND distvname=?}, {}, $package, $versions[0]
+                q{SELECT path FROM pod WHERE package=? AND distvname=?}, {}, $versions[0]->[1], $versions[0]->[0]
         );
         return $path;
 }
