@@ -92,7 +92,9 @@ FAQ
 更新履歴
 
     perlhist - Perl の歴史的記録
-    perldelta - perl v5.16.1 での変更点
+    perldelta - perl v5.16.3 での変更点
+    perl5162delta - perl v5.16.2 での変更点
+    perl5161delta - perl v5.16.1 での変更点
     perl5160delta - perl v5.16.0 での変更点
     perl5142delta - perl v5.14.2 での変更点
     perl5141delta - perl v5.14.1 での変更点
