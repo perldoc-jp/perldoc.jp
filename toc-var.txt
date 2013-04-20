@@ -9,9 +9,9 @@
 
 # Matching.
 
-        *LAST_PAREN_MATCH                       = *+    ;
         *LAST_MATCH_START                       = *-{ARRAY} ;
         *LAST_MATCH_END                         = *+{ARRAY} ;
+        *LAST_PAREN_MATCH                       = *+    ;
         *LAST_SUBMATCH_RESULT                   = *^N ;
 
    # manualy added
