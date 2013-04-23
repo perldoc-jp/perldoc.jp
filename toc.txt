@@ -134,7 +134,7 @@ FAQ
     autouse - 関数が使われるまでモジュールの読み込みを延期する
     base - コンパイル時に基底クラスとの ISA 関係を構築する
     parent - コンパイル時に基底クラスとの ISA 関係を構築する
-#    attributes - サブルーチンや変数の属性を設定/取得する
+    attributes - サブルーチンや変数の属性を設定/取得する
     bigint - Perl 用の透過的な BigInteger 対応
     bignum - Perl 用の透過的な BigNumber 対応
     bigrat - Perl 用の透過的な BigNumber/BigRational 対応
