@@ -38,7 +38,7 @@ sub recent_data {
   }em;
 
   foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA module-pod-jp/) {
-      foreach my $file (File::Find::Rule->file()->name('*.pod')->in("$assets_dir$repos")) {
+      foreach my $file (File::Find::Rule->file()->name(qr/\.(pod|html|md)$/)->in("$assets_dir$repos")) {
           my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date' $file} or next;
           my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
           if (not $uniq{$date . $time}{$file}++) {
@@ -67,7 +67,7 @@ sub _file2name {
     if ($name =~ s{^docs/modules/(.+?)-[\d\._]+(?:[-\w]+)?/(?:lib/)?}{}) {
         $in = $1;
         $in =~s{-}{::};
-    } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)\.(?:pod|html)$}{$2}) {
+    } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)\.(?:pod|html|md)$}{$2}) {
         $in = $1;
     } elsif ($name =~ s{^docs/(perl|core)/[^/]+/}{}) {
         $in = 'perl';
