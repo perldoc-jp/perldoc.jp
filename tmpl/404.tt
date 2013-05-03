@@ -1,5 +1,11 @@
 [% WRAPPER 'layout.html' WITH title = '404 Not Found' %]
-
-[% message || '該当のページは見つかりませんでした。' %]
-
+[% IF is_hash_ref(message) && message.package %]
+   [% message.package %]はみつかりませんでした。
+   <div>
+   <a href="http://search.cpan.org/dist/[% message.package.replace('::','-') %]">CPANで見る</a><br />
+   <a href="http://metacpan.org/module/[% message.package %]">MetaCPANで見る</a>
+   </div>
+[% ELSE %]
+   [% message || '該当のページは見つかりませんでした。' %]
+[% END %]
 [% END %]

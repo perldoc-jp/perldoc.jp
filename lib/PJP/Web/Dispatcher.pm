@@ -157,7 +157,7 @@ get '/pod/*' => sub {
     );
     unless ($path) {
         warnf("the path is not found in database: %s", $package);
-        return $c->res_404();
+        return $c->res_404({package => $package});
     }
     # my $is_old = $path !~ /delta/ && eval { version->parse($version) } < eval { version->parse("5.8.5") };
 
