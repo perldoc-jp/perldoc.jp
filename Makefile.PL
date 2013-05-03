@@ -22,6 +22,7 @@ requires 'DBIx::TransactionManager';
 requires 'Regexp::Common';
 requires 'Regexp::Assemble';
 requires 'Text::Diff::FormattedHTML';
+requires 'Text::Markdown';
 requires(
 	'SQL::Interp' => 0,
 	'Carp::Clan' => 0,

@@ -12,6 +12,7 @@ use File::Basename;
 use version;
 use PJP::M::Index::Article;
 use PJP::M::BuiltinFunction;
+use Text::Markdown;
 
 sub slurp {
     my ($class, $path) = @_;
@@ -59,7 +60,14 @@ sub _version {
 sub other_versions {
         my ($class, $package) = @_;
         my $c = c();
-        sort { _version($b->{distvname}) <=> _version($a->{distvname}) } @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
+        if ($package =~ m{^perl.*?delta$}) {
+            sort { _version($b->{distvname}) <=> _version($a->{distvname}) }
+              grep {$_->{package} =~ m{^perl.*?delta$}}
+                @{$c->dbh->selectall_arrayref(q{SELECT distvname, path, package FROM pod WHERE package like 'perl%delta'}, {Slice => {}})};
+        } else {
+            sort { _version($b->{distvname}) <=> _version($a->{distvname}) }
+              @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
+        }
 }
 
 sub get_latest {
@@ -144,7 +152,7 @@ sub generate {
                 my $repository = $base;
                 my $extention_exp;
                 if ($repository =~ s{^.+?/assets/}{}) {
-                    $extention_exp = qr/\.(pod|html)$/;
+                    $extention_exp = qr/\.(pod|html|md)$/;
                 } else {
                     $extention_exp = '*.pod';
                 }
@@ -156,6 +164,8 @@ sub generate {
                 for my $file (@files) {
                     if ($file =~ m{\.pod$}) {
                         $class->generate_one_file($c, $file, $base, $repository);
+                      } elsif ($file =~ m{\.md$}) {
+                        $class->generate_one_file_md($c, $file, $base, $repository);
                     } else {
                         $class->generate_one_file_html($c, $file, $base, $repository);
                     }
@@ -243,5 +253,40 @@ sub generate_one_file_html {
                 },
         );
 }
+
+# it is not pod, but md ...
+sub generate_one_file_md {
+        my ($class, $c, $file, $base, $repository) = @_;
+        infof("Processing: %s", $file);
+        my $args = $c->cache->file_cache(
+                "path:26",
+                $file,
+                sub {
+                    my $md_src = PJP::M::Index::Article::slurp($file);
+                    my $relpath = abs2rel( $file, $base );
+                    my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.md$};
+
+                    $package or die "cannot get package name: $relpath";
+
+                    my $md = Text::Markdown->new;
+                    my $html = $md->markdown($md_src);
+
+                    $distvname =~ s!/.+!!;
+                    +{
+                        path        => $relpath,
+                        package     => $package,
+                        distvname   => $distvname,
+                        html        => $html,
+                    };
+                }
+        );
+        $c->dbh_master->replace(
+                pod => +{
+                        repository => $repository,
+                        %$args
+                },
+        );
+}
+
 1;
 

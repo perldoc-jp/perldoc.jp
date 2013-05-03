@@ -18,6 +18,7 @@ use PJP::M::PodFile;
 use Text::Diff::FormattedHTML;
 use Regexp::Common qw/URI/;
 use URI::Escape qw/uri_escape/;
+use Text::Markdown;
 
 get '/' => sub {
     my $c = shift;
@@ -327,6 +328,34 @@ get '/docs/{path:articles/.+\.html}' => sub {
           "";
       }
     }gsie;
+
+    return $c->render('pod.tt',
+                      {
+                       is_article   => 1,
+                       has_original => ($html =~ m{class="original"} ? 1 : 0),
+                       body         => mark_raw( $html ),
+                       distvname    => $pod->{distvname},
+                       package      => $pod->{package},
+                       description  => $abstract,
+                       'PodVersion' => $pod->{distvname},
+                       'title'      => Encode::decode('utf8', $title . ' - ' . $pod->{package}),
+                       repository   => $pod->{repository},
+                       path         => $pod->{path},
+                      }
+                     );
+};
+
+get '/docs/{path:articles/.+\.md}' => sub {
+    my ($c, $p) = @_;
+    my $pod = PJP::M::PodFile->retrieve($p->{path}) // return $c->res_404();
+    my $src  = PJP::M::PodFile->slurp($p->{path})   // return $c->res_404();
+
+    my ($title, $abstract) = $c->abstract_title_description_from_md($src);
+    my $md = Text::Markdown->new;
+    my $html = $md->markdown($src);
+
+    $html =~ s{^.*<(?:body)[^>]*>}{}si;
+    $html =~ s{</(?:body)>.*$}{}si;
 
     return $c->render('pod.tt',
                       {

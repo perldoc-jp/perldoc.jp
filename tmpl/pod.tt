@@ -20,19 +20,31 @@
         [% IF ! is_article AND others AND others.size() > 0 %]
             <div class="OtherVersions">
             Other versions:<br />
-            [% FOR v IN others %]
-                <a href="/docs/[% v.path %]">[% v.distvname %]</a><br />
+            [% IF package.match('^perl.*delta$') %]
+              [% FOR v IN others %]
+                  <a href="/docs/[% v.path %]">[% v.distvname %] - [% v.package %]</a><br />
+              [% END %]
+            </div>
+            [% ELSE %]
+              [% FOR v IN others %]
+                  <a href="/docs/[% v.path %]">[% v.distvname %]</a><br />
+              [% END %]
             [% END %]
-            </div><form action="/docs/[% path %]/diff">
-            <select name="target">[% FOR v IN others %]<option value="[% v.path %]">[% v.distvname  | replace('^[\w:-]+?-(?=\d+)') %]</option>[% END %]</select>
-            <input type="submit" value="diff" />
-            </form>
+            [% IF ! package.match('^perl.*delta$') %]
+              </div><form action="/docs/[% path %]/diff">
+              <select name="target">[% FOR v IN others %]<option value="[% v.path %]">[% v.distvname  | replace('^[\w:-]+?-(?=\d+)') %]</option>[% END %]</select>
+              <input type="submit" value="diff" />
+              </form> 
+            [% END %]
         [% END %]
             [% IF ! c().req.path.match('^/func') && ! c().req.path.match('^/variable') %]
               <div class="Source"><a href="[% c().req.uri() %].pod">Source</a></div>
             [% END %]
             [% IF repository=="module-pod-jp" %]
-            <div class="Edit"><a href="https://github.com/perldoc-jp/module-pod-jp/blob/master/docs/[% path %]">edit on github</a></div>
+            <div class="Edit"><a target="_blank" href="https://github.com/perldoc-jp/module-pod-jp/blob/master/docs/[% path %]">edit on github</a></div>
+            <div><a target="_blank" href="https://github.com/perldoc-jp/module-pod-jp/commits/master/docs/[% path %]">Git log on github</a></div>
+            [% ELSE %]
+            <div><a target="_blank"  href="http://sourceforge.jp/cvs/view/perldocjp/docs/[% path %]?view=log">CVS log on sf.jp</a></div>
             [% END %]
             [% IF has_original %]
             <script>

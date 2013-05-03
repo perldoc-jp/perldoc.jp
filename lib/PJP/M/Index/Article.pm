@@ -94,7 +94,7 @@ sub _generate {
         next if $e =~ /^CVS$/;
 
         my (@files) = File::Find::Rule->file()
-            ->name(qr/\.(pod|html)$/)
+            ->name(qr/\.(pod|html|md)$/)
             ->in("$base/$e");
 
         my $is_pod;
@@ -106,6 +106,10 @@ sub _generate {
                 $is_pod = 0;
                 ($package, $dist) = ($1, $2);
                 ($dist, $abstract) = $c->abstract_title_description(scalar slurp($file));
+            } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.md$}) {
+                $is_pod  = 0;
+                ($package, $dist) = ($1, $2);
+                ($dist, $abstract) = $c->abstract_title_description_from_md(scalar slurp($file));
             } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
                 $is_pod  = 1;
                 ($package, $dist) = ($1, $2);

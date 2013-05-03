@@ -15,7 +15,8 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#code_translation">コード部分の翻訳</h3></li>
 <li><a href="#head1_translation">=head1の翻訳</a></li>
 <li><a href="#item_translation">=itemの翻訳</a></li>
-<li><a href="#html">HTMLの翻訳についての特別な処理</a></li>
+<li><a href="#html">HTML形式の翻訳についての特別な処理</a></li>
+<li><a href="#md">Markdown形式の翻訳についての特別な処理</a></li>
 <li><a href="#info">連絡先の記述</a></li>
 <li><a href="#info2author">翻訳することについての報告</a></li>
 <li><a href="#inro2translation">翻訳の報告</a></li>
@@ -38,10 +39,11 @@ docs/modules/モジュール名-バージョン/
 <p>
 
 <h4>その他</h3>
-pod / html いずれでも構いません。以下のように配置してください。
+pod / html / md いずれでも構いません。以下のように配置してください。
 <pre>
 docs/articles/perl/名前.pod
 docs/articles/ドメイン/パス/ファイル名.html
+docs/articles/ドメイン/パス/ファイル名.md
 </pre>
 <p>
 具体的には、以下のようになります。
@@ -244,9 +246,9 @@ original sentence.
 </pre>
 
 <a name="html"></a>
-<h2>HTMLの翻訳についての特別な処理</h2>
+<h2>HTML形式の翻訳についての特別な処理</h2>
 <p>
-perldoc.jpでは、HTMLの翻訳の場合、以下の処理を行っています。
+perldoc.jpでは、HTML形式の翻訳の場合、以下の処理を行っています。
 </p>
 <h3>タイトル/概要の抜き出し</h3>
 <p>
@@ -266,6 +268,20 @@ JavaScript, style, classは削除されます。以下の class については�
 原著者のポリシーなどで、perldoc.jp 上にホスト出来ず、原著者のサイトでホストしたいといった要望がある場合に、使ってください。<br />
 翻訳文を表示する代わりに、指定のURLへリダイレクトします。
 </p>
+
+<a name="md"></a>
+<h2>Markdown形式の翻訳についての特別な処理</h2>
+
+<p>
+perldoc.jpでは、Markdown形式の翻訳の場合、以下の処理を行っています。
+</p>
+<h3>タイトル/概要の抜き出し</h3>
+<p>
+タイトルは、最初の見出しから、概要は「翻訳」という文字のある最初の見出しがあれば、それに続く文章を概要とします。
+「翻訳」という文字が含まれる見出しがない場合は、最初の見出しに続く文章を概要とします。
+もし、最初の見出しに「翻訳」という文字が含まれていた場合は、タイトルはその次の見出しのものを取得します。
+</p>
+
 <a name="info"></a>
 
 <h2>連絡先の記述</h2>
