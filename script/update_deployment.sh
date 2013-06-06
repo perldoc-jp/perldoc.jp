@@ -1,5 +1,4 @@
 #!/bin/sh
 
 cd /var/lib/jpa/perldoc.jp/code;
-PERL='/var/lib/jpa/perl5/perls/perl-5.14.2/bin/perl -Mlib=./extlib/lib/perl5 -Ilib'
-PLACK_ENV=deployment $PERL script/update.pl
+PLACK_ENV=deployment ./script/carton.sh script/update.pl
