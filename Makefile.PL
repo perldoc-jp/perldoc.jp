@@ -3,6 +3,8 @@ all_from "lib/PJP.pm";
 license 'perl';
 
 tests 't/*.t t/*/*.t t/*/*/*.t';
+
+# XXX Use Module::Install::CPANFile or something
 requires 'Amon2';
 requires 'Text::Xslate';
 requires 'Text::Xslate::Bridge::TT2Like';

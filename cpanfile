@@ -1,0 +1,28 @@
+requires 'Amon2';
+requires 'Text::Xslate';
+requires 'Text::Xslate::Bridge::TT2Like';
+requires 'Plack::Middleware::ReverseProxy';
+requires 'Time::Piece';
+requires 'Pod::Simple' => 3.16;
+requires 'Pod::Simple::XHTML';
+requires 'Log::Minimal';
+requires 'Cache::FileCache';
+requires 'CPAN::DistnameInfo';
+requires 'LWP::UserAgent';
+requires 'URI::Escape';
+requires 'Try::Tiny';
+requires 'DBD::SQLite';
+requires 'SQL::Maker' => 0.14;
+requires 'DBIx::TransactionManager';
+requires 'Regexp::Common';
+requires 'Regexp::Assemble';
+requires 'Text::Diff::FormattedHTML';
+requires 'Text::Markdown';
+requires 'SQL::Interp';
+requires 'Carp::Clan';
+requires 'JSON';
+requires 'File::Find::Rule';
+requires 'Module::Find';
+requires 'Server::Starter';
+requires 'Starlet';
+
