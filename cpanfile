@@ -25,4 +25,5 @@ requires 'File::Find::Rule';
 requires 'Module::Find';
 requires 'Server::Starter';
 requires 'Starlet';
-
+requires 'parent';
+requires 'XML::RSS';
