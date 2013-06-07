@@ -27,3 +27,5 @@ requires 'Server::Starter';
 requires 'Starlet';
 requires 'parent';
 requires 'XML::RSS';
+requires 'Web::Scraper';
+requires 'JSON::XS';
