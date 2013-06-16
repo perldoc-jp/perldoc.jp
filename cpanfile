@@ -29,3 +29,5 @@ requires 'parent';
 requires 'XML::RSS';
 requires 'Web::Scraper';
 requires 'JSON::XS';
+requires 'LWP::UserAgent::WithCache';
+requires 'HTML::Entities';
