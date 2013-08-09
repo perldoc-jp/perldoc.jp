@@ -124,7 +124,7 @@ get '/index/module' => sub {
         'layout.html' => {
             title => '翻訳済モジュール',
             content => mark_raw($content),
-            description => '翻訳されたモジュールの一覧',
+            description => '翻訳されたPerlモジュールの一覧',
         }
     );
 };

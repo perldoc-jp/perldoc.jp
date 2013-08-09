@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' WITH title = en2ja.$category || category description = (en2ja.$category || category) _ 'カテゴリ内の翻訳されたモジュール一覧' header_title = en2ja.$category _ 'カテゴリ内の翻訳済みモジュール一覧' %]
+[% WRAPPER 'layout.html' WITH title = en2ja.$category || category description = (en2ja.$category || category) _ 'カテゴリ内の翻訳されたモジュール一覧' header_title = en2ja.$category _ 'カテゴリ内の翻訳済みPerlモジュール一覧' %]
 
 <div class="BreadList">
     <a href="/category">カテゴリ一覧</a> &gt; [% en2ja.$category || category %]
