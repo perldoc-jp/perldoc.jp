@@ -274,6 +274,8 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
 
     my $pod = PJP::M::PodFile->retrieve($origin);
 
+    return $c->res_404() if $origin =~m{perl[\w-]*delta\.pod} or $target =~m{perl[\w-]*delta\.pod};
+
     my $origin_content = PJP::M::PodFile->slurp($origin) // return $c->res_404();
     my $target_content = PJP::M::PodFile->slurp($target) // return $c->res_404();
 
