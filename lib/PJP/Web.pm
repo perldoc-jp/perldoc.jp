@@ -48,7 +48,28 @@ sub show_error {
 
 sub res_404 {
     my ($c, $msg) = @_;
-    $c->render('404.tt', {message => $msg});
+    $c->render_with_status(404, '404.tt', {message => $msg});
+}
+
+sub render_with_status {
+    my $self   = shift;
+    my $status = shift;
+    my $html = $self->create_view()->render(@_);
+
+    for my $code ($self->get_trigger_code('HTML_FILTER')) {
+        $html = $code->($self, $html);
+    }
+
+    $html = $self->encode_html($html);
+
+    return $self->create_response(
+        $status,
+        [
+            'Content-Type'   => $self->html_content_type,
+            'Content-Length' => length($html)
+        ],
+        $html,
+    );
 }
 
 sub show_403 {

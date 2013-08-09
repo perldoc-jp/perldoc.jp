@@ -4,7 +4,7 @@
         <div class="BreadList">
             [% IF origin.match('^perl')%]
               <a href="/docs/perl/[% distvname %]/[% package %].pod">[% package %]</a> &gt;
-            [% ELSE %]
+            [% ELSIF distvname %]
               <a href="/docs/modules/[% distvname %]/[% package %].pod">[% distvname %]</a> &gt;
             [% END %]
             [% target.replace('^[\w/-]+?[-/](?=\d)').replace('(?<=\d)/.+\.pod') %]
@@ -18,7 +18,22 @@
         の差分
         </h1>
 
-        [% diff %]
+	[% SWITCH(error) %]
+	[% CASE 'timeout' %]
+  	  この差分の取得は時間がかかるため、キャンセルされました。<br />
+	[% CASE 'no_pod' %]
+  	  存在しないpodです。<br />
+	[% CASE 'different_file' %]
+          ファイル名が違うpodの差分は取得できません。<br />
+	[% CASE 'perldelta' %]
+  	  perldeltaの差分は表示できません。<br />
+        [% CASE DEFAULT %]
+          [% IF diff %]
+            [% diff %]
+          [% ELSE %]
+            エラー([% error %])が発生しました。<br />
+          [% END %]
+        [% END %]
 </div>
 
 [% END %]

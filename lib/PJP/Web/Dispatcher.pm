@@ -15,7 +15,6 @@ use PJP::M::Index::Module;
 use PJP::M::Index::Article;
 use PJP::M::Pod;
 use PJP::M::PodFile;
-use Text::Diff::FormattedHTML;
 use Regexp::Common qw/URI/;
 use URI::Escape qw/uri_escape/;
 use Text::Markdown;
@@ -249,7 +248,7 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
 };
 
 # .pod.pod の場合は生のソースを表示する
-get '/docs/{path:(modules|perl|articles)/.+\.(pod|html)}.pod' => sub {
+get '/docs/{path:(?:modules|perl|articles)/.+\.(?:pod|html)}.pod' => sub {
     my ($c, $p) = @_;
 
     my $content = PJP::M::PodFile->slurp($p->{path}) // return $c->res_404();
@@ -271,47 +270,19 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     my ($c, $p) = @_;
     my $origin = $p->{path};
     my $target = $c->req->param('target');
+    my $diff_info = PJP::M::Pod->diff($origin, $target);
 
-    my $pod = PJP::M::PodFile->retrieve($origin);
+    $diff_info->{origin} = $origin;
+    $diff_info->{target} = $target;
 
-    return $c->res_404() if $origin =~m{perl[\w-]*delta\.pod} or $target =~m{perl[\w-]*delta\.pod};
-
-    my $origin_content = PJP::M::PodFile->slurp($origin) // return $c->res_404();
-    my $target_content = PJP::M::PodFile->slurp($target) // return $c->res_404();
-
-    my ($origin_charset) = ($origin_content =~ /=encoding\s+(euc-jp|utf-?8)/);
-        $origin_charset //= 'utf-8';
-    my ($target_charset) = ($target_content =~ /=encoding\s+(euc-jp|utf-?8)/);
-        $target_charset //= 'utf-8';
-
-    $origin_content = Encode::decode($origin_charset, $origin_content);
-    $target_content = Encode::decode($target_charset, $target_content);
-
-    my $diff;
-    eval {
-      local $SIG{ALRM} = sub { die "diff timeout" };
-      alarm 20;
-      $diff = diff_strings { vertical => 1 }, $target_content, $origin_content;
-      alarm 0;
-    };
-
-    my %view_data = (
-		     origin    => $origin,
-		     target    => $target,
-		     package   => $pod->{package},
-		     distvname => $pod->{distvname},
-		    );
-
-    if ($@) {
-	warn "diff timeout: $origin $target";
-	$c->render('diff_timeout.tt', \%view_data);
+    if (my $error = $diff_info->{error}) {
+	my $status = 404;
+	if ($error eq 'timeout') {
+	    $status = 500;
+	}
+	return $c->render_with_status($status, 'diff.tt', $diff_info);
     } else {
-	return $c->render('diff.tt',
-			  {
-			   diff      => mark_raw( $diff ),
-			   %view_data
-			  }
-			 );
+	return $c->render('diff.tt', $diff_info);
     }
 };
 
@@ -437,7 +408,7 @@ get '/docs/perl/{path:.[^/]+\.pod}' => sub { # perl
     return $display_pod->($c, {path => $pod->{path}});
 };
 
-get '/docs/{path:(modules|perl|articles)/.+\.pod}' => $display_pod;
+get '/docs/{path:(?:modules|perl|articles)/.+\.pod}' => $display_pod;
 
 get '/perl*' => sub {
     my ($c, $p) = @_;

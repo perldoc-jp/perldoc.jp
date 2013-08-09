@@ -9,6 +9,7 @@ use Text::Xslate::Util qw/mark_raw html_escape/;
 use Encode ();
 use HTML::Entities ();
 use Amon2::Declare;
+use Text::Diff::FormattedHTML ();
 
 sub parse_name_section {
     my ($class, $stuff) = @_;
@@ -234,6 +235,53 @@ sub get_latest_file_path {
             qq{\n\n<div class="pod_content_body">$output\n\n</div>};
         @{ $self->{'output'} } = ();
     }
+}
+
+sub diff {
+    my ($self, $origin, $target) = @_;
+
+    if ($origin =~m{perl[\w-]*delta\.pod} or $target =~m{perl[\w-]*delta\.pod}) {
+        return {error => 'perldelta'};
+    }
+
+    my ($origin_pod_name) = $origin =~ m{([^/]+\.pod)};
+    my ($target_pod_name) = $target =~ m{([^/]+\.pod)};
+
+    if ($origin_pod_name ne $target_pod_name) {
+        return {error => 'different_file'};
+    }
+
+    my $pod = PJP::M::PodFile->retrieve($origin);
+
+    my $origin_content = PJP::M::PodFile->slurp($origin) // return {%$pod, error => 'no_pod'};
+    my $target_content = PJP::M::PodFile->slurp($target) // return {%$pod, error => 'no_pod'};
+
+    my ($origin_charset) = ($origin_content =~ /=encoding\s+(euc-jp|utf-?8)/);
+        $origin_charset //= 'utf-8';
+    my ($target_charset) = ($target_content =~ /=encoding\s+(euc-jp|utf-?8)/);
+        $target_charset //= 'utf-8';
+
+    $origin_content = Encode::decode($origin_charset, $origin_content);
+    $target_content = Encode::decode($target_charset, $target_content);
+
+    my $diff;
+    local $@;
+    eval {
+      local $SIG{ALRM} = sub { die "diff timeout" };
+      # should be lesser second
+      alarm 20;
+      $diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
+      alarm 0;
+    };
+    if ($@ =~m{diff timeout}) {
+	# should record time out combination and generate by batch program.
+        warn "diff timeout: $origin $target";
+        return {%$pod, error => 'timeout'};
+    } elsif ($@) {
+	die $@;
+    }
+
+    return { %$pod, diff => mark_raw( $diff ) };
 }
 
 1;
