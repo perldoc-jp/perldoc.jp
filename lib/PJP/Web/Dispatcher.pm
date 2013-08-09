@@ -287,16 +287,32 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     $origin_content = Encode::decode($origin_charset, $origin_content);
     $target_content = Encode::decode($target_charset, $target_content);
 
-    my $diff = diff_strings { vertical => 1 }, $target_content, $origin_content;
-    return $c->render('diff.tt',
-                      {
-                       diff      => mark_raw( $diff ),
-                       origin    => $origin,
-                       target    => $target,
-                       package   => $pod->{package},
-                       distvname => $pod->{distvname},
-                      }
-                     );
+    my $diff;
+    eval {
+      local $SIG{ALRM} = sub { die "diff timeout" };
+      alarm 20;
+      $diff = diff_strings { vertical => 1 }, $target_content, $origin_content;
+      alarm 0;
+    };
+
+    my %view_data = (
+		     origin    => $origin,
+		     target    => $target,
+		     package   => $pod->{package},
+		     distvname => $pod->{distvname},
+		    );
+
+    if ($@) {
+	warn "diff timeout: $origin $target";
+	$c->render('diff_timeout.tt', \%view_data);
+    } else {
+	return $c->render('diff.tt',
+			  {
+			   diff      => mark_raw( $diff ),
+			   %view_data
+			  }
+			 );
+    }
 };
 
 get '/docs/{path:articles/.+\.html}' => sub {
