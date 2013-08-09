@@ -77,6 +77,8 @@ get '/index/core' => sub {
 
     my $toc = PJP::M::TOC->render($c);
     return $c->render('index/core.tt', {
+        header_title => 'Perlのコアドキュメントの翻訳一覧',
+        description => '翻訳されたPerlのコアドキュメントの一覧',
         title => 'コアドキュメント',
         toc   => $toc,
     });
@@ -87,6 +89,8 @@ get '/index/function' => sub {
 
     my $toc = PJP::M::TOC->render_function($c);
     return $c->render('index/function.tt' => {
+        header_title => 'Perlの組み込み関数の翻訳一覧',
+        description => '翻訳されたPerlの組み込み関数の一覧',
         title => '組み込み関数',
         toc   => $toc,
     });
@@ -97,6 +101,7 @@ get '/index/variable' => sub {
 
     my $toc = PJP::M::TOC->render_variable($c);
     return $c->render('index/variable.tt' => {
+        header_title => 'Perlの組み込み変数の翻訳一覧',
         title => '組み込み変数',
         toc   => $toc,
     });
@@ -139,9 +144,10 @@ get '/index/article' => sub {
 
     $c->render(
         'layout.html' => {
+            header_title => 'Perlに関係するその他の翻訳の一覧',
             title => 'その他の翻訳',
             content => mark_raw($content),
-            description => '翻訳されたPerlに関係するWebPageの一覧',
+            description => 'Perlに関係するWebPageなど、コアドキュメントやモジュール以外の翻訳の一覧',
         }
     );
 };
@@ -178,6 +184,8 @@ get '/func/*' => sub {
     if ($version && $html) {
         return $c->render(
             'pod.tt' => {
+                header_title => "Perlの組み込み関数 $name の翻訳",
+                description  => "Perlの組み込み関数 $name の翻訳",
                 has_original => ($html =~m{class="original"} ? 1 : 0),
                 body         => mark_raw($html),
                 title        => "$name",
@@ -206,6 +214,8 @@ get '/variable/*' => sub {
     if ($version && $html) {
         return $c->render(
             'pod.tt' => {
+                header_title => "Perlの組み込み変数 $name の翻訳",
+                description  => "Perlの組み込み変数 $name の翻訳",
                 has_original => ($html =~m{class="original"} ? 1 : 0),
                 body         => mark_raw($html),
                 title        => "$name",
@@ -240,9 +250,10 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
 
     return $c->render(
         'directory_index.tt' => {
+            header_title   => "Perlモジュール $distvname の翻訳",
             index     => \@rows,
             distvname => $distvname,
-            'title'   => "$distvname",
+            title     => "$distvname",
         }
     );
 };
@@ -282,7 +293,11 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
 	}
 	return $c->render_with_status($status, 'diff.tt', $diff_info);
     } else {
-	return $c->render('diff.tt', $diff_info);
+	return $c->render('diff.tt', {
+				      %$diff_info,
+				      title        => "$origin と $target の差分",
+				      header_title => "$origin と $target の翻訳の差分",
+				     });
     }
 };
 
@@ -395,6 +410,7 @@ my $display_pod = sub {
                 'title'      => "$pod->{package} - $pod->{description}",
                 repository   => $pod->{repository},
                 path         => $pod->{path},
+                'header_title' => "$pod->{package} - $pod->{description}",
             }
         );
     } else {

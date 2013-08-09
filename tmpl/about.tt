@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' WITH title='このサイトについて' description='perldoc.jpのサイト説明。経緯、関連するプロジェクト、誤訳の報告方法、不具合の報告方法など。' %]
+[% WRAPPER 'layout.html' WITH title='このサイトについて' description='perldoc.jpのサイト説明。経緯、関連するプロジェクト、誤訳の報告方法、不具合の報告方法など。' header_title='perldoc.jpについて' %]
 
 <h1>このサイトについて</h1>
 
