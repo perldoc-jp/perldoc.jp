@@ -125,6 +125,7 @@ get '/index/module' => sub {
             title => '翻訳済モジュール',
             content => mark_raw($content),
             description => '翻訳されたPerlモジュールの一覧',
+            header_title => '翻訳されたPerlモジュールの一覧',
         }
     );
 };
