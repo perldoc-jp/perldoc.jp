@@ -21,6 +21,7 @@
 	[% SWITCH(error) %]
 	[% CASE 'timeout' %]
   	  この差分の取得は時間がかかるため、キャンセルされました。<br />
+          後ほど生成されますので、時間をおいてアクセスしてください。<br />
 	[% CASE 'no_pod' %]
   	  存在しないpodです。<br />
 	[% CASE 'different_file' %]

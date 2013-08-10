@@ -238,7 +238,8 @@ sub get_latest_file_path {
 }
 
 sub diff {
-    my ($self, $origin, $target) = @_;
+    my ($self, $origin, $target, $option) = @_;
+    $option //= {};
 
     if ($origin =~m{perl[\w-]*delta\.pod} or $target =~m{perl[\w-]*delta\.pod}) {
         return {error => 'perldelta'};
@@ -266,12 +267,16 @@ sub diff {
 
     my $diff;
     local $@;
+    $option->{timeout} ||= 0;
     eval {
-      local $SIG{ALRM} = sub { die "diff timeout" };
-      # should be lesser second
-      alarm 20;
-      $diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
-      alarm 0;
+	local $SIG{ALRM} = sub { die "diff timeout" };
+	if ($option->{timeout} > 0) {
+	    alarm $option->{timeout};
+	}
+	$diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
+	if ($option->{timeout} > 0) {
+	    alarm 0;
+	}
     };
     if ($@ =~m{diff timeout}) {
 	# should record time out combination and generate by batch program.
@@ -281,7 +286,35 @@ sub diff {
 	die $@;
     }
 
-    return { %$pod, diff => mark_raw( $diff ) };
+    return { %$pod, diff => $diff };
+}
+
+sub select_heavy_diff {
+    my ($self, $origin, $target) = @_;
+    my $c = c();
+    my $sth = $c->dbh_master->search(heavy_diff =>
+				     {
+				      origin    => $origin,
+				      target    => $target,
+				     });
+    return $sth->fetchrow_hashref();
+}
+
+sub save_as_heavy_diff {
+    my ($self, $origin, $target, $diff) = @_;
+    my $c = c();
+    my $heavy_diff = $self->select_heavy_diff($origin, $target);
+    if (! $heavy_diff) {
+	$heavy_diff = $c->dbh_master->insert(heavy_diff =>
+					     {
+					      origin    => $origin,
+					      target    => $target,
+					      time      => time,
+					      is_cached => ($diff ? 1 : 0),
+					      diff       => $diff,
+					     });
+    }
+    return $heavy_diff;
 }
 
 1;

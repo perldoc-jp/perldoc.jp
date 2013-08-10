@@ -282,7 +282,21 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     my ($c, $p) = @_;
     my $origin = $p->{path};
     my $target = $c->req->param('target');
-    my $diff_info = PJP::M::Pod->diff($origin, $target);
+    my $heavy_diff = PJP::M::Pod->select_heavy_diff($origin, $target);
+    my $diff_info = {};
+    my $diff_cost;
+    if ($heavy_diff) {
+	$diff_info = PJP::M::PodFile->retrieve($origin);
+	if ($heavy_diff->{is_cached}) {
+	    $diff_info->{diff} = $heavy_diff->{diff};
+	} else {
+	    $diff_info->{error} = 'timeout';
+	}
+    } else {
+	$diff_cost = time;
+	$diff_info = PJP::M::Pod->diff($origin, $target, {timeout => 15});
+	$diff_cost = time - $diff_cost;
+    }
 
     $diff_info->{origin} = $origin;
     $diff_info->{target} = $target;
@@ -290,10 +304,15 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     if (my $error = $diff_info->{error}) {
 	my $status = 404;
 	if ($error eq 'timeout') {
-	    $status = 500;
+	    $status = 503;
+	    PJP::M::Pod->save_as_heavy_diff($origin, $target);
 	}
 	return $c->render_with_status($status, 'diff.tt', $diff_info);
     } else {
+	if ($diff_cost > 3) {
+	    PJP::M::Pod->save_as_heavy_diff($origin, $target, $diff_info->{diff});
+	}
+	$diff_info->{diff} = mark_raw($diff_info->{diff});
 	return $c->render('diff.tt', {
 				      %$diff_info,
 				      title        => "$origin と $target の差分",
