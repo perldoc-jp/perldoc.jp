@@ -74,11 +74,21 @@ sub get_latest {
         my ($class, $package) = @_;
 
         my $c = c();
-        my ($where_operator, $search_package) = $package eq 'perldelta' ? ('like', 'perl%delta') : ('=', $package);
+        my ($where_operator, $search_package);
+	my $search_column = 'package';
+	if ($package eq 'perldelta') {
+	  ($where_operator, $search_package) = ('like', 'perl%delta');
+	} elsif ($package =~m{perl5(\d+)delta}) {
+	  $search_column = 'path';
+	  ($where_operator, $search_package) = ('like', "%/$package.pod");
+	} else {
+	  ($where_operator, $search_package) = ('=', $package);
+	}
+
         my %sort_tmp;
     my @versions =
       sort  { ($sort_tmp{$b->[0]} ||= (eval { version->parse($b->[0]) } || 0)) <=> ($sort_tmp{$a->[0]} ||= (eval {version->parse($a->[0])} || 0)) } @{
-        $c->dbh->selectall_arrayref( qq{SELECT distvname,package FROM pod WHERE package $where_operator ?},
+        $c->dbh->selectall_arrayref( qq{SELECT distvname,package FROM pod WHERE $search_column $where_operator ?},
             {}, $search_package )
       };
         unless (@versions) {
