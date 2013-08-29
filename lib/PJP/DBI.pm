@@ -7,13 +7,13 @@ package PJP::DBI;
 use parent qw/DBI/;
 
 sub connect {
-	my ($self, $dsn, $user, $pass, $attr) = @_;
+        my ($self, $dsn, $user, $pass, $attr) = @_;
     $attr->{RaiseError}          //= 1;
     $attr->{AutoInactiveDestroy} //= 1;
-	if ($dsn =~ /^dbi:SQLite:/) {
-		$attr->{sqlite_unicode} //= 1;
-	}
-	my $dbh = $self->SUPER::connect($dsn, $user, $pass, $attr);
+        if ($dsn =~ /^dbi:SQLite:/) {
+                $attr->{sqlite_unicode} //= 1;
+        }
+        my $dbh = $self->SUPER::connect($dsn, $user, $pass, $attr);
         $dbh->do('PRAGMA synchronous = OFF');
         return $dbh;
 }
@@ -49,9 +49,15 @@ sub insert {
 
 sub replace {
     my ($self, $table, $vars, $attr) = @_;
-	$attr //= {};
-	$attr->{prefix} = 'REPLACE INTO ';
+        $attr //= {};
+        $attr->{prefix} = 'REPLACE INTO ';
     my ($sql, @bind) = $self->sql_maker->insert($table, $vars, $attr);
+    $self->do($sql, {}, @bind);
+}
+
+sub update {
+    my ($self, $table, $where, $set) = @_;
+    my ($sql, @bind) = $self->sql_maker->update($table, $set, $where);
     $self->do($sql, {}, @bind);
 }
 
