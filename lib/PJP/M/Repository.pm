@@ -3,6 +3,7 @@ use warnings;
 use utf8;
 
 package PJP::M::Repository;
+use Time::Piece;
 
 sub recent_data {
   my ($class, $c, $date) = @_;
@@ -64,7 +65,7 @@ sub recent_data {
 sub _file2name {
     my $name = shift;
     my $in;
-    if ($name =~ s{^docs/modules/(.+?)-[\d\._]+(?:[-\w]+)?/(?:lib/)?}{}) {
+    if ($name =~ s{^docs/modules/(.+?)-v?[\d\._]+(?:[-\w]+)?/(?:lib/)?}{}) {
         $in = $1;
         $in =~s{-}{::};
     } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)\.(?:pod|html|md)$}{$2}) {
@@ -87,7 +88,7 @@ sub _file2version {
     my $name = shift;
     if ($name =~ s{^docs/perl/([^/]+)/}{}) {
         return $1;
-    } elsif ($name =~ s{^docs/modules/.+-([\d\._]+)/(lib/)?}{}) {
+    } elsif ($name =~ s{^docs/modules/.+-v?([\d\._]+)/(lib/)?}{}) {
         return $1;
     }
     return '';
