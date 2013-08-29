@@ -13,11 +13,11 @@ new.perldoc.jp のソースです。
 アップデートするには
 ====================
 
-いまどき cvs のつかいかたとかわすれてるとおもうけど、以下のようにすればよろしい。
+cvs と git コマンドが必要です。
 
-    cd assets/perldoc.jp/
-    cvs -d:pserver:anonymous@cvs.sourceforge.jp:/cvsroot/perldocjp login
-    cvs upd -dP
+% ./script/update.pl
+
+で、翻訳されたpodの取得や必要なデータベースの構築を行います。
 
 デザインを変更するには
 ======================
@@ -47,70 +47,3 @@ Dotcloud
     ./configure --prefix=/home/dotcloud/perl5/
     make
     make install
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
