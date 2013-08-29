@@ -18,8 +18,8 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#html">HTML形式の翻訳についての特別な処理</a></li>
 <li><a href="#md">Markdown形式の翻訳についての特別な処理</a></li>
 <li><a href="#info">連絡先の記述</a></li>
-<li><a href="#info2author">翻訳することについての報告</a></li>
-<li><a href="#inro2translation">翻訳の報告</a></li>
+<li><a href="#info2author">翻訳することについての著者への報告</a></li>
+<li><a href="#inro2translation">翻訳したことの報告</a></li>
 <li><a href="#see_also">JPRPの参考文書</a></li>
 </ul>
 
@@ -203,8 +203,10 @@ NAME, SYNOPSYS, DESCRIPTION などですが、代表的なものは、perldoc.jp
 
 <a name="item_translation"></a>
 <h2>=itemの翻訳</h2>
+=item を =begin original 〜 =end original で囲むと、PODのパースに失敗する場合があります。以下のように回避できます。
+<h3>(a) =item の下に ()で訳文を入れる</h3>
 <p>
-=item を =begin original 〜 =end original で囲むと、PODのパースに失敗する場合があるので、=head1と同様に、()で訳文を入れた方が良いです。
+=head1と同様に、()で訳文を入れる方法です。
 </p>
 <pre>
 =over 8
@@ -221,6 +223,8 @@ original sentence.
 </div>
 翻訳文章
 </pre>
+
+<h3>(b) =item を訳文にして、その下に原文を書く</h3>
 <p>
 もしくは、原文→訳文の順番が逆になりますが、=item を訳文にして、その下に、=begin original 〜 =end original で原文を( )で囲んでも良いかも知れません。
 ただし、モジュールがアップデートされた時のことを考えるとあまりいい方法ではありません。
@@ -235,6 +239,7 @@ original sentence.
 (test)
 
 =end original
+
 <div style="color:blue">
 =begin original
 
@@ -243,6 +248,42 @@ original sentence.
 =end original
 </div>
 翻訳文章
+</pre>
+
+<h3>(c) =over 〜 =back までをすべて =begin original 〜 =end original で囲ってしまう</h3>
+<p>
+=over 〜 =back までの量が少ないのであれば、 =begin original 〜 =end original で全体を囲ってしまっても良いでしょう。
+</p>
+
+<pre>
+<div style="color:blue">
+=begin original
+
+=over 8
+
+=item test
+
+original sentence.
+
+=item test2
+
+original sentence.
+
+=back
+
+=end original
+</div>
+=over 8
+
+=item テスト
+
+翻訳文章
+
+=item テスト2
+
+翻訳文章
+
+=back
 </pre>
 
 <a name="html"></a>
@@ -295,7 +336,7 @@ perldoc.jpでは、Markdown形式の翻訳の場合、以下の処理を行っ�
 翻訳リポジトリの場所や、翻訳プロジェクトの名前やURL、誤訳の報告先などを書き足しても良いかと思います。
 </p>
 <a name="info2author"></a>
-<h2>翻訳することについての報告</h2>
+<h2>翻訳することについての著者への報告</h2>
 <p>
 ほとんどのモジュールが改変と再配布が許可されているライセンスなので、元々のドキュメントの著者に翻訳の報告をする必要はありません。<br />
 ライセンスが不明な場合や、改変と再配布が許可されていないライセンスの場合には、著者に連絡を取ってください。<br />
@@ -314,7 +355,7 @@ under the same terms as Perl itself?
 </pre>
 
 <a name="inro2translation"></a>
-<h2>翻訳の報告</h2>
+<h2>翻訳したことの報告</h2>
 <p>
 JPRPの場合、<a href="http://www.freeml.com/perldocjp/0000504">RFCメール</a>をMLに送るという方法を取っています。<br />
 JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィードで配信されます。
