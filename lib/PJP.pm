@@ -22,7 +22,7 @@ sub dbh {
 sub dbh_master {
         my $c = shift;
         my $conf = $c->config->{DB} // die "Missing mandatory configuraion parameter: DB";
-        return $c->{db} //= PJP::DBI->connect(@$conf);
+        return $c->{db_master} //= PJP::DBI->connect(@$conf);
 }
 
 sub assets_dir {
