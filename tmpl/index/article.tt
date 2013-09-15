@@ -15,7 +15,7 @@
                             <img src="/static/img/github.png" width="16" height="16" />
                         [% END %]
                     </td>
-                    <td>[% v.abstract %]</td>
+                    <td>[% url_to_link(v.abstract) %]</td>
                 </tr>
             [% END %]
             </table>

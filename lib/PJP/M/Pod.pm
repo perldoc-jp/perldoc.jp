@@ -147,6 +147,7 @@ sub get_latest_file_path {
             # 最初の行の括弧でかこまれたものがあったら、それは翻訳された見出しとみなす
             # 仕様については Pod::L10N を見よ
             $_[0]->{translated_toc}->{$_[0]->{last_head_body}} = $1;
+            $_[0]->{translated_toc_manually}->{$_[0]->{last_head_body}} = $1;
         } else {
             $self->SUPER::handle_text($text);
         }
@@ -161,7 +162,8 @@ sub get_latest_file_path {
             s/^\s+//; s/\s+$//;      # Strip white space.
             s/^([^a-zA-Z]+)$/pod$1/; # Prepend "pod" if no valid chars.
 #           s/^[^a-zA-Z]+//;         # First char must be a letter.
-            s/([^-a-zA-Z0-9_:.]+)/unpack("U*", $1)/eg; # All other chars must be valid.
+            s/([^-a-zA-Z0-9_:.]+)/join '-', unpack("U*", $1)/eg; # All other chars must be valid.
+#            s/([^-a-zA-Z0-9_:.]+)/unpack("U*", $1)/eg; # All other chars must be valid.
         }
         return $t if $not_unique;
         my $i = '';
@@ -224,6 +226,11 @@ sub get_latest_file_path {
         }
 
         my $output = join( "\n\n", @{ $self->{'output'} } );
+
+	# 日本語の L</..> を英語のアンカーに変更する
+	my %reverse_toc = reverse %{$self->{translated_toc_manually}};
+	$output =~s{href="#pod([\d\-]+)"}{my $t = pack("U*", split /\-/, $1); q{href="#} . ($reverse_toc{$t} || $1) . '"'}eg;
+
         $output =~ s[TRANHEADSTART(.+?)TRANHEADEND][
             if (my $translated = $self->{translated_toc}->{$1}) {
                 $translated;
@@ -269,21 +276,21 @@ sub diff {
     local $@;
     $option->{timeout} ||= 0;
     eval {
-	local $SIG{ALRM} = sub { die "diff timeout" };
-	if ($option->{timeout} > 0) {
-	    alarm $option->{timeout};
-	}
-	$diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
-	if ($option->{timeout} > 0) {
-	    alarm 0;
-	}
+        local $SIG{ALRM} = sub { die "diff timeout" };
+        if ($option->{timeout} > 0) {
+            alarm $option->{timeout};
+        }
+        $diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
+        if ($option->{timeout} > 0) {
+            alarm 0;
+        }
     };
     if ($@ =~m{diff timeout}) {
-	# should record time out combination and generate by batch program.
+        # should record time out combination and generate by batch program.
         warn "diff timeout: $origin $target";
         return {%$pod, error => 'timeout'};
     } elsif ($@) {
-	die $@;
+        die $@;
     }
 
     return { %$pod, diff => $diff };
@@ -293,10 +300,10 @@ sub select_heavy_diff {
     my ($self, $origin, $target) = @_;
     my $c = c();
     my $sth = $c->dbh_master->search(heavy_diff =>
-				     {
-				      origin    => $origin,
-				      target    => $target,
-				     });
+                                     {
+                                      origin    => $origin,
+                                      target    => $target,
+                                     });
     return $sth->fetchrow_hashref();
 }
 
@@ -305,14 +312,14 @@ sub save_as_heavy_diff {
     my $c = c();
     my $heavy_diff = $self->select_heavy_diff($origin, $target);
     if (! $heavy_diff) {
-	$heavy_diff = $c->dbh_master->insert(heavy_diff =>
-					     {
-					      origin    => $origin,
-					      target    => $target,
-					      time      => time,
-					      is_cached => ($diff ? 1 : 0),
-					      diff       => $diff,
-					     });
+        $heavy_diff = $c->dbh_master->insert(heavy_diff =>
+                                             {
+                                              origin    => $origin,
+                                              target    => $target,
+                                              time      => (time + 9 * 3600),
+                                              is_cached => ($diff ? 1 : 0),
+                                              diff       => $diff,
+                                             });
     }
     return $heavy_diff;
 }

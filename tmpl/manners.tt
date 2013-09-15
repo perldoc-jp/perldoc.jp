@@ -125,7 +125,15 @@ HTMLの場合は、原文がかこまれているタグのクラス名を origin
 翻訳文
 &lt;/div&gt;
 </pre>
+<p>
+ただし、=head を訳す場合は、=head の次に( )で翻訳文を入れてください。<br />
+※ =head NAME は、そのままにしてください。
+</p>
+<pre>
+=head Version Ranges
 
+(バージョンの範囲)
+</pre>
 <a name="code_translation"></a>
 <h2>コード部分の翻訳</h3>
 
@@ -165,25 +173,36 @@ Example2:
 </pre>
 
 <a name="head1_translation"></a>
-<h2>=head1の翻訳</h2>
+<h2>=headの翻訳</h2>
 <p>
 NAME, SYNOPSYS, DESCRIPTION などですが、代表的なものは、perldoc.jpでは、自動的に翻訳されて表示されます。<br />
-翻訳される場合原文をそのままにして、下に（）で書くか、原文を残さずにそのまま上書きして書くかのいずれかが多いです。<br />
-※ただし、NAMEはPODのパーサーに取って重要なものとなりますので、こちらのみ訳さずにそのままにして、( )も書かないでください。
-</p>
-<p>
-()で書く場合は、以下のようになります。
+翻訳される場合原文をそのままにして、下に（）で書いてください。<br />
+perldoc.jp では、表示時に()部分を=headの英文と置き換えています。
+※ただし、<i>=head1 NAME</i>はPODのパーサーに取って重要なものとなりますので、こちらのみ訳さずにそのままにして、()も書かないでください。
 </p>
 <pre>
-=head1 CAUTION
+=head1 NAME
 
-(警告)
+=begin original
+
+GreatModule - great module
+
+=end original
+
+GreatModule - 偉大なモジュール
+
+=head1 STRUCTURE
+
+(構造)
+
+=head2 OPTIONAL FIELDS
+
+(オプションのフィールド)
+
+=head
 </pre>
 <p>
-他のPODやツールで表示することを考慮すると、見出しを原文のまま残したほうが良いです。<br />
-</p>
-<p>
-以下、代表的なものの一覧です。これらはperldoc.jpでは日本語に置換されて表示されます。
+以下の代表的なものは、perldoc.jpでは日本語に置換されて表示されます。
 </p>
 <table>
 <tr><td>NAME</td><td>名前</td></tr>

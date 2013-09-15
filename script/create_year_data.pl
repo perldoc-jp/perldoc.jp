@@ -24,6 +24,29 @@ sub main {
     my $date = Time::Piece->strptime("$year-01-01 00:00:00", '%Y-%m-%d %H:%M:%S');
     my $updates = PJP::M::Repository->recent_data($pjp, $date);
     create_file($updates, $year);
+    update_pod_update_time($pjp, $updates);
+}
+
+sub update_pod_update_time {
+    my ($pjp, $updates) = @_;
+    foreach my $update (@$updates) {
+	$update->{path} =~s{^docs/}{};
+	$update->{path} =~s{^modules/docs/}{};
+	$update->{path} =~s{^core/}{perl/};
+	$update->{path} =~s{^modules/(\w+)\.pm(-[\d.]+)}{modules/$1$2};
+
+	if (my $data = PJP::M::PodFile->retrieve($update->{path})) {
+	    $data->{update_time} = Time::Piece->strptime($update->{date}, '%Y-%m-%d %H:%M:%S')->epoch;
+	    $pjp->dbh_master->replace(pod => $data);
+	    warn $data->{path} if $data->{path} =~m{perlretut};
+	    $pjp->dbh_master->update
+		( heavy_diff => {origin => $data->{path}, time => {'<' => $data->{update_time}}} , {is_cached => 0});
+	    $pjp->dbh_master->update
+		( heavy_diff => {target => $data->{path}, time => {'<' => $data->{update_time}}} , {is_cached => 0});
+	} else {
+	    warn "the path cannot be found in DB: " . $update->{path};
+	}
+    }
 }
 
 sub create_file {

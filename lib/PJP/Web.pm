@@ -4,6 +4,7 @@ use warnings;
 use parent qw/PJP Amon2::Web/;
 use Log::Minimal;
 use Amon2::Declare;
+use Regexp::Common qw/URI/;
 
 # load all controller classes
 use Module::Find ();
@@ -33,6 +34,20 @@ use Text::Xslate;
             c => sub { Amon2->context() },
             uri_with => sub { Amon2->context()->req->uri_with(@_) },
             uri_for  => sub { Amon2->context()->uri_for(@_) },
+            url_to_link => sub {
+               my ($text) = @_;
+	       if ($text) {
+		   my $url_regexp = $RE{URI}{HTTP}{-scheme => 'https?'}{-keep};
+		   $text = Text::Xslate::Util::html_escape($text);
+		   $text =~s{$url_regexp}{
+		       my ($url, $host) = ($1, $3);
+		       my ($file) = $url =~m{/([^/]+?\.[^/]+)$};
+		       qq{ <a href="$url" target="_blank">} . ($file ? qq{$file ($host)} : $url) . q{</a> }
+		   }gex;
+		   $text = Text::Xslate::Util::mark_raw($text);
+	       }
+	       return $text;
+            },
         },
         warn_handler => sub { print STDERR sprintf("[WARN] [%s] %s", c->req->path_info, $_[0]) },
         die_handler  => sub { print STDERR sprintf("[DIE]  [%s] %s", c->req->path_info, $_[0]) },
