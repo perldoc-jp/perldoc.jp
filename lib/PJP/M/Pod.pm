@@ -228,7 +228,7 @@ sub get_latest_file_path {
         my $output = join( "\n\n", @{ $self->{'output'} } );
 
 	# 日本語の L</..> を英語のアンカーに変更する
-	my %reverse_toc = reverse %{$self->{translated_toc_manually}};
+	my %reverse_toc = reverse %{$self->{translated_toc_manually} || {}};
 	$output =~s{href="#pod([\d\-]+)"}{my $t = pack("U*", split /\-/, $1); q{href="#} . ($reverse_toc{$t} || $1) . '"'}eg;
 
         $output =~ s[TRANHEADSTART(.+?)TRANHEADEND][
