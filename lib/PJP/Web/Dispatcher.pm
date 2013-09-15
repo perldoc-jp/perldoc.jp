@@ -294,7 +294,7 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
 	}
     } else {
 	$diff_cost = time;
-	$diff_info = PJP::M::Pod->diff($origin, $target, {timeout => 15});
+	$diff_info = PJP::M::Pod->diff($origin, $target, {timeout => 6});
 	$diff_cost = time - $diff_cost;
     }
 
