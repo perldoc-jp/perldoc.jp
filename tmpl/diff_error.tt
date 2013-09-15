@@ -1,0 +1,24 @@
+[% WRAPPER 'layout.html' WITH diff_page = 1 description='翻訳のdiff' %]
+
+<div class="content">
+        <div class="BreadList">
+            [% IF origin.match('^perl')%]
+              <a href="/docs/perl/[% distvname %]/[% package %].pod">[% package %]</a> &gt;
+            [% ELSE %]
+              <a href="/docs/modules/[% distvname %]/[% package %].pod">[% distvname %]</a> &gt;
+            [% END %]
+            [% target.replace('^[\w/-]+?[-/](?=\d)').replace('(?<=\d)/.+\.pod') %]
+            との差分
+        </div>
+
+        <h1>
+        [% package %] [% target.replace('^[\w/-]+?[-/](?=\d)').replace('(?<=\d)/.+\.pod') %]
+        と
+        [% origin.replace('^[\w/-]+?[-/](?=\d)').replace('(?<=\d)/.+\.pod') %]
+        の差分
+        </h1>
+
+	この差分の取得は時間がかかるため、キャンセルされました。<br />
+</div>
+
+[% END %]
