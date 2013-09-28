@@ -19,6 +19,7 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#md">Markdown形式の翻訳についての特別な処理</a></li>
 <li><a href="#info">連絡先の記述</a></li>
 <li><a href="#info2author">翻訳することについての著者への報告</a></li>
+<li><a href="#not_specified">決まっていないこと</a></li>
 <li><a href="#inro2translation">翻訳したことの報告</a></li>
 <li><a href="#see_also">JPRPの参考文書</a></li>
 </ul>
@@ -354,6 +355,16 @@ perldoc.jpでは、Markdown形式の翻訳の場合、以下の処理を行っ�
 <p>
 翻訳リポジトリの場所や、翻訳プロジェクトの名前やURL、誤訳の報告先などを書き足しても良いかと思います。
 </p>
+<a name="not_specified"></a>
+<h2>決まっていないこと</h2>
+<p>
+以下の点は、特に決まっていませんが、各項目、前者の方が多いと思います。
+</p>
+<ul>
+<li>句読点の形式 ...「、。」 or 「,.」 </li>
+<li>英語と日本語の間のスペース ... 「ある word の翻訳」or 「あるwordの翻訳」</li>
+<li>文語体 or 口語体 ... 「です、ます」 or 「である」</li>
+</ul>
 <a name="info2author"></a>
 <h2>翻訳することについての著者への報告</h2>
 <p>

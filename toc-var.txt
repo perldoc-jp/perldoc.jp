@@ -42,6 +42,8 @@
    # manualy added
 # PerlIO
         *dummy_name = ${^OPEN} ;
+# File
+        *dummy_name = ${^LAST_FH} ;
 
 # Interpolation "constants".
 
