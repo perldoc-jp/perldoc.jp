@@ -14,6 +14,7 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#leave_original">原文の残し方</a></li>
 <li><a href="#code_translation">コード部分の翻訳</h3></li>
 <li><a href="#head1_translation">=head1の翻訳</a></li>
+<li><a href="#link_translation">L&lt;...&gt;の翻訳</a></li>
 <li><a href="#item_translation">=itemの翻訳</a></li>
 <li><a href="#html">HTML形式の翻訳についての特別な処理</a></li>
 <li><a href="#md">Markdown形式の翻訳についての特別な処理</a></li>
@@ -221,6 +222,14 @@ GreatModule - 偉大なモジュール
 <tr><td>SUPPORT</td><td>サポート</td></tr>
 </table>
 
+<a name="link_translation"></a>
+<h2>L&lt;...&gt;の翻訳</h2>
+<p>
+<i>L&lt;/STRUCTURE&gt;</i> のような POD内リンクについては、perldoc.jp では英語のままでも、英語を翻訳しても、いずれでも正しい場所へリンクされます。<br />
+ただし、<i>L&lt;CPAN::Meta::Spec/optional_features&gt;</i> のような同じ文書内に含まれないリンクに関しては翻訳されると正しい場所にリンクできなくなります。<br />
+※他のPOD表示ツールで日本語に翻訳されたリンクが正しく動くかはわかりません(たぶん、動きません)。
+</p>
+
 <a name="item_translation"></a>
 <h2>=itemの翻訳</h2>
 =item を =begin original 〜 =end original で囲むと、PODのパースに失敗する場合があります。以下のように回避できます。
@@ -363,7 +372,7 @@ perldoc.jpでは、Markdown形式の翻訳の場合、以下の処理を行っ�
 <ul>
 <li>句読点の形式 ...「、。」 or 「,.」 </li>
 <li>英語と日本語の間のスペース ... 「ある word の翻訳」or 「あるwordの翻訳」</li>
-<li>文語体 or 口語体 ... 「です、ます」 or 「である」</li>
+<li>口語体 or 文語体 ... 「です、ます」 or 「である」</li>
 </ul>
 <a name="info2author"></a>
 <h2>翻訳することについての著者への報告</h2>
