@@ -48,7 +48,10 @@ sub abstract_title_description {
 sub abstract_title_description_from_md {
   my ($c, $md) = @_;
   my ($title, $abstract)  = $md =~m{^\s*#(.+?)\n(.+?)#}s;
-  if ($title =~ m{翻訳}) {
+
+  if ($title =~ m{の翻訳$}) {
+    ($title)  = $title =~m{^(.+)の翻訳$};
+  } elsif ($title =~ m{翻訳}) {
     ($title)  = $md =~m{^\s*#.+?\n.+?#(.+?)\n}s;
   }
   if ($md =~ m{#\s*[^\s]*翻訳[^\s]*\n(.+?)#}s) {

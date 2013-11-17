@@ -380,6 +380,8 @@ get '/docs/{path:articles/.+\.md}' => sub {
 
     $html =~ s{^.*<(?:body)[^>]*>}{}si;
     $html =~ s{</(?:body)>.*$}{}si;
+    $html =~ s{\n<!--\s+original(.*?)-->\n}{<div class="original">$1</div>}sg;
+    $html =~ s{~~~(?:\s*(sh|perl)\s+)?(.+?)~~~}{'<pre class="prettyprint ' . ($1 ? ' lang-' . $1 : ''). qq{"><code>$2</code></pre>}}seg;
 
     return $c->render('pod.tt',
                       {
