@@ -15,26 +15,34 @@ sub recent_data {
   my $code_dir   = $config->{'code_dir'}   || die "no code_dir setting in config/"   . $mode_name . '.pl';
 
 
-  my $cvs = qx{cd ${assets_dir}perldoc.jp/docs/; cvs history -x AM -l -a -D '$date'|sort};
+  my $cvs = qx{cd ${assets_dir}perldoc.jp/docs/; cvs history -x AMR -l -a -D '$date'|sort};
   my @updates;
   my %uniq;
-
-  1 while $cvs =~ s{^. (\d{4}-\d{2}-\d{2})( \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
+  my %deleted;
+  1 while $cvs =~ s{^R (\d{4}-\d{2}-\d{2})( \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
       my ($date, $time, $author, $path) = ($1, $2 . ':00', $3, "$5/$4");
+      if (not $uniq{$date}{$path}++ and $path =~ m{^docs} ) {
+        $deleted{$path} = Time::Piece->strptime($date . $time, '%Y-%m-%d %H:%M:%S') +  3600 * 9;
+      }
+  }em;
+  1 while $cvs =~ s{^(.) (\d{4}-\d{2}-\d{2})( \d{2}:\d{2}) \+0000 ([^ ]+) +[\d\.]+ +([^ ]+) +([^ ]+)}{
+      my $flg = $1;
+      my ($date, $time, $author, $path) = ($2, $3 . ':00', $4, "$6/$5");
 
       if (not $uniq{$date}{$path}++ and $path =~ m{^docs} ) {
           my $datetime = Time::Piece->strptime($date . $time, '%Y-%m-%d %H:%M:%S');
           $datetime += 3600 * 9;
-
-          my ($name, $in) = _file2name($path);
-          push @updates, {
-                          date    => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
-                          author  => $author,
-                          path    => $path,
-                          name    => $name,
-                          in      => $in,
-                          version => _file2version($path),
-                         }
+          if (not $deleted{$path} or $datetime > $deleted{$path}) {
+            my ($name, $in) = _file2name($path);
+            push @updates, {
+                            date    => $datetime->strftime('%Y-%m-%d %H:%M:%S'),
+                            author  => $author,
+                            path    => $path,
+                            name    => $name,
+                            in      => $in,
+                            version => _file2version($path),
+                           }
+          }
       }
   }em;
 

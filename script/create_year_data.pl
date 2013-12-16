@@ -16,6 +16,10 @@ useall 'PJP::M';
 
 local $Data::Dumper::Terse = 1;
 
+my %IGNORE_FILES = (
+    'modules/CGI-FastTemplate-1.09/README' => 1,
+    );
+
 main();
 
 sub main {
@@ -30,6 +34,8 @@ sub main {
 sub update_pod_update_time {
     my ($pjp, $updates) = @_;
     foreach my $update (@$updates) {
+	next if $update->{path} =~ m{\.zip$} or $update->{path} =~ m{\.pot?$} or $update->{path} =~m{pod\.org$};
+
 	$update->{path} =~s{^docs/}{};
 	$update->{path} =~s{^modules/docs/}{};
 	$update->{path} =~s{^core/}{perl/};
@@ -38,12 +44,12 @@ sub update_pod_update_time {
 	if (my $data = PJP::M::PodFile->retrieve($update->{path})) {
 	    $data->{update_time} = Time::Piece->strptime($update->{date}, '%Y-%m-%d %H:%M:%S')->epoch;
 	    $pjp->dbh_master->replace(pod => $data);
-	    warn $data->{path} if $data->{path} =~m{perlretut};
 	    $pjp->dbh_master->update
 		( heavy_diff => {origin => $data->{path}, time => {'<' => $data->{update_time}}} , {is_cached => 0});
 	    $pjp->dbh_master->update
 		( heavy_diff => {target => $data->{path}, time => {'<' => $data->{update_time}}} , {is_cached => 0});
 	} else {
+	    next if $IGNORE_FILES{$update->{path}};
 	    warn "the path cannot be found in DB: " . $update->{path};
 	}
     }
