@@ -50,7 +50,7 @@ sub _version {
     my ($v) = @_;
     $v =~ s{^.+?-(?=\d)}{};
     $v =~ s{\-RC\d+$}{}i;
-    $v =~ s{^.+?-v([\d\.]+)$}{$1}i;
+    $v =~ s{^.+?-(v[\d\.]+)$}{$1}i;
     my $version = eval { version->new($v) };
     if ($@) {
       Carp::croak $@ . "(args: $v)";
