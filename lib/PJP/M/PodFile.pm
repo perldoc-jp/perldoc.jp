@@ -49,7 +49,8 @@ sub retrieve {
 sub _version {
     my ($v) = @_;
     $v =~ s{^.+?-(?=\d)}{};
-    $v =~ s{\-RC\d+$}{};
+    $v =~ s{\-RC\d+$}{}i;
+    $v =~ s{^v}{}i;
     my $version = eval { version->new($v) };
     if ($@) {
       Carp::croak $@ . "(args: $v)";
@@ -172,12 +173,19 @@ sub generate {
                     ->name($extention_exp)
                     ->in($base);
                 for my $file (@files) {
-                    if ($file =~ m{\.pod$}) {
-                        $class->generate_one_file($c, $file, $base, $repository);
-                      } elsif ($file =~ m{\.md$}) {
-                        $class->generate_one_file_md($c, $file, $base, $repository);
-                    } else {
-                        $class->generate_one_file_html($c, $file, $base, $repository);
+                    eval {
+                        if ($file =~ m{\.pod$}) {
+                            $class->generate_one_file($c, $file, $base, $repository);
+                        } elsif ($file =~ m{\.md$}) {
+                            $class->generate_one_file_md($c, $file, $base, $repository);
+                        } else {
+                            $class->generate_one_file_html($c, $file, $base, $repository);
+                        }
+                    };
+                    if ($@) {
+                      warn '===============================================';
+                      warn "cannot generate: $file ($@)";
+                      warn '===============================================';
                     }
                 }
         }
