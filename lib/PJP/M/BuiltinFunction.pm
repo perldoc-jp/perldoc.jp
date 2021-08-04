@@ -67,7 +67,7 @@ sub generate {
             close $fh;
             my %tmp;
             @tmp{@_candidate} = ();
-            keys %tmp;
+            ($_encoding, keys %tmp);
         };
     $encoding ||= 'euc-jp';
 
