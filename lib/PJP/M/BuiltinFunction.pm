@@ -60,7 +60,7 @@ sub generate {
             my @_candidate;
             open my $fh, '<', $path or die "Cannot open $path: $!";
             while (<$fh>) {
-                $_encoding = $1 and next if m{^=encoding\s+(.+)$};
+                $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
                 my @names = m{C<(.*?)>}g;;
                 push @_candidate, map {s{^(tr|s|q|qq|y|m|qr|qx)/+$}{$1}; $_} @names
             }
