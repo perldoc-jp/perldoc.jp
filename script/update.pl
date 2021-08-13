@@ -17,9 +17,9 @@ my $perl       = $config->{perl} || 'perl -Ilib';
 my($sqlite_db) = $config->{DB}->[0] =~m{dbname=(.+)$};
 
 foreach my $db_type (qw/master_db slave_db/) {
-  if ( not -e $config->{$db_type} ) {
-      die "prepare database at first. not found database: " . $config->{$db_type};
-  }
+    if ( not -e $config->{$db_type} ) {
+        die "prepare database at first. not found database: " . $config->{$db_type};
+    }
 }
 
 if (! -d $assets_dir) {
