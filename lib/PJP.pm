@@ -55,8 +55,9 @@ sub abstract_title_description_from_md {
     ($title)  = $md =~m{^\s*#.+?\n.+?#(.+?)\n}s;
   }
   if ($md =~ m{#\s*[^\s]*翻訳[^\s]*\n(.+?)#}s) {
-    ($abstract) = Text::Markdown->new->markdown($1);;
-  } if ($abstract) {
+    ($abstract) = $1;
+  }
+  if ($abstract) {
     $abstract = Text::Markdown->new->markdown($abstract);
     ($abstract) = $abstract =~ m{^<p>(.+?)</p>};
   }
