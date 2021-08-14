@@ -13,7 +13,7 @@ use constant FUNCTION_LIST_FILE => ($ENV{PLACK_ENV} and $ENV{PLACK_ENV} eq 'depl
 use PJP::Util qw/slurp/;
 
 # perlop から検索するものの正規表現
-my $FUNCS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
+my $OPS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
 
 our @FUNCTIONS = sort split /\n/, slurp(FUNCTION_LIST_FILE);
 
@@ -69,7 +69,7 @@ sub generate {
                 $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
                 s{E<sol>}{/}g;
                 my @names = m{C<(.*?)>}g;
-                push @_candidate, map {s{^($FUNCS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names
+                push @_candidate, map {s{^($OPS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names
             }
             close $fh;
             my %tmp;
@@ -102,7 +102,7 @@ sub generate {
         my @dynamic_pod;
         my $perldoc = Pod::Perldoc->new(opt_f => $name);
         my $found_in_perlop = 0;
-        if (not $name =~ m{^(?:$FUNCS_REGEXP)}) {
+        if (not $name =~ m{^(?:$OPS_REGEXP)}) {
             eval {
                 $perldoc->search_perlfunc([$path], \@dynamic_pod);
             };
