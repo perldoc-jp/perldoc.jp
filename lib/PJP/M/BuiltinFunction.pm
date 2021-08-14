@@ -61,35 +61,35 @@ sub generate {
     my ($perlop_path, $perlop_version) = @$path_info_perlop;
 
     my ($perlfunc_encoding, @candidate) = do
-      {
-          my $_encoding;
-          my @_candidate;
-          open my $fh, '<', $path or die "Cannot open $path: $!";
-          while (<$fh>) {
-              $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
-              s{E<sol>}{/}g;
-              my @names = m{C<(.*?)>}g;
-              push @_candidate, map {s{^($FUNCS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names
-          }
-          close $fh;
-          my %tmp;
-          @tmp{@_candidate} = ();
-          ($_encoding, keys %tmp);
-      };
+        {
+            my $_encoding;
+            my @_candidate;
+            open my $fh, '<', $path or die "Cannot open $path: $!";
+            while (<$fh>) {
+                $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
+                s{E<sol>}{/}g;
+                my @names = m{C<(.*?)>}g;
+                push @_candidate, map {s{^($FUNCS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names
+            }
+            close $fh;
+            my %tmp;
+            @tmp{@_candidate} = ();
+            ($_encoding, keys %tmp);
+        };
 
     my $perlop_encoding = do
-      {
-          my $_encoding;
-          open my $fh, '<', $perlop_path or die "cannot open $perlop_path: $!";
-          while (<$fh>) {
-              if (m{^=encoding\s+(.+)$}) {
-                  $_encoding = $1;
-                  last;
-              }
-          }
-          close $fh;
-          $_encoding;
-      };
+        {
+            my $_encoding;
+            open my $fh, '<', $perlop_path or die "cannot open $perlop_path: $!";
+            while (<$fh>) {
+                if (m{^=encoding\s+(.+)$}) {
+                    $_encoding = $1;
+                    last;
+                }
+            }
+            close $fh;
+            $_encoding;
+        };
 
     $perlfunc_encoding ||= 'euc-jp';
     $perlop_encoding   ||= 'euc-jp';
