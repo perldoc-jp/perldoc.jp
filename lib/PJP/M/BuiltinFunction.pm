@@ -12,6 +12,9 @@ use constant FUNCTION_LIST_FILE => ($ENV{PLACK_ENV} and $ENV{PLACK_ENV} eq 'depl
                                    : 'functions.txt';
 use PJP::Util qw/slurp/;
 
+# perlop から検索するものの正規表現
+my $FUNCS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
+
 our @FUNCTIONS = sort split /\n/, slurp(FUNCTION_LIST_FILE);
 
 my %FUNCTIONS;
@@ -54,43 +57,91 @@ sub generate {
     my $path_info = PJP::M::Pod->get_latest_file_path('perlfunc');
     my ($path, $version) = @$path_info;
 
-    my ($encoding, @candidate) = do
-        {
-            my $_encoding;
-            my @_candidate;
-            open my $fh, '<', $path or die "Cannot open $path: $!";
-            while (<$fh>) {
-                $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
-                my @names = m{C<(.*?)>}g;;
-                push @_candidate, map {s{^(tr|s|q|qq|y|m|qr|qx)/+$}{$1}; $_} @names
-            }
-            close $fh;
-            my %tmp;
-            @tmp{@_candidate} = ();
-            ($_encoding, keys %tmp);
-        };
-    $encoding ||= 'euc-jp';
+    my $path_info_perlop = PJP::M::Pod->get_latest_file_path('perlop');
+    my ($perlop_path, $perlop_version) = @$path_info_perlop;
+
+    my ($perlfunc_encoding, @candidate) = do
+      {
+          my $_encoding;
+          my @_candidate;
+          open my $fh, '<', $path or die "Cannot open $path: $!";
+          while (<$fh>) {
+              $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
+              s{E<sol>}{/}g;
+              my @names = m{C<(.*?)>}g;
+              push @_candidate, map {s{^($FUNCS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names
+          }
+          close $fh;
+          my %tmp;
+          @tmp{@_candidate} = ();
+          ($_encoding, keys %tmp);
+      };
+
+    my $perlop_encoding = do
+      {
+          my $_encoding;
+          open my $fh, '<', $perlop_path or die "cannot open $perlop_path: $!";
+          while (<$fh>) {
+              if (m{^=encoding\s+(.+)$}) {
+                  $_encoding = $1;
+                  last;
+              }
+          }
+          close $fh;
+          $_encoding;
+      };
+
+    $perlfunc_encoding ||= 'euc-jp';
+    $perlop_encoding   ||= 'euc-jp';
 
     my @functions;
     my $txn = $c->dbh_master->txn_scope();
     $c->dbh_master->do(q{DELETE FROM func});
     for my $name (@candidate) {
+        my $encoding;
         my @dynamic_pod;
         my $perldoc = Pod::Perldoc->new(opt_f => $name);
-        eval {
-            $perldoc->search_perlfunc([$path], \@dynamic_pod);
-        };
+        my $found_in_perlop = 0;
+        if (not $name =~ m{^(?:$FUNCS_REGEXP)}) {
+            eval {
+                $perldoc->search_perlfunc([$path], \@dynamic_pod);
+            };
+            $encoding = $perlfunc_encoding;
+        } else {
+            eval {
+                $perldoc->search_perlop([$perlop_path], \@dynamic_pod);
+            };
+            if (@dynamic_pod) {
+                $found_in_perlop = 1;
+                # search_perlop が search_perlfuncと挙動が違い、=over と =back の後を余計に拾ってしまう
+                my ($start_index, $last_index) = (0, 0);
+                for (my $i = 0; $i < @dynamic_pod; $i++) {
+                    if ($dynamic_pod[$i] =~ m{^=over }) {
+                        $start_index = $i;
+                        last;
+                    }
+                }
+                for (my $i = @dynamic_pod - 1; $i > $start_index; $i--) {
+                    if ($dynamic_pod[$i] =~m{^\s*=back}) {
+                        $last_index = $i;
+                        last;
+                    }
+                }
+                $encoding = $perlop_encoding;
+                @dynamic_pod = @dynamic_pod[$start_index .. $last_index];
+            }
+        }
         next if not @dynamic_pod;
 
         push @functions, $name;
-        my $pod = join("", "=encoding $encoding\n\n=over 4\n\n", @dynamic_pod, "=back\n");
+        my $pod = join("", "=encoding $encoding\n\n=over 4\n\n", @dynamic_pod, "\n\n=back\n");
         $pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/func/$1>!g;
         my $html = PJP::M::Pod->pod2html(\$pod);
         $c->dbh_master->insert(
                                func => {
-                                        name => $name,
-                                        version => $version,
-                                        html => $html,
+                                        name    => $name,
+                                        version => $found_in_perlop ? $perlop_version : $version,
+                                        html    => $html,
                                        },
                               );
     }
@@ -104,4 +155,3 @@ sub generate {
 }
 
 1;
-
