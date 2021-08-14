@@ -54,19 +54,23 @@ sub generate {
     my $path_info = PJP::M::Pod->get_latest_file_path('perlfunc');
     my ($path, $version) = @$path_info;
 
-    my @candidate = do
+    my ($encoding, @candidate) = do
         {
+            my $_encoding;
             my @_candidate;
             open my $fh, '<', $path or die "Cannot open $path: $!";
             while (<$fh>) {
+                $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
                 my @names = m{C<(.*?)>}g;;
                 push @_candidate, map {s{^(tr|s|q|qq|y|m|qr|qx)/+$}{$1}; $_} @names
             }
             close $fh;
             my %tmp;
             @tmp{@_candidate} = ();
-            keys %tmp;
+            ($_encoding, keys %tmp);
         };
+    $encoding ||= 'euc-jp';
+
     my @functions;
     my $txn = $c->dbh_master->txn_scope();
     $c->dbh_master->do(q{DELETE FROM func});
@@ -79,7 +83,7 @@ sub generate {
         next if not @dynamic_pod;
 
         push @functions, $name;
-        my $pod = join("", "=encoding euc-jp\n\n=over 4\n\n", @dynamic_pod, "=back\n");
+        my $pod = join("", "=encoding $encoding\n\n=over 4\n\n", @dynamic_pod, "=back\n");
         $pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/func/$1>!g;
         my $html = PJP::M::Pod->pod2html(\$pod);
         $c->dbh_master->insert(
