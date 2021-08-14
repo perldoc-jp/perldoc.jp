@@ -15,11 +15,11 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 </p>
 <h2>Japanized Perl Resources Project</h2>
 <ul>
-    <li><a href="http://perldocjp.sourceforge.jp/">ホームページ</a>
-    <li><a href="http://sourceforge.jp/projects/perldocjp/">sourceforge.jp のプロジェクトページ</a></li>
+    <li><a href="https://perldocjp.osdn.jp/">ホームページ</a>
+    <li><a href="https://osdn.net/projects/perldocjp/">OSDN のプロジェクトページ</a></li>
 </ul>
 <p>
-参加方法はホームページからたどれます。sourceforge.jpのアカウントが必要になります。
+参加方法はホームページからたどれます。OSDNのアカウントが必要になります。
 </p>
 <h2>git リポジトリ(github)</h2>
 <ul>
@@ -43,7 +43,7 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 以下から報告できます。翻訳者の連絡先がある場合は、そちらにメールしても良いかも知れません。
 </p>
 <ul>
-<li><a href="http://sourceforge.jp/projects/perldocjp/ticket/?type%5B%5D=589&type_mode%5B%5D=eq&status%5B%5D=1">JPRPの誤訳の報告</a></li>
+<li><a href="https://osdn.net/projects/perldocjp/ticket/">JPRPの誤訳の報告</a></li>
 <li><a href="https://github.com/perldoc-jp/module-pod-jp/issues">gitリポジトリの誤訳の報告</a></li>
 <li><a href="https://github.com/jpa-perl/perldoc.jp/issues">サイトの不具合の報告</a></li>
 </ul>
