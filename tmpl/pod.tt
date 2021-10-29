@@ -49,8 +49,8 @@
             <div><a target="_blank" href="https://github.com/jpa/Moose-Doc-JA/commits/master/[% github_path %]">変更履歴(github)</a></div>
             <div><a target="_blank" href="https://github.com/jpa/Moose-Doc-JA/issues/new?title=[% distvname | url %][% "の誤訳の報告" | url %]">誤訳の報告</a></div>
             [% ELSE %]
-            <div><a target="_blank"  href="http://sourceforge.jp/cvs/view/perldocjp/docs/[% path %]?view=log">変更履歴(sf.jp)</a></div>
-            <div><a target="_blank" href="http://sourceforge.jp/ticket/newticket.php?group_id=136">誤訳の報告</a></div>
+            <div><a target="_blank"  href="https://osdn.net/cvs/view/perldocjp/docs/[% path %]?view=log">変更履歴(sf.jp)</a></div>
+            <div><a target="_blank" href="https://osdn.net/ticket/newticket.php?group_id=136">誤訳の報告</a></div>
             [% END %]
             [% IF has_original %]
             <script>

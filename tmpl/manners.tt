@@ -417,7 +417,7 @@ JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィ�
 JPRPに関する個別の決め事などは、以下を参照してください。
 </p>
 <ul>
-<li><a href="http://perldocjp.sourceforge.jp/perldocjp-faq">FAQ</a></li>
-<li><a href="http://sourceforge.jp/projects/perldocjp/docman/">その他文書</a></li>
+<li><a href="http://perldocjp.osdn.jp/perldocjp-faq">FAQ</a></li>
+<li><a href="http://osdn.net/projects/perldocjp/docman/">その他文書</a></li>
 </ul>
 [% END %]
