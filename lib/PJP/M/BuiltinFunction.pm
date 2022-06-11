@@ -8,7 +8,7 @@ use Pod::Perldoc;
 use Amon2::Declare;
 use Regexp::Assemble;
 use constant FUNCTION_LIST_FILE => ($ENV{PLACK_ENV} and $ENV{PLACK_ENV} eq 'deployment')
-                                   ? '/var/lib/jpa/perldoc.jp/code/functions.txt'
+                                   ? '/var/lib/jpa/perldoc.jp/functions.txt'
                                    : 'functions.txt';
 use PJP::Util qw/slurp/;
 
