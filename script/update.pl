@@ -26,31 +26,37 @@ if (! -d $assets_dir) {
     mkdir $assets_dir;
 }
 
-if (! -d $assets_dir . '/perldoc.jp/') {
+if (! $ENV{SKIP_ASSETS_UPDATE}) {
+    if (! -d $assets_dir . '/perldoc.jp/') {
 
-    mkdir $assets_dir . '/perldoc.jp/';
-    system(<<_SHELL_);
-cd $assets_dir/perldoc.jp;
-cvs -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp login;
-cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
+        mkdir $assets_dir . '/perldoc.jp/';
+        system(<<_SHELL_);
+    cd $assets_dir/perldoc.jp;
+    cvs -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp login;
+    cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
 _SHELL_
 
-} else {
-    system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
+    } else {
+        system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
+    }
 }
 
 if (! -d $assets_dir . '/module-pod-jp/') {
     system(qq{git clone https://github.com/perldoc-jp/module-pod-jp.git $assets_dir/module-pod-jp/});
 }
 
-system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
+if (! $ENV{SKIP_ASSETS_UPDATE}) {
+    system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
+}
 
 foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {
     if (! -d $assets_dir . "/$jpa_module/") {
 	system(qq{cd $assets_dir; git clone https://github.com/jpa/$jpa_module.git});
     }
 
-    system(qq{cd $assets_dir/$jpa_module; git pull origin master});
+    if (! $ENV{SKIP_ASSETS_UPDATE}) {
+	system(qq{cd $assets_dir/$jpa_module; git pull origin master});
+    }
 }
 
 unlink "$assets_dir/index-module.pl";

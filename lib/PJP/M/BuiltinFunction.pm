@@ -43,7 +43,7 @@ our @REGEXP;
 
 sub exists {
     my ($class, $name) = @_;
-    return exists $FUNCTIONS{$name};
+    return (exists $FUNCTIONS{$name} or $name =~ qr/^$OPS_REGEXP$/);
 }
 
 sub retrieve {
@@ -68,8 +68,8 @@ sub generate {
             while (<$fh>) {
                 $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
                 s{E<sol>}{/}g;
-                my @names = m{C<(.*?)>}g;
-                push @_candidate, map {s{^($OPS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names
+                my @names = m{C<(\-?[a-zA-Z_]+)(?:[^>]+)?>}g;
+                push @_candidate, map {s{^($OPS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names;
             }
             close $fh;
             my %tmp;
@@ -102,7 +102,7 @@ sub generate {
         my @dynamic_pod;
         my $perldoc = Pod::Perldoc->new(opt_f => $name);
         my $found_in_perlop = 0;
-        if (not $name =~ m{^(?:$OPS_REGEXP)}) {
+        if (not $name =~ m{^(?:$OPS_REGEXP)$}) {
             eval {
                 $perldoc->search_perlfunc([$path], \@dynamic_pod);
             };
