@@ -2,6 +2,15 @@
 
 use strict;
 use warnings;
+
+use Encode qw/encode_utf8/;
+use Log::Minimal;
+local $Log::Minimal::PRINT = sub {
+    my ( $time, $type, $message, $trace, $raw_message) = @_;
+    $message = encode_utf8($message);
+    warn "$time [$type] $message at $trace\n";
+};
+
 use lib qw(./lib);
 use PJP;
 use Module::Find qw/useall/;

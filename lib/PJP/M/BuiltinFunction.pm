@@ -104,7 +104,7 @@ sub generate {
         my $found_in_perlop = 0;
         if (not $name =~ m{^(?:$OPS_REGEXP)$}) {
             eval {
-                $perldoc->search_perlfunc([$path], \@dynamic_pod);
+                $perldoc->search_perlfunc([$path, $perlop_path], \@dynamic_pod);
             };
             $encoding = $perlfunc_encoding;
         } else {
