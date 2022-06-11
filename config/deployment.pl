@@ -18,5 +18,5 @@ my $slave_db  = '/var/lib/jpa/perldoc.jp/db/perldocjp.slave.db';
     },
     'assets_dir' => "/var/lib/jpa/perldoc.jp/assets/",
     'code_dir'   => "/var/lib/jpa/perldoc.jp/code/",
-    'perl'       => "/var/lib/jpa/perl5/perls/perl-5.14.2/bin/perl -Mlib=./extlib/lib/perl5 -Ilib",
+    'perl'       => "/opt/local/perl-5.18.2/bin -Mlib=./local/lib/perl5 -Ilib",
 };
