@@ -42,15 +42,15 @@ get '/translators' => sub {
     return $c->render('translators.tt', {years => do 'data/years.pl'});
 };
 
-get '/category' => sub {
-    my $c = shift;
-
-    return $c->render('category.tt', {
-                                   en2ja               => do "data/category_en2ja.pl",
-                                   categorized_modules => do "data/category_data.pl",
-                                  });
-};
-
+# NOTE: 2021/12/27: search.cpan.orgからmetacpan.orgへの移行に伴い意味不明な分類になっていたので廃止
+# get '/category' => sub {
+#     my $c = shift;
+#
+#     return $c->render('category.tt', {
+#                                    en2ja               => do "data/category_en2ja.pl",
+#                                    categorized_modules => do "data/category_data.pl",
+#                                   });
+# };
 
 get '/category/:name' => sub {
     my ($c, $args) = @_;
