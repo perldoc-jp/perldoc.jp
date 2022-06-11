@@ -45,6 +45,8 @@ plackup -p 5000 PJP.psgi
 perl ./script/update.pl
 ```
 
+※翻訳データのアップデートを行いたくないが、関連するファイルやDBのみ更新したい場合は、`SKIP_ASSETS_UPDATE=1`を環境変数に設定してください。
+
 ## デザインを変更するには
 
 デザインの管理には Scss をつかっています。
