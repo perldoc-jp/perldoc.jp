@@ -10,3 +10,10 @@ Entries.Log
 nytprof/
 db/
 *.sw[pomn]
+
+/.carmel/
+/local/
+/data/recent.pl
+/data/years.pl
+/static/docs.json
+/static/rss/
