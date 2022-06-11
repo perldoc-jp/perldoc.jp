@@ -34,7 +34,7 @@ perl scirpt/update.pl
 ## plackup の実行
 
 ```sh
-plackup -p 5000 app.psgi
+plackup -Ilib -p 5000 app.psgi
 ```
 
 勿論、PSGI based なので、Apache ででもなんででもうごきますけども。
