@@ -153,8 +153,8 @@ sub search_by_packages_like {
 sub generate {
         my ($class, $c) = @_;
 
-        my $txn = $c->dbh->txn_scope();
-        $c->dbh->do(q{DELETE FROM pod});
+        my $txn = $c->dbh_master->txn_scope();
+        $c->dbh_master->do(q{DELETE FROM pod});
         my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')),
                      glob(catdir($c->assets_dir(), 'Moose-Doc-JA')),
                      glob(catdir($c->assets_dir(), 'MooseX-Getopt-Doc-JA')),
