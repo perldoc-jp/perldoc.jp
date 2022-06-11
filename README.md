@@ -23,6 +23,8 @@ perl cpanm --installdeps .
 
 cvs と git コマンドが必要です。
 
+※ `conf/development.pl` の `assets_dir` を変更しておくのをおすすめします(デフォルトでは、ホームディレクトリの直下に `assets` というディレクトリが必要になります)。
+
 ```sh
 perl scirpt/update.pl
 ```
@@ -32,7 +34,7 @@ perl scirpt/update.pl
 ## plackup の実行
 
 ```sh
-plackup -p 5000 PJP.psgi
+plackup -Ilib -p 5000 app.psgi
 ```
 
 勿論、PSGI based なので、Apache ででもなんででもうごきますけども。
