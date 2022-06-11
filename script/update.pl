@@ -40,14 +40,14 @@ _SHELL_
 }
 
 if (! -d $assets_dir . '/module-pod-jp/') {
-    system(qq{git clone git://github.com/perldoc-jp/module-pod-jp.git $assets_dir/module-pod-jp/});
+    system(qq{git clone https://github.com/perldoc-jp/module-pod-jp.git $assets_dir/module-pod-jp/});
 }
 
 system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
 
 foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {
     if (! -d $assets_dir . "/$jpa_module/") {
-	system(qq{cd $assets_dir; git clone git://github.com/jpa/$jpa_module.git});
+	system(qq{cd $assets_dir; git clone https://github.com/jpa/$jpa_module.git});
     }
 
     system(qq{cd $assets_dir/$jpa_module; git pull origin master});
