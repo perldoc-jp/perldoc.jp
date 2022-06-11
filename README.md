@@ -22,7 +22,8 @@ perl cpanm --installdeps .
 ## 翻訳データの取得
 
 cvs と git コマンドが必要です。
-※ `conf/development.pl` の assets_dir` を変更しておくのをおすすめします(デフォルトでは、ホームディレクトリの直下に `assets` というディレクトリが必要になります)。
+
+※ `conf/development.pl` の `assets_dir` を変更しておくのをおすすめします(デフォルトでは、ホームディレクトリの直下に `assets` というディレクトリが必要になります)。
 
 ```sh
 perl scirpt/update.pl
