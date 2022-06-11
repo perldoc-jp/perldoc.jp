@@ -22,7 +22,8 @@ create table pod (
         path        varchar(255) not null PRIMARY KEY,
         distvname   varchar(255) not null,
         repository  varchar(255) not null,
-        html        text
+        html        text,
+        update_time integer
 );
 CREAte INDEX if not exists package on pod (package);
 CREAte INDEX if not exists distvname on pod (distvname);
