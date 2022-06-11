@@ -51,16 +51,16 @@ get '/translators' => sub {
 #                                    categorized_modules => do "data/category_data.pl",
 #                                   });
 # };
-
-get '/category/:name' => sub {
-    my ($c, $args) = @_;
-    my $modules =  do "data/category_data.pl";
-    return $c->render('category/index.tt', {
-                                      en2ja    => do "data/category_en2ja.pl",
-                                      category => $args->{name},
-                                      modules  => $modules->{category_modules}->{$args->{name}},
-                                     });
-};
+# 
+# get '/category/:name' => sub {
+#     my ($c, $args) = @_;
+#     my $modules =  do "data/category_data.pl";
+#     return $c->render('category/index.tt', {
+#                                       en2ja    => do "data/category_en2ja.pl",
+#                                       category => $args->{name},
+#                                       modules  => $modules->{category_modules}->{$args->{name}},
+#                                      });
+# };
 
 get '/category/:name/:name2' => sub {
     my ($c, $args) = @_;
