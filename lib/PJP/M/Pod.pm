@@ -143,7 +143,7 @@ sub get_latest_file_path {
 
     sub handle_text {
         my ($self, $text) = @_;
-        if ($_[0]->{end_head}-- > 0 && $text =~ /^\((.+)\)$/) {
+        if (defined $_[0]->{end_head} && $_[0]->{end_head}-- > 0 && $text =~ /^\((.+)\)$/) {
             # 最初の行の括弧でかこまれたものがあったら、それは翻訳された見出しとみなす
             # 仕様については Pod::L10N を見よ
             $_[0]->{translated_toc}->{$_[0]->{last_head_body}} = $1;
