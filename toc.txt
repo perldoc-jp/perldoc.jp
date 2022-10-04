@@ -1,177 +1,242 @@
-概要(overview)
-
+# perldoc perl で出力される内容を元にしています
+# 翻訳のないものは、# でコメントアウトしてください
+# 空行には意味があります。セクションごとに空行は入れないでください。
+# インデントは4文字か8文字です。
+概要
     perl - Perl 5 言語インタプリタ
     perlintro - Perl の概要
     perlrun - perl コマンドの実行とオプションについて
-    perlpolicy - Perlコアにまつわるさまざまな方針、公約
-    perlcommunity - Perl コミュニティの概要
-    perlbook - Perl およびそれに関連する本
-
+#    perltoc - PerlドキュメントのTOC
 チュートリアル
-
-    perldebtut - デバッグのチュートリアル
-    perlopentut - Perl でいろんなものを開くためのチュートリアル
-    perlpacktut - pack と unpack のチュートリアル
-    perlreftut - Mark によるリファレンスに関するとても短いチュートリアル
-    perlretut - Perl の正規表現のチュートリアル
-    perlrequick - Perl 正規表現のクイックスタート
-    perlthrtut - Perl におけるスレッドのチュートリアル
-    perlunitut - Perl における Unicode のチュートリアル
-    perlcheat - perl チートシート
-    perlbot - OO の例とか(あとでこの desc かきなおす)
-    perlboot - Perl オブジェクト指向導入編
-    perltooc - トムによる Perl のクラスデータのためのオブジェクト指向チュートリアル
-    perltoot - トムによる Perl オブジェクト指向チュートリアル
+    perlreftut - Perlのリファレンスの短いインストラクション
     perldsc - Perl のデータ構造クックブック
     perllol - Perl で配列の配列を操作する
+
+    perlrequick - Perl 正規表現のクイックスタート
+    perlretut - Perl の正規表現のチュートリアル
+
+    perlootut - Perl の初心者向けオブジェクト指向チュートリアル
+
+    perlperf - Perl の性能と最適化のテクニック
+
     perlstyle - Perl スタイルガイド
+
+    perlcheat - perl チートシート
     perltrap - 不注意による Perl の罠
+    perldebtut - デバッグのチュートリアル
 
-リファレンス
-
+    perlfaq - Perl に関するよくある質問
+        perlfaq1 - Perl に関する一般的な質問
+        perlfaq2 - Perl の入手と学習
+        perlfaq3 - プログラミングツール
+        perlfaq4 - データ操作
+        perlfaq5 - ファイルとフォーマット
+        perlfaq6 - 正規表現
+        perlfaq7 - Perl 言語一般に関することがら
+        perlfaq8 -  システムとの相互作用
+        perlfaq9 - ネットワーク
+リファレンスマニュアル
     perlsyn - Perl の文法
     perldata - Perl のデータ型
+    perlop - Perl の演算子と優先順位
     perlsub - Perl のサブルーチン
     perlfunc - Perl 組み込み関数
-    perlutil - Perl 配布と共にパッケージされているユーティリティ
-    perlunicode - Perl における Unicode サポート
-    perlunifaq - Perl Unicode FAQ
-    perluniintro - Perl Unicode の手引き
-    perlfilter - ソースフィルタ
-    perlfork - Perl の fork エミュレーション
-    perlcompile - Perlコンパイラ・トランスレータの解説
-    perldbmfilter - Perl DBM フィルタ
+        perlopentut - Perl でいろんなものを開くためのチュートリアル
+        perlpacktut - pack と unpack のチュートリアル
+    perlpod - Plain Old Documentation フォーマット
+    perlpodspec - Plain Old Documentation: フォーマット仕様とメモ
+    perldocstyle - Perlコアドキュメントのスタイルガイド
+    perlpodstyle - PerlのPODのスタイルガイド
+    perldiag - さまざまな Perl 診断メッセージ
+    perldeprecation - Perlの廃止予定の機能
+    perllexwarn - Perl のレキシカルな警告
     perldebug - Perl のデバッグ
+    perlvar - Perl の特殊変数
+    perlre - Perl 正規表現
+    perlrebackslash - Perl 正規表現逆スラッシュシーケンスとエスケープ
+    perlrecharclass - Perl 正規表現文字クラス
+    perlreref - Perl の正規表現のリファレンス
+    perlref - Perlのリファレンスとネストしたデータ構造
+    perlform - Perlフォーマット
+    perlobj - Perl のオブジェクト
+    perltie - オブジェクトクラスを単純な変数に隠す方法
+        perldbmfilter - Perl DBM フィルタ
+#
     perlipc - Perl のプロセス間通信 (シグナル, fifo, パイプ, 安全な副プロセス, ソケット, セマフォ)
+    perlfork - Perl の fork エミュレーション
+    perlnumber - Perl での数値と数値操作の意味論
+
+    perlthrtut - Perl におけるスレッドのチュートリアル
+
+    perlport - 移植性のある Perl を書く
     perllocale - Perl のロケール操作 (国際化と地域化)
+    perluniintro - Perl Unicode の手引き
+    perlunicode - Perl における Unicode サポート
+    perlunicook - Perl Unicode Cookbook
+    perlunifaq - Perl Unicode FAQ
+#    perluniprops - Perlのユニコードプロパティのインデックス
+    perlunitut - Perl における Unicode のチュートリアル
+#    perlebcdic - EBCDICプラットフォームでPerlを動かす上での考慮事項
+
+    perlsec - Perl のセキュリティ
+    perlsecpolicy - Perlのセキュリティレポートの取り扱いのポリシー
+
     perlmod - Perl のモジュール (パッケージとシンボルテーブル)
     perlmodlib - 新たな Perl モジュールを作ったり、既にあるものを検索する
     perlmodstyle - Perl モジュールスタイルガイド
+    perlmodinstall - PerlモジュールをCPANからインストールする方法
     perlnewmod - 新しいモジュールを配布するには
-    perltie - オブジェクトクラスを単純な変数に隠す方法
-    perlnumber - Perl での数値と数値操作の意味論
-    perlglossary - perl 用語集
-    perlperf - Perl の性能と最適化のテクニック
-    perlpod - Plain Old Documentation フォーマット
-    perlpodspec - Plain Old Documentation: フォーマット仕様とメモ
-    perlport - 移植性のある Perl を書く
     perlpragma - ユーザープラグマの書き方
-    perlre - Perl 正規表現
-    perlrecharclass - Perl 正規表現文字クラス
-    perlrebackslash - Perl 正規表現逆スラッシュシーケンスとエスケープ
-    perlreref - Perl の正規表現のリファレンス
-    perldiag - さまざまな Perl 診断メッセージ
-    perllexwarn - Perl のレキシカルな警告
-    perlform - Perlフォーマット
-    perlobj - Perl のオブジェクト
-    perlop - Perl の演算子と優先順位
-    perlre - Perl 正規表現
-    perlref - Perlのリファレンスとネストしたデータ構造
-    perlsec - Perl のセキュリティ
-    perlvar - Perl の特殊変数
 
-XS
+    perlutil - Perl 配布と共にパッケージされているユーティリティ
 
-    perlcall - C からの Perl 呼び出し規約
-    perlapi - perl public API の自動生成ドキュメント
-    # ↑ autodoc.pl の警告がみえちゃってる
-    perlapio - perl の抽象入出力インターフェース
-    perlxs - XS 言語リファレンスマニュアル
-    perlxstut - XSUB を書くためのチュートリアル
+    perlfilter - ソースフィルタ
+
+    perldtrace - PerlのDTraceサポート
+
+    perlglossary - perl 用語集
+内部とC言語のインターフェース
     perlembed - C プログラムへの Perl の埋め込み方
-    perlguts - Perl API の紹介
+    perldebguts -  Perlのデバッグ方法の紹介とチップス
+    perlxstut - XSUB を書くためのチュートリアル
+    perlxs - XS 言語リファレンスマニュアル
+    perlxstypemap - Perl XS C/Perl の型変換ツール
     perlclib - 標準 C ライブラリ関数の内部的な代用品
+    perlguts - Perl API の紹介
+    perlcall - C からの Perl 呼び出し規約
+    perlmroapi - Perl メソッド解決プラグインインターフェース
+    perlreapi - Perl 正規表現プラグインインターフェース
+    perlreguts - Perl 正規表現エンジンの説明
 
-FAQ
+    perlapi - perl public API の自動生成ドキュメント
+#    perlintern  -        Perl internal functions (autogenerated)
+    perliol -  IO 層の Perl 実装への C API 
+    perlapio - perl の抽象入出力インターフェース
 
-    perlfaq - Perl に関するよくある質問
-    perlfaq1 - Perl に関する一般的な質問
-    perlfaq2 - Perl の入手と学習
-    perlfaq3 - プログラミングツール
-    perlfaq4 - データ操作
-    perlfaq5 - ファイルとフォーマット
-    perlfaq6 - 正規表現
-    perlfaq7 - Perl 言語一般に関することがら
-    perlfaq8 -  システムとの相互作用
-    perlfaq9 - ネットワーク
-
-更新履歴
-
+    perlhack      - Perl をハックする方法
+    perlsource    - Perl のソースツリーのガイド
+    perlinterp    - Perl インタプリタの概要
+    perlhacktut   - 簡単な C コードパッチの作成を一通り試す
+    perlhacktips  - Perl のコア C コードをハックするためのヒント
+    perlpolicy    - Perlコアにまつわるさまざまな方針、公約
+    perlgov       - Perl ガバナンス規則
+    perlgit       - git と Perl リポジトリに関する詳細情報
+歴史
     perlhist - Perl の歴史的記録
-    perldelta - 最新のperlでの変更点(最新の翻訳されているperldelta)
-    perl5162delta - perl v5.16.2 での変更点
-    perl5161delta - perl v5.16.1 での変更点
-    perl5160delta - perl v5.16.0 での変更点
-    perl5142delta - perl v5.14.2 での変更点
-    perl5141delta - perl v5.14.1 での変更点
-    perl5140delta - perl v5.14.0 での変更点
-    perl5123delta - perl v5.12.3 での変更点
-    perl5122delta - perl v5.12.2 での変更点
-    perl5121delta - perl v5.12.1 での変更点
-    perl5120delta - perl v5.12.0 での変更点
-    perl5101delta - perl v5.10.1 での変更点
-    perl5100delta - perl v5.10.0 での変更点
-    perl595delta - perl v5.9.5 での変更点
-    perl588delta - perl v5.8.8 での変更点
-    perl587delta - perl v5.8.7 での変更点
-    perl586delta - perl v5.8.6 での変更点
-    perl585delta - perl v5.8.5 での変更点
-    perl584delta - perl v5.8.4 での変更点
-    perl583delta - perl v5.8.3 での変更点
-    perl582delta - perl v5.8.2 での変更点
-    perl581delta - perl v5.8.1 での変更点
-    perl58delta - perl v5.8.0 での変更点
+    perldelta - 最新のPerlでの変更点(最新の翻訳されているperldelta)
+    perl5341delta - Perl v5.34.1 での変更点
+    perl5340delta - Perl v5.34.0 での変更点
+    perl5321delta - Perl v5.32.1 での変更点
+    perl5320delta - Perl v5.32.0 での変更点
+    perl5303delta - Perl v5.30.3 での変更点
+    perl5302delta - Perl v5.30.2 での変更点
+    perl5301delta - Perl v5.30.1 での変更点
+    perl5300delta - Perl v5.30.0 での変更点
+    perl5283delta - Perl v5.28.3 での変更点
+    perl5282delta - Perl v5.28.2 での変更点
+    perl5281delta - Perl v5.28.1 での変更点
+    perl5280delta - Perl v5.28.0 での変更点
+    perl5263delta - Perl v5.26.3 での変更点
+    perl5262delta - Perl v5.26.2 での変更点
+    perl5261delta - Perl v5.26.1 での変更点
+    perl5260delta - Perl v5.26.0 での変更点
+    perl5244delta - Perl v5.24.4 での変更点
+    perl5243delta - Perl v5.24.3 での変更点
+    perl5242delta - Perl v5.24.2 での変更点
+    perl5241delta - Perl v5.24.1 での変更点
+    perl5240delta - Perl v5.24.0 での変更点
+    perl5224delta - Perl v5.22.4 での変更点
+    perl5223delta - Perl v5.22.3 での変更点
+    perl5222delta - Perl v5.22.2 での変更点
+    perl5221delta - Perl v5.22.1 での変更点
+    perl5220delta - Perl v5.20.0 での変更点
+    perl5203delta - Perl v5.20.3 での変更点
+    perl5202delta - Perl v5.20.2 での変更点
+    perl5201delta - Perl v5.20.1 での変更点
+    perl5200delta - Perl v5.20.0 での変更点
+    perl5184delta - Perl v5.18.2 での変更点
+    perl5182delta - Perl v5.18.2 での変更点
+    perl5181delta - Perl v5.18.1 での変更点
+    perl5180delta - Perl v5.18.0 での変更点
+    perl5163delta - Perl v5.16.1 での変更点
+    perl5162delta - Perl v5.16.2 での変更点
+    perl5161delta - Perl v5.16.3 での変更点
+    perl5160delta - Perl v5.16.2 での変更点
+    perl5144delta - Perl v5.14.2 での変更点
+    perl5143delta - Perl v5.14.1 での変更点
+    perl5142delta - Perl v5.14.0 での変更点
+    perl5141delta - Perl v5.14.0 での変更点
+    perl5140delta - Perl v5.14.0 での変更点
+    perl5125delta - Perl v5.12.3 での変更点
+    perl5124delta - Perl v5.12.2 での変更点
+    perl5123delta - Perl v5.12.1 での変更点
+    perl5122delta - Perl v5.12.0 での変更点
+    perl5121delta - Perl v5.12.1 での変更点
+    perl5120delta - Perl v5.12.0 での変更点
+    perl5101delta - Perl v5.10.1 での変更点
+    perl5100delta - Perl v5.10.0 での変更点
+#    perl589delta - Perl v5.9.5 での変更点
+    perl588delta  - Perl v5.8.8 での変更点
+    perl587delta  - Perl v5.8.7 での変更点
+    perl586delta  - Perl v5.8.6 での変更点
+    perl585delta  - Perl v5.8.5 での変更点
+    perl584delta  - Perl v5.8.4 での変更点
+    perl583delta  - Perl v5.8.3 での変更点
+    perl582delta  - Perl v5.8.2 での変更点
+    perl581delta  - Perl v5.8.1 での変更点
+    perl58delta   - Perl v5.8.0 での変更点
+#    perl561delta        Perl changes in version 5.6.1
+#    perl56delta         Perl changes in version 5.6
+#    perl5005delta       Perl changes in version 5.005
+#    perl5004delta       Perl changes in version 5.004
+その他
+    perlbook - Perl およびそれに関連する本
+    perlcommunity - Perl コミュニティの概要
 
-プラグマ
+    perldoc - Pod 形式の Perl 文書の検索
 
-    strict - 安全ではないコンストラクトを制限する Perl プラグマ
-    warnings - 選択的な警告を調整する Perl プラグマ
-    warnings::register - import 関数の警告
-    autodie - 関数を、成功しなければ die する等価物に置き換える
-#    autodie::exception - 
-#    autodie::exception::system -
-#    autodie::hints - 
-    autouse - 関数が使われるまでモジュールの読み込みを延期する
-    base - コンパイル時に基底クラスとの ISA 関係を構築する
-    parent - コンパイル時に基底クラスとの ISA 関係を構築する
-    attributes - サブルーチンや変数の属性を設定/取得する
-    bigint - Perl 用の透過的な BigInteger 対応
-    bignum - Perl 用の透過的な BigNumber 対応
-    bigrat - Perl 用の透過的な BigNumber/BigRational 対応
-#    blib - MakeMaker の、インストールされていないバージョンのパッケージを使う
-#    bytes - 文字単位ではなくバイト単位の意味論を強制する Perl プラグマ
-#    charnames - \N{named} 文字列リテラルエスケープのための文字名を定義する
-    constant - 定数を宣言するための Perl プラグマ
-#    deprecate - 
-    diagnostics - 詳細な警告診断メッセージを出力する
-    encoding - 非 ascii や非 utf8 でスクリプトを書けるようにする
-    encoding::warnings - 暗黙のエンコーディング変換時の警告
-    feature - 新しい構文上の機能を有効にするプラグマ
-#    fields - コンパイル時のクラスフィールド
-    filetest - ファイルテスト権限演算子を制御する Perl プラグマ
-    if - 条件を満たした時にだけ Perl モジュールを use する
-#    inc::latest - 
-    integer - 浮動小数点ではなく整数算術を使うための Perl プラグマ
-#    less - より少ない何かを要求する
-    lib - コンパイル時に @INC を操作する
-    locale - 組み込み演算子で POSIX ロケールを使う/使わないための Perl プラグマ
-    mro - メソッド解決順序(Method Resolution Order)
-    open - 入出力のためにデフォルトのPerlIOレイヤセットするためのPerlのプラグマ
-    ops - コンパイル時に安全でない操作を制限する Perl プラグマ
-    overload - Perl の演算子のオーバーロードを行うパッケージ
-#    overload::numbers - 
-    overloading - レキシカルにオーバーロードを制御する perl プラグマ
-    re - 正規表現の振る舞いを変えるための Perl プラグマ
-    sigtrap - 単純なシグナルハンドリングを有効にするための Perl プラグマ
-    subs - サブルーチンの名前を先行宣言するための Perl プラグマ
-    threads - インタプリタスレッドの使用を可能にするPerl拡張
-    threads::shared - スレッド間でデータ構造を共有するためのPerl拡張
-    utf8 - ソースコード内に、UTF-8(か、UTF-EBCDIC)を有効/無効にするためのプラグマ
-    vars - 大域変数名を先行宣言するための Perl プラグマ (古いもの)
-    vmsish - VMS 特有の言語機能を制御するための Perl プラグマ
-
-標準添付モジュール
-
-    AutoLoader - 要求に応じてのみ、サブルーチンを読み込む。
-#    Carp - モジュールのための warn と die の代替
-    CGI - 簡単なCGI（Common Gateway Interface）クラス
+    perlexperiment - Perl の実験的機能の一覧
+#
+#    perlartistic - Perl Artistic License
+#    perlgpl - GNU General Public License
+# Language-Specific
+#     perlcn              Perl for Simplified Chinese (in EUC-CN)
+#     perljp              Perl for Japanese (in EUC-JP)
+#     perlko              Perl for Korean (in EUC-KR)
+#     perltw              Perl for Traditional Chinese (in Big5)
+# Platform-Specific
+#     perlaix             Perl notes for AIX
+#     perlamiga           Perl notes for AmigaOS
+#     perlandroid         Perl notes for Android
+#     perlbs2000          Perl notes for POSIX-BC BS2000
+#     perlcygwin          Perl notes for Cygwin
+#     perldos             Perl notes for DOS
+#     perlfreebsd         Perl notes for FreeBSD
+#     perlhaiku           Perl notes for Haiku
+#     perlhpux            Perl notes for HP-UX
+#     perlhurd            Perl notes for Hurd
+#     perlirix            Perl notes for Irix
+#     perllinux           Perl notes for Linux
+#     perlmacos           Perl notes for Mac OS (Classic)
+#     perlmacosx          Perl notes for Mac OS X
+#     perlnetware         Perl notes for NetWare
+#     perlopenbsd         Perl notes for OpenBSD
+#     perlos2             Perl notes for OS/2
+#     perlos390           Perl notes for OS/390
+#     perlos400           Perl notes for OS/400
+#     perlplan9           Perl notes for Plan 9
+#     perlqnx             Perl notes for QNX
+#     perlriscos          Perl notes for RISC OS
+#     perlsolaris         Perl notes for Solaris
+#     perlsynology        Perl notes for Synology
+#     perltru64           Perl notes for Tru64
+#     perlvms             Perl notes for VMS
+#     perlvos             Perl notes for Stratus VOS
+#     perlwin32           Perl notes for Windows
+削除されたドキュメントのスタブ
+    perlboot
+    perlbot
+    perlrepository
+#    perltodo
+    perltooc
+    perltoot

@@ -29,24 +29,43 @@ sub _render {
     open my $fh, '<:utf8', 'toc.txt' or die "Cannot open toc.txt: $!";
     my $out;
     my $started = 0;
+    my $pre_len = 4;
     while (<$fh>) {
         chomp;
-        if (!/\S/) {
+        if (/^\s*$/) {
+            $out =~ s{(.+)</li>}{$1<br><br></li>}s if $started;  # empty line
             next;
         } elsif (/^\s*\#/) {
             next;                       # comment line
         } elsif (/^\S/) {               # header line
+            if ($pre_len >= 8) {
+                $out .= "</ul>\n";
+                $pre_len = 4;
+            }
             $out .= "</ul>" if $started++;
             $out .= sprintf("<h3>%s</h3><ul>\n", html_escape($_));
         } else {                        # main line
-            s/^\s+//;
+            my $len = 0;
+            if (s/^(\s+)//) {
+                $len = length($1);
+            }
+
             my ($pkg, $desc) = split /\s*-\s*/, $_, 2;
-            $out .= sprintf('<li><a href="/pod/%s">%s</a>', (html_escape($pkg))x2);
+            if ($len >= 8 and $pre_len != $len) {
+                $out .= "<ul>\n";
+            } elsif ($len == 4 and $pre_len >= 8) {
+                $out .= "</ul>";
+            }
+            $out .= sprintf('<li><a href="/pod/%s">%s</a>', (html_escape($pkg)) x 2);
             if ($desc) {
                 $out .= sprintf(' - %s', html_escape($desc));
             }
             $out .= "</li>\n";
+            $pre_len = $len;
         }
+    }
+    if ($pre_len >= 8) {
+       $out .= "</ul>\n";
     }
     $out .= "</ul>" if $started;
     $out;
