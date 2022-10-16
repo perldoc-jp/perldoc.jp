@@ -136,7 +136,7 @@ sub generate {
         push @functions, $name;
         my $pod = join("", "=encoding $encoding\n\n=over 4\n\n", @dynamic_pod, "\n\n=back\n");
         $pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/func/$1>!g;
-        $pod =~ s!L<C<([a-z]+)(>\|/\1 .+?)>!L<$1|http://perldoc.jp/func/$1>!g;
+        $pod =~ s!L<C<([a-z]+|__[A-Z]+__)(>\|/\1(?: .+?)?)>!L<$1|http://perldoc.jp/func/$1>!g;
         my $html = PJP::M::Pod->pod2html(\$pod);
         $c->dbh_master->insert(
                                func => {
