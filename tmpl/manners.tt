@@ -26,8 +26,7 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#see_also">JPRPの参考文書</a></li>
 </ul>
 
-<a name="dir"></a>
-<h2>ディレクトリ構成</h2>
+<h2 id="dir">ディレクトリ構成</h2>
 
 <h3>コアドキュメント</h3>
 <pre>
@@ -56,8 +55,7 @@ docs/articles/ドメイン/パス/ファイル名.md
 /docs/articles/perl.com/pub/2012/06/perlunicook-further-resources.html
 </pre>
 
-<a name="abstract_pod"></a>
-<h2>podの抽出方法</h2>
+<h2 id="abstract_pod">podの抽出方法</h2>
 <pre>
 % perldoc -u Test::More
 % perldoc -u Test/More.pm
@@ -66,8 +64,7 @@ docs/articles/ドメイン/パス/ファイル名.md
 のようにすることで、pod を抽出することができます。
 </p>
 
-<a name="charset"></a>
-<h2>文字コード</h3>
+<h2 id="charset">文字コード</h3>
 <p>
 やむをえない事情がない限りは 文字コードはutf-8にしてください。<br />
 pod ファイルの先頭で、以下のように、encoding を指定します。
@@ -76,8 +73,7 @@ pod ファイルの先頭で、以下のように、encoding を指定します�
 =encoding utf8
 </pre>
 
-<a name="translation_lines"></a>
-<h2>翻訳文の行数</h3>
+<h2 id="translation_lines">翻訳文の行数</h3>
 <p>
 英語の文章の順番と日本語の文章の順番は違いますが、行数はある程度合わせた方が良いです。<br />
 英語が数行にわたって書かれている場合、日本語訳も数行に分けて書いたほうが良いです。
@@ -102,15 +98,14 @@ C&lt;%+&gt; と同様、この変数は現在アクティブな動的スコー�
 翻訳文をバージョンアップした際に、diff を見てチェックする場合などがありますが、その際に一行にまとめていると diff が見辛くなります。
 </p>
 
-<a name="leave_original"></a>
-<h2>原文の残し方</h2>
+<h2 id="leave_original">原文の残し方</h2>
 ファイル内に原文を残す場合は、
 <pre>
 <div style="color:blue">
 =begin original
- 
+
 原文...
-  
+
 =end original
 </div>
 </pre>
@@ -137,8 +132,7 @@ HTMLの場合は、原文がかこまれているタグのクラス名を origin
 
 (バージョンの範囲)
 </pre>
-<a name="code_translation"></a>
-<h2>コード部分の翻訳</h3>
+<h2 id="code_translation">コード部分の翻訳</h3>
 
 コード部分は訳さずそのまま残しておいた方が良いです。<br />
 下記の赤色の部分はコード部分ですが、これらは、originalには含みません。<br />
@@ -175,8 +169,7 @@ Example2:
 
 </pre>
 
-<a name="head1_translation"></a>
-<h2>=headの翻訳</h2>
+<h2 id="head1_translation">=headの翻訳</h2>
 <p>
 NAME, SYNOPSYS, DESCRIPTION などですが、代表的なものは、perldoc.jpでは、自動的に翻訳されて表示されます。<br />
 翻訳される場合原文をそのままにして、下に（）で書いてください。<br />
@@ -223,16 +216,14 @@ GreatModule - 偉大なモジュール
 <tr><td>SUPPORT</td><td>サポート</td></tr>
 </table>
 
-<a name="link_translation"></a>
-<h2>L&lt;...&gt;の翻訳</h2>
+<h2 id="link_translation">L&lt;...&gt;の翻訳</h2>
 <p>
 <i>L&lt;/STRUCTURE&gt;</i> のような POD内リンクについては、perldoc.jp では英語のままでも、英語を翻訳しても、いずれでも正しい場所へリンクされます。<br />
 ただし、<i>L&lt;CPAN::Meta::Spec/optional_features&gt;</i> のような同じ文書内に含まれないリンクに関しては翻訳されると正しい場所にリンクできなくなります。<br />
 ※他のPOD表示ツールで日本語に翻訳されたリンクが正しく動くかはわかりません(たぶん、動きません)。
 </p>
 
-<a name="item_translation"></a>
-<h2>=itemの翻訳</h2>
+<h2 id="item_translation">=itemの翻訳</h2>
 =item を =begin original 〜 =end original で囲むと、PODのパースに失敗する場合があります。以下のように回避できます。
 <h3>(a) =item の下に ()で訳文を入れる</h3>
 <p>
@@ -316,8 +307,7 @@ original sentence.
 =back
 </pre>
 
-<a name="html"></a>
-<h2>HTML形式の翻訳についての特別な処理</h2>
+<h2 id="html">HTML形式の翻訳についての特別な処理</h2>
 <p>
 perldoc.jpでは、HTML形式の翻訳の場合、以下の処理を行っています。
 </p>
@@ -340,8 +330,7 @@ JavaScript, style, classは削除されます。以下の class については�
 翻訳文を表示する代わりに、指定のURLへリダイレクトします。
 </p>
 
-<a name="md"></a>
-<h2>Markdown形式の翻訳についての特別な処理</h2>
+<h2 id="md">Markdown形式の翻訳についての特別な処理</h2>
 
 <p>
 perldoc.jpでは、Markdown形式の翻訳の場合、以下の処理を行っています。
@@ -364,9 +353,7 @@ original sentence
 --&gt;
 </pre>
 
-<a name="info"></a>
-
-<h2>連絡先の記述</h2>
+<h2 id="info">連絡先の記述</h2>
 <p>連絡先を書く場合は、翻訳文の最後に以下のように付記すると良いでしょう(特に決まりはありません)。</p>
 <pre>
 =head1 翻訳について
@@ -376,8 +363,7 @@ original sentence
 <p>
 翻訳リポジトリの場所や、翻訳プロジェクトの名前やURL、誤訳の報告先などを書き足しても良いかと思います。
 </p>
-<a name="not_specified"></a>
-<h2>決まっていないこと</h2>
+<h2 id="not_specified">決まっていないこと</h2>
 <p>
 以下の点は、特に決まっていませんが、各項目、前者の方が多いと思います。
 </p>
@@ -386,8 +372,7 @@ original sentence
 <li>英語と日本語の間のスペース ... 「ある word の翻訳」or 「あるwordの翻訳」</li>
 <li>口語体 or 文語体 ... 「です、ます」 or 「である」</li>
 </ul>
-<a name="info2author"></a>
-<h2>翻訳することについての著者への報告</h2>
+<h2 id="info2author">翻訳することについての著者への報告</h2>
 <p>
 ほとんどのモジュールが改変と再配布が許可されているライセンスなので、元々のドキュメントの著者に翻訳の報告をする必要はありません。<br />
 ライセンスが不明な場合や、改変と再配布が許可されていないライセンスの場合には、著者に連絡を取ってください。<br />
@@ -405,23 +390,20 @@ Can I distribute the translated document
 under the same terms as Perl itself?
 </pre>
 
-<a name="inro2translation"></a>
-<h2>翻訳したことの報告</h2>
+<h2 id="inro2translation">翻訳したことの報告</h2>
 <p>
 JPRPの場合、<a href="http://www.freeml.com/perldocjp/0000504">RFCメール</a>をMLに送るという方法を取っています。<br />
 JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィードで配信されます。
 </p>
 
-<a name="translation_table"></a>
-<h2>対訳表</h2>
+<h2 id="translation_table">対訳表</h2>
 <p>
 Perlの用語の対訳表を以下にまとめています。
 </p>
 <ul>
 <li><a href="https://github.com/perldoc-jp/module-pod-jp/blob/master/translation_table.md">対訳表</a></li>
 
-<a name="see_also"></a>
-<h2>JPRPの参考文書</h2>
+<h2 id="see_also">JPRPの参考文書</h2>
 <p>
 JPRPに関する個別の決め事などは、以下を参照してください。
 </p>
