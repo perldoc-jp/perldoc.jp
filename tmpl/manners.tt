@@ -22,6 +22,7 @@ Perlのドキュメントを翻訳する上での留意事項を書いていま�
 <li><a href="#info2author">翻訳することについての著者への報告</a></li>
 <li><a href="#not_specified">決まっていないこと</a></li>
 <li><a href="#inro2translation">翻訳したことの報告</a></li>
+<li><a href="#translation_table">対訳表</a></li>
 <li><a href="#see_also">JPRPの参考文書</a></li>
 </ul>
 
@@ -410,6 +411,14 @@ under the same terms as Perl itself?
 JPRPの場合、<a href="http://www.freeml.com/perldocjp/0000504">RFCメール</a>をMLに送るという方法を取っています。<br />
 JPRP、gitリポジトリで翻訳された場合は、当サイトのRSSフィードで配信されます。
 </p>
+
+<a name="translation_table"></a>
+<h2>対訳表</h2>
+<p>
+Perlの用語の対訳表を以下にまとめています。
+</p>
+<ul>
+<li><a href="https://github.com/perldoc-jp/module-pod-jp/blob/master/translation_table.md">対訳表</a></li>
 
 <a name="see_also"></a>
 <h2>JPRPの参考文書</h2>
