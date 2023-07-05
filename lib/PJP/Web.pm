@@ -19,7 +19,11 @@ sub create_response { shift; PJP::Web::Response->new(@_) }
 # dispatcher
 use PJP::Web::Dispatcher;
 sub dispatch {
-    return PJP::Web::Dispatcher->dispatch($_[0]) or die "response is not generated";
+    my $dispatch = PJP::Web::Dispatcher->dispatch($_[0]);
+    unless ($dispatch) {
+        die "response is not generated";
+    }
+    return  $dispatch;
 }
 
 # setup view class
