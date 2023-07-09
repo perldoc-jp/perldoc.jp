@@ -18,6 +18,8 @@ local $Data::Dumper::Terse = 1;
 
 my %IGNORE_FILES = (
     'modules/CGI-FastTemplate-1.09/README' => 1,
+    'modules/translation_table.md' => 1,
+    'modules/translation-tutorial.md' => 1,
     );
 
 main();
