@@ -32,3 +32,7 @@ requires 'Web::Scraper';
 requires 'JSON::XS';
 requires 'LWP::UserAgent::WithCache';
 requires 'HTML::Entities';
+requires 'Router::Simple';
+requires 'Router::Simple::Sinatraish';
+requires 'Log::Minimal';
+

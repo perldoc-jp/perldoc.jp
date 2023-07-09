@@ -15,7 +15,7 @@ use PJP::Util qw/slurp/;
 # perlop から検索するものの正規表現
 my $OPS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
 
-our @FUNCTIONS = sort split /\n/, slurp(FUNCTION_LIST_FILE);
+our @FUNCTIONS = -e FUNCTION_LIST_FILE ? sort split /\n/, slurp(FUNCTION_LIST_FILE) : ();
 
 my %FUNCTIONS;
 @FUNCTIONS{@FUNCTIONS} = ();
