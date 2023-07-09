@@ -83,6 +83,10 @@ sub _file2name {
     } elsif ($name =~ s{^(Moose[^/]*?)}{}) {
         $in = $1;
         $in =~s{-}{::};
+    } elsif ($name eq 'translation-tutorial.md') {
+        $in = '翻訳チュートリアル';
+    } elsif ($name eq 'translation_table.md') {
+        $in = '対訳表';
     } else {
         die $name;
     }
