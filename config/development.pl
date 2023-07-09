@@ -16,7 +16,7 @@ my $slave_db  = "$ENV{HOME}/perldocjp.db";
     ],
     'Text::Xslate' => {
         path => ['tmpl/'],
-        cache => './xtc',
+        cache_dir => './xtc',
     },
     'assets_dir' => "$ENV{HOME}/assets/",
     'code_dir'   => qx/pwd/,
