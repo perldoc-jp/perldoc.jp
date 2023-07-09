@@ -20,10 +20,8 @@ ENV PLACK_ENV=docker
 ENV PERL5LIB=/usr/src/app/local/lib/perl5
 ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# FIXME
-# ENV CVS_RSH=ssh
-# ENV CVSROOT=:pserver:anonymous@cvs.osdn.net:/cvsroot/perldocjp
-# RUN perl script/update.pl
+ENV CVS_PASSFILE=/usr/src/app/.cvspass
+RUN perl script/update.pl
 
 EXPOSE 5000
 CMD ["./local/bin/plackup", "-p", "5000", "-Ilib", "app.psgi"]
