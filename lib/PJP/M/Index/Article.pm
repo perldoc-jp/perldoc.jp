@@ -60,7 +60,7 @@ sub generate {
     my @files;
     for my $base (map { File::Spec->catdir( $c->assets_dir(), $_) } qw(
         perldoc.jp/docs/articles/
-        module-pod-jp/docs/articles/
+        translation/docs/articles/
     )) {
         push @files, $class->_get_files($c, $base) if -d $base;
     }

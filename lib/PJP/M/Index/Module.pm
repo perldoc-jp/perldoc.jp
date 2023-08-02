@@ -61,7 +61,7 @@ sub generate {
         Moose-Doc-JA/
         MooseX-Getopt-Doc-JA/
         perldoc.jp/docs/modules/
-        module-pod-jp/docs/modules/
+        translation/docs/modules/
     )) {
         push @mods, $class->_generate($c, $base);
     }
