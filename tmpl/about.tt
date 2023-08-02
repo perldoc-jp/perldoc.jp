@@ -23,12 +23,12 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 </p>
 <h2>git リポジトリ(github)</h2>
 <ul>
-<li><a href="https://github.com/perldoc-jp/module-pod-jp">github のリポジトリ</a></li>
+<li><a href="https://github.com/perldoc-jp/translation">github のリポジトリ</a></li>
 </ul>
 <p>
     git がいいという場合はにこちらにおいてください。<br />
     このリポジトリは、JPRP とは関係がありません。こちらの方がよりゆるい管理態勢になっています。<br /><br />
-    こちらに貢献する場合は、fork して pull-reqeust を送るか、何度もコミットしたい場合は、<a href="https://github.com/perldoc-jp/module-pod-jp/issues/new">issues</a> にコミット権が欲しい旨を書き込んで下さい。
+    こちらに貢献する場合は、fork して pull-reqeust を送るか、何度もコミットしたい場合は、<a href="https://github.com/perldoc-jp/translation/issues/new">issues</a> にコミット権が欲しい旨を書き込んで下さい。
 </p>
 
 <h2>IRC</h2>
@@ -44,7 +44,7 @@ miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、�
 </p>
 <ul>
 <li><a href="https://osdn.net/projects/perldocjp/ticket/">JPRPの誤訳の報告</a></li>
-<li><a href="https://github.com/perldoc-jp/module-pod-jp/issues">gitリポジトリの誤訳の報告</a></li>
+<li><a href="https://github.com/perldoc-jp/translation/issues">gitリポジトリの誤訳の報告</a></li>
 <li><a href="https://github.com/perldoc-jp/perldoc.jp/issues">サイトの不具合の報告</a></li>
 </ul>
 <h2>謝辞</h2>

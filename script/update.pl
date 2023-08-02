@@ -50,12 +50,12 @@ _SHELL_
     }
 }
 
-if (! -d $assets_dir . '/module-pod-jp/') {
-    system(qq{git clone https://github.com/perldoc-jp/module-pod-jp.git $assets_dir/module-pod-jp/});
+if (! -d $assets_dir . '/translation/') {
+    system(qq{git clone https://github.com/perldoc-jp/translation.git $assets_dir/translation/});
 }
 
 if (! $ENV{SKIP_ASSETS_UPDATE}) {
-    system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
+    system(qq{cd $assets_dir/translation; git pull origin master});
 }
 
 foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {

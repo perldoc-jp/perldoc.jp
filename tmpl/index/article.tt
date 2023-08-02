@@ -11,7 +11,7 @@
                 <tr>
                     <td nowrap="nowrap">
                         <a href="/docs/articles/[% v.distvname %]">[% v.name %]</a>
-                        [% IF v.repository=='module-pod-jp' %]
+                        [% IF v.repository=='translation' %]
                             <img src="/static/img/github.png" width="16" height="16" />
                         [% END %]
                     </td>
