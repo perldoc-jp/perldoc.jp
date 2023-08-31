@@ -1,4 +1,4 @@
-FROM perl:5.36.1-bullseye
+FROM perl:5.38-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -10,8 +10,7 @@ WORKDIR /usr/src/app
 
 COPY cpanfile ./
 RUN cpm install
-
-COPY . ./
+COPY . .
 
 RUN sqlite3 perldocjp.master.db < sql/sqlite.sql
 RUN cp perldocjp.master.db perldocjp.slave.db
