@@ -20,8 +20,7 @@ ENV PLACK_ENV=docker
 ENV PERL5LIB=/usr/src/app/local/lib/perl5
 ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-ENV CVS_PASSFILE=/usr/src/app/.cvspass
+# 翻訳データの更新
 RUN perl script/update.pl
 
-EXPOSE 5000
 CMD ["./local/bin/plackup", "-p", "5000", "-Ilib", "app.psgi"]

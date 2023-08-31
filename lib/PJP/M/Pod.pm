@@ -66,7 +66,7 @@ sub get_file_list {
 
     my @path = reverse sort { eval { version->parse($a->[1]) } <=> eval { version->parse($b->[1]) } } map {
         +[ $_, map { local $_=$_; s!.*/perl/!!; s!/$name.pod!!; $_ } $_ ]
-    } glob("@{[ c()->assets_dir() ]}/perldoc.jp/docs/perl/*/$name.pod");
+    } glob("@{[ c()->assets_dir() ]}/translation/docs/perl/*/$name.pod");
         return @path;
 }
 
