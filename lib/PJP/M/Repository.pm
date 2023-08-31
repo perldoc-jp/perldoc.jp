@@ -46,7 +46,7 @@ sub recent_data {
       }
   }em;
 
-  foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA module-pod-jp/) {
+  foreach my $repos (qw/Moose-Doc-JA MooseX-Getopt-Doc-JA translation/) {
       foreach my $file (File::Find::Rule->file()->name(qr/\.(pod|html|md)$/)->in("$assets_dir$repos")) {
           my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date' $file} or next;
           my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;

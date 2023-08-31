@@ -35,27 +35,27 @@ if (! -d $assets_dir) {
     mkdir $assets_dir;
 }
 
-if (! $ENV{SKIP_ASSETS_UPDATE}) {
-    if (! -d $assets_dir . '/perldoc.jp/') {
+#if (! $ENV{SKIP_ASSETS_UPDATE}) {
+#    if (! -d $assets_dir . '/perldoc.jp/') {
+#
+#        mkdir $assets_dir . '/perldoc.jp/';
+#        system(<<_SHELL_);
+#    cd $assets_dir/perldoc.jp;
+#    cvs -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp login;
+#    cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
+#_SHELL_
+#
+#    } else {
+#        system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
+#    }
+#}
 
-        mkdir $assets_dir . '/perldoc.jp/';
-        system(<<_SHELL_);
-    cd $assets_dir/perldoc.jp;
-    cvs -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp login;
-    cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
-_SHELL_
-
-    } else {
-        system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
-    }
+if (! -d $assets_dir . '/translation/') {
+    system(qq{git clone https://github.com/perldoc-jp/translation.git $assets_dir/translation/});
 }
 
-if (! -d $assets_dir . '/module-pod-jp/') {
-    system(qq{git clone https://github.com/perldoc-jp/module-pod-jp.git $assets_dir/module-pod-jp/});
-}
-
 if (! $ENV{SKIP_ASSETS_UPDATE}) {
-    system(qq{cd $assets_dir/module-pod-jp; git pull origin master});
+    system(qq{cd $assets_dir/translation; git pull origin master});
 }
 
 foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {
