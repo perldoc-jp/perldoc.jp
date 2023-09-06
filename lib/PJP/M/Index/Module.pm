@@ -60,7 +60,6 @@ sub generate {
     for my $base (map { File::Spec->catdir( $c->assets_dir(), $_) } qw(
         Moose-Doc-JA/
         MooseX-Getopt-Doc-JA/
-        perldoc.jp/docs/modules/
         translation/docs/modules/
     )) {
         push @mods, $class->_generate($c, $base);
