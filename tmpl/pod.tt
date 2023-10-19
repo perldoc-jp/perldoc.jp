@@ -44,10 +44,6 @@
             <div class="Edit"><a target="_blank" href="https://github.com/perldoc-jp/translation/blob/master/docs/[% path %]">編集(github)</a></div>
             <div><a target="_blank" href="https://github.com/perldoc-jp/translation/commits/master/docs/[% path %]">変更履歴(github)</a></div>
             <div><a target="_blank" href="https://github.com/perldoc-jp/translation/issues/new?title=[% distvname | url %][% "の誤訳の報告" | url %]">誤訳の報告</a></div>
-            [% ELSIF repository=="Moose-Doc-JA" || repository=="MooseX-Getopt-Doc-JA" %]
-            [% github_path = path.replace('^modules/', '')%]
-            <div><a target="_blank" href="https://github.com/jpa/Moose-Doc-JA/commits/master/[% github_path %]">変更履歴(github)</a></div>
-            <div><a target="_blank" href="https://github.com/jpa/Moose-Doc-JA/issues/new?title=[% distvname | url %][% "の誤訳の報告" | url %]">誤訳の報告</a></div>
             [% ELSE %]
             <div><a target="_blank"  href="https://osdn.net/cvs/view/perldocjp/docs/[% path %]?view=log">変更履歴(sf.jp)</a></div>
             <div><a target="_blank" href="https://osdn.net/ticket/newticket.php?group_id=136">誤訳の報告</a></div>
