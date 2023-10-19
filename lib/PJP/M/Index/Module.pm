@@ -58,8 +58,6 @@ sub generate {
     # 情報をかきあつめる
     my @mods;
     for my $base (map { File::Spec->catdir( $c->assets_dir(), $_) } qw(
-        Moose-Doc-JA/
-        MooseX-Getopt-Doc-JA/
         translation/docs/modules/
     )) {
         push @mods, $class->_generate($c, $base);

@@ -22,13 +22,7 @@ sub slurp {
     my ($cnt) = $c->dbh->selectrow_array(q{SELECT COUNT(*) FROM pod WHERE path=?}, {}, $path);
     return undef unless $cnt;
 
-    my ($fullpath);
-    if ($path =~s{modules/(Moose[^/]*)}{$1}) {
-        my $module_name = $1;
-        ($fullpath) = glob(catdir($c->assets_dir(), $module_name . '-Doc-JA', $path));
-    } else {
-        ($fullpath) = glob(catdir($c->assets_dir(), '*', 'docs', $path));
-    }
+    my ($fullpath) = glob(catdir($c->assets_dir(), '*', 'docs', $path));
     return undef unless -f $fullpath;
 
     open my $fh, '<', $fullpath or die "Cannot open file: $fullpath";
@@ -155,10 +149,7 @@ sub generate {
 
         my $txn = $c->dbh_master->txn_scope();
         $c->dbh_master->do(q{DELETE FROM pod});
-        my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')),
-                     glob(catdir($c->assets_dir(), 'Moose-Doc-JA')),
-                     glob(catdir($c->assets_dir(), 'MooseX-Getopt-Doc-JA')),
-                    );
+        my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')));
         for my $base (@bases) {
                 my $repository = $base;
                 my $extention_exp;

@@ -58,16 +58,6 @@ if (! $ENV{SKIP_ASSETS_UPDATE}) {
     system(qq{cd $assets_dir/translation; git pull origin master});
 }
 
-foreach my $jpa_module (qw/MooseX-Getopt-Doc-JA  Moose-Doc-JA/) {
-    if (! -d $assets_dir . "/$jpa_module/") {
-	system(qq{cd $assets_dir; git clone https://github.com/jpa/$jpa_module.git});
-    }
-
-    if (! $ENV{SKIP_ASSETS_UPDATE}) {
-	system(qq{cd $assets_dir/$jpa_module; git pull origin master});
-    }
-}
-
 unlink "$assets_dir/index-module.pl";
 unlink "$assets_dir/index-article.pl";
 
