@@ -35,21 +35,6 @@ if (! -d $assets_dir) {
     mkdir $assets_dir;
 }
 
-#if (! $ENV{SKIP_ASSETS_UPDATE}) {
-#    if (! -d $assets_dir . '/perldoc.jp/') {
-#
-#        mkdir $assets_dir . '/perldoc.jp/';
-#        system(<<_SHELL_);
-#    cd $assets_dir/perldoc.jp;
-#    cvs -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp login;
-#    cvs -z3 -d:pserver:anonymous\@cvs.sourceforge.jp:/cvsroot/perldocjp co docs;
-#_SHELL_
-#
-#    } else {
-#        system(qq{cd $assets_dir/perldoc.jp/docs/; cvs up -dP});
-#    }
-#}
-
 if (! -d $assets_dir . '/translation/') {
     system(qq{git clone https://github.com/perldoc-jp/translation.git $assets_dir/translation/});
 }
