@@ -19,9 +19,6 @@
                                 <span class="old">(Latest: [% v.latest_version %])</span>
                             [% END %]
                         [% END %]
-                        [% IF v.repository=='translation' %]
-                            <img src="/static/img/github.png" width="16" height="16" />
-                        [% END %]
                         [% IF v.versions.size() > 1 %]
                             [% v.versions.shift() | null %][%# 最初の人は無視する %]
                             <div class="oldVersionInfo">
