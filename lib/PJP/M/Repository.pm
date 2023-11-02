@@ -51,7 +51,7 @@ sub _file2name {
         $in = $1;
     } elsif ($name =~ s{^docs/(perl|core)/[^/]+/}{}) {
         $in = 'perl';
-    } elsif ($name =~ s{^wiki/([^/]+)}{}) {
+    } elsif ($name =~ s{^manual/([^/]+)}{}) {
         $in = $1;
     } else {
         die $name;
