@@ -21,7 +21,7 @@ perl cpanm --installdeps .
 
 ## 翻訳データの取得
 
-cvs と git コマンドが必要です。
+git コマンドが必要です。
 
 ※ `conf/development.pl` の `assets_dir` を変更しておくのをおすすめします(デフォルトでは、ホームディレクトリの直下に `assets` というディレクトリが必要になります)。
 
@@ -68,16 +68,3 @@ sass  --compass -l --style expanded --watch scss/main.scss:static/css/main.css s
 
 main.css の方を変更してはいけません。
 
-## Dotcloud
-
-```sh
-# http://packages.ubuntu.com/natty/cvs
-curl -LO http://archive.ubuntu.com/ubuntu/pool/main/c/cvs/cvs_1.12.13.orig.tar.gz
-tar xzvf ...
-curl -LO http://archive.ubuntu.com/ubuntu/pool/main/c/cvs/cvs_1.12.13-12ubuntu1.diff.gz
-zcat *.diff.gz | patch -p1
-cd ...
-./configure --prefix=/home/dotcloud/perl5/
-make
-make install
-```

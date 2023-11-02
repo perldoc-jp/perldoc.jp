@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
   apt-get -y upgrade && \
-  apt-get install -y wget gcc g++ make sqlite3 cvs
+  apt-get install -y wget gcc g++ make sqlite3
 
 WORKDIR /usr/src/app
 

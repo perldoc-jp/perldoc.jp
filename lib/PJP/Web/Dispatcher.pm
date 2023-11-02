@@ -32,11 +32,6 @@ get '/about' => sub {
     return $c->render('about.tt');
 };
 
-get '/manners' => sub {
-    my $c = shift;
-    return $c->render('manners.tt');
-};
-
 get '/translators' => sub {
     my $c = shift;
     return $c->render('translators.tt', {years => do 'data/years.pl'});
@@ -51,7 +46,7 @@ get '/translators' => sub {
 #                                    categorized_modules => do "data/category_data.pl",
 #                                   });
 # };
-# 
+#
 # get '/category/:name' => sub {
 #     my ($c, $args) = @_;
 #     my $modules =  do "data/category_data.pl";
