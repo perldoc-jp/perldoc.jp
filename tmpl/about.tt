@@ -4,49 +4,44 @@
 
 <p>
 このサイトは Perl の公式ドキュメント、モジュールを日本語翻訳したものを表示するサイトです。<br />
-miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、現在は<a href="http://japan.perlassociation.org/">Japan Perl Association</a>(JPA)が管理しています。<br />
-※JPAは内容については関知しません
-</p>
-<p>
-サイト内の翻訳データは、Japanized Perl Resources Project(JPRP)で翻訳されたもの、有志が翻訳しているgithubのリポジトリ、JPAの翻訳文書から取得しています。<br />
-</p>
-<p>
-翻訳に参加したい方は、以下のサイトを参照してください。どのように翻訳すればわからない方のために、<a href="manners">翻訳の作法</a>を大まかにまとめていますので、興味のある方は参照してください。なお、翻訳プロジェクトにおいては、査読も重要な役割になりますので、翻訳に自信がない方でも十分に協力できます。
-</p>
-<h2>Japanized Perl Resources Project</h2>
-<ul>
-    <li><a href="https://perldocjp.osdn.jp/">ホームページ</a>
-    <li><a href="https://osdn.net/projects/perldocjp/">OSDN のプロジェクトページ</a></li>
-</ul>
-<p>
-参加方法はホームページからたどれます。OSDNのアカウントが必要になります。
-</p>
-<h2>git リポジトリ(github)</h2>
-<ul>
-<li><a href="https://github.com/perldoc-jp/translation">github のリポジトリ</a></li>
-</ul>
-<p>
-    git がいいという場合はにこちらにおいてください。<br />
-    このリポジトリは、JPRP とは関係がありません。こちらの方がよりゆるい管理態勢になっています。<br /><br />
-    こちらに貢献する場合は、fork して pull-reqeust を送るか、何度もコミットしたい場合は、<a href="https://github.com/perldoc-jp/translation/issues/new">issues</a> にコミット権が欲しい旨を書き込んで下さい。
 </p>
 
-<h2>IRC</h2>
-<pre>
- #perldocjp@freenode
-</pre>
-何か聞きたいことがありましたら、こちらで話かけてみてください。<br />
-誰か答えてくれるかも知れません。
+<h2>翻訳について</h2>
+
+<p>
+翻訳に参加したい方は、<a href="https://github.com/perldoc-jp/translation">translation リポジトリ</a>を参照してください。<br />
+なお、翻訳プロジェクトにおいては、査読も重要な役割になりますので、翻訳に自信がない方でも十分に協力できます。
+</p>
+
+<h2>コミュニティについて</h2>
+
+<p>
+Discordのサーバーを用意しています。次のリンクから気軽にお入りください。<a href="https://discord.gg/bSJtUYPGcb">https://discord.gg/bSJtUYPGcb</a><br/>
+何か聞きたいことがあれば、こちらで話かけてみてください。誰か答えてくれるかも知れません。
+</p>
 
 <h2>誤訳・サイトの不具合の報告</h2>
+
 <p>
-以下から報告できます。翻訳者の連絡先がある場合は、そちらにメールしても良いかも知れません。
+以下から報告できます。
 </p>
+
 <ul>
-<li><a href="https://osdn.net/projects/perldocjp/ticket/">JPRPの誤訳の報告</a></li>
-<li><a href="https://github.com/perldoc-jp/translation/issues">gitリポジトリの誤訳の報告</a></li>
-<li><a href="https://github.com/perldoc-jp/perldoc.jp/issues">サイトの不具合の報告</a></li>
+    <li><a href="https://github.com/perldoc-jp/translation/issues">誤訳の報告</a></li>
+    <li><a href="https://github.com/perldoc-jp/perldoc.jp/issues">サイトの不具合の報告</a></li>
 </ul>
+
+<h2>運営・管理</h2>
+
+<p>
+このサイト(perldoc.jp)は、<a href="http://japan.perlassociation.org/">Japan Perl Association</a>(JPA)が管理しています。<br />
+翻訳は、有志により行われています。
+</p>
+
+<p>
+miyagawaさんが最初に始めたものを tokuhiromさんが引き継ぎ、現在の運営、管理に至っています。<br />
+</p>
+
 <h2>謝辞</h2>
 <dl>
     <dt>翻訳者の方</dt>
