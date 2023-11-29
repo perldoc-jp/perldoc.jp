@@ -11,9 +11,6 @@
                 <tr>
                     <td nowrap="nowrap">
                         <a href="/docs/articles/[% v.distvname %]">[% v.name %]</a>
-                        [% IF v.repository=='translation' %]
-                            <img src="/static/img/github.png" width="16" height="16" />
-                        [% END %]
                     </td>
                     <td>[% url_to_link(v.abstract) %]</td>
                 </tr>
