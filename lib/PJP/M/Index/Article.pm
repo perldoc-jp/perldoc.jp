@@ -20,22 +20,6 @@ use Data::Dumper;
 use Regexp::Common qw/URI/;
 use PJP::Util qw/slurp/;
 
-sub get {
-    my ($class, $c) = @_;
-
-    my $fname = $class->cache_path($c);
-    unless (-f $fname) {
-        die "Missing '$fname'";
-    }
-
-    return do $fname;
-}
-
-sub cache_path {
-    my ($class, $c) = @_;
-    return catfile($c->assets_dir(), 'index-article.pl');
-}
-
 sub generate {
     my ($class, $c) = @_;
 
