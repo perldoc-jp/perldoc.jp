@@ -1,9 +1,11 @@
-use strict;
-use warnings;
+use v5.38;
 use utf8;
-use Test::More;
+use Test2::V0;
+
 use PJP::M::Pod;
-use utf8;
+use PJP;
+
+my $c = PJP->bootstrap;
 
 my $pod = <<'...';
 foo
@@ -34,11 +36,20 @@ L<"注意">
 
 ...
 
-my $html = PJP::M::Pod->pod2html(\$pod);
-like $html, qr{<h1 id="pod%E6%B3%A8%E6%84%8F">注意</h1>};
-like $html, qr{<li><a href="#pod%E6%B3%A8%E6%84%8F">注意</a></li>};
-like $html, qr{<h1 id="GETTING%20HELP">ヘルプを見る</h1>};
-like $html, qr{<li><a href="#GETTING%20HELP">ヘルプを見る</a></li>};
+subtest 'pod2html' => sub {
+    my $html = PJP::M::Pod->pod2html(\$pod);
+    # 目次
+    like $html, qr{<li><a href="\#pod27880-24847">注意</a></li>};
+    like $html, qr{<li><a href="\#GETTING32HELP">ヘルプを見る</a></li>};
+
+    # 見出し
+    like $html, qr{<h1 id="pod27880-24847">注意<a href="\#27880-24847" class="toc_link">&\#182;</a></h1>};
+    like $html, qr{<h1 id="GETTING32HELP">ヘルプを見る<a href="\#GETTING32HELP" class="toc_link">&\#182;</a></h1>};
+
+    todo 'pod2html', sub {
+        fail 'GETTING32HELP のhrefが目次と見出しで重複しているので調整した方が良さそう';
+    };
+};
 
 subtest 'parse_name_section' => sub {
     my ($pkg, $desc) = PJP::M::Pod->parse_name_section(\$pod);
@@ -46,7 +57,8 @@ subtest 'parse_name_section' => sub {
     is $desc, 'あれです';
 
     subtest 'wt.pod' => sub {
-        my ($pkg, $desc) = PJP::M::Pod->parse_name_section('assets/perldoc.jp/docs/modules/HTTP-WebTest-2.04/bin/wt.pod');
+        my $path = "@{[$c->assets_dir]}translation/docs/modules/HTTP-WebTest-2.04/bin/wt.pod";
+        my ($pkg, $desc) = PJP::M::Pod->parse_name_section($path);
         is $pkg, 'wt';
         is $desc, '１つもしくは複数のウェブページのテスト';
     };
