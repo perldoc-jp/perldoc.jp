@@ -16,7 +16,7 @@ sub render {
     return mark_raw($c->cache->file_cache
                     (
                      "toc:4", 'toc.txt', sub {
-                         infof("regen toc");
+                         debugf("regen toc");
                          my $ret = $class->_render();
                          return $ret;
                      }
