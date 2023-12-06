@@ -8,22 +8,9 @@ use File::stat;
 use Log::Minimal;
 use Pod::Functions;
 use HTML::Entities qw/encode_entities/;
+use PJP::M::BuiltinVariable;
 
-sub render {
-    my ($class, $c) = @_;
-    $c // die;
-
-    return mark_raw($c->cache->file_cache
-                    (
-                     "toc:4", 'toc.txt', sub {
-                         infof("regen toc");
-                         my $ret = $class->_render();
-                         return $ret;
-                     }
-                    ));
-}
-
-sub _render {
+sub render_core {
     my ($class) = @_;
 
     open my $fh, '<:utf8', 'toc.txt' or die "Cannot open toc.txt: $!";
@@ -96,7 +83,7 @@ my %func_kind2jp = (
                    );
 
 sub render_function {
-    my ($class, $c) = @_;
+    my ($class) = @_;
     my $out = '';
     foreach my $type (@Pod::Functions::Type_Order) {
         $out .= sprintf qq{<h2>%s</h2>\n}, $func_kind2jp{$type} || $Pod::Functions::Type_Description{$type} || $type;
@@ -138,7 +125,7 @@ my %SKIP_NAME = (
 my %ENG_NAME;
 
 sub render_variable {
-    my ($class, $c) = @_;
+    my ($class) = @_;
     my $out = '';
     my $pod;
     open my $fh, '<:utf8', 'toc-var.txt' or die "Cannot open toc-var.txt: $!";

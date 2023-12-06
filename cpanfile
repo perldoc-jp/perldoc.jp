@@ -37,5 +37,6 @@ requires 'Router::Simple::Sinatraish';
 requires 'Log::Minimal';
 
 on 'test' => sub {
+    requires 'Test2::V0';
     requires 'Test::WWW::Mechanize::PSGI';
 };

@@ -87,7 +87,7 @@ sub get_latest {
             {}, $search_package )
       };
         unless (@versions) {
-                infof("Any versions not found in database: %s", $search_package);
+                debugf("Any versions not found in database: %s", $search_package);
                 return undef;
         }
 
