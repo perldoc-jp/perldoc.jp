@@ -106,11 +106,11 @@ get '/index/variable' => sub {
 get '/index/module' => sub {
     my $c = shift;
 
-    my $content = $c->cache->file_cache("index/module", PJP::M::Index::Module->cache_path($c), sub {
-        my $index = PJP::M::Index::Module->get($c);
+    my $content = $c->cache->get_or_set('index/module', sub {
+        my @data = PJP::M::Index::Module->generate($c);
         $c->create_view->render(
             'index/module.tt' => {
-                index => $index,
+                index => \@data,
             }
         );
     });

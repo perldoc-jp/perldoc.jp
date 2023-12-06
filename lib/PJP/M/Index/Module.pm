@@ -16,41 +16,6 @@ use File::Find::Rule;
 use version;
 use autodie;
 use PJP::M::Pod;
-use Data::Dumper;
-use PJP::Util qw/slurp/;
-
-sub get {
-    my ($class, $c) = @_;
-
-    my $fname = $class->cache_path($c);
-    unless (-f $fname) {
-        die "Missing '$fname'";
-    }
-
-    return do $fname;
-}
-
-sub cache_path {
-    my ($class, $c) = @_;
-    return catfile($c->assets_dir(), 'index-module.pl');
-}
-
-sub generate_and_save {
-    my ($class, $c) = @_;
-
-    my $fname = $class->cache_path($c);
-
-    my @data = $class->generate($c);
-    local $Data::Dumper::Terse  = 1;
-    local $Data::Dumper::Indent = 1;
-    local $Data::Dumper::Purity = 1;
-
-    open my $fh, '>', $fname;
-    print $fh Dumper(\@data);
-    close $fh;
-
-    return;
-}
 
 sub generate {
     my ($class, $c) = @_;
@@ -151,10 +116,10 @@ sub _generate {
         # pod file が一個もないものは表示しない(具体的には CPANPLUS)
         next unless $pod_file;
 
-        infof("parsing %s", $pod_file);
+        debugf("parsing %s", $pod_file);
         my ($name, $desc) = PJP::M::Pod->parse_name_section($pod_file);
         if ($desc) {
-            infof("Japanese Description: %s, %s", $name, $desc);
+            debugf("Japanese Description: %s, %s", $name, $desc);
             $row->{abstract} = $desc;
         }
 
