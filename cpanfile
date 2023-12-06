@@ -36,3 +36,6 @@ requires 'Router::Simple';
 requires 'Router::Simple::Sinatraish';
 requires 'Log::Minimal';
 
+on 'test' => sub {
+    requires 'Test::WWW::Mechanize::PSGI';
+};
