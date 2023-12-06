@@ -33,6 +33,8 @@ sub file_cache {
 sub get_or_set {
     my ($self, $key, $cb, $xt) = @_;
 
+    $key .= rand() if $ENV{DEBUG};
+
     my $val = $self->{cache}->get($key);
     return $val if defined $val;
 

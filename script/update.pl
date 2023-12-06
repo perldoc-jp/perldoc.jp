@@ -52,7 +52,6 @@ if (! -e $sqlite_db) {
 }
 
 my $t = time;
-PJP::M::Index::Module->generate_and_save($pjp);
 PJP::M::BuiltinFunction->generate($pjp);
 PJP::M::BuiltinVariable->generate($pjp);
 PJP::M::PodFile->generate($pjp);

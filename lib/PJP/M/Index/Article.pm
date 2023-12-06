@@ -101,10 +101,10 @@ sub _generate {
                };
 
         if ($is_pod) {
-            infof("parsing %s", $file);
+            debugf("parsing %s", $file);
             my ($name, $desc) = PJP::M::Pod->parse_name_section($file);
             if ($desc) {
-                infof("Japanese Description: %s, %s", $name, $desc);
+                debugf("Japanese Description: %s, %s", $name, $desc);
                 $row->{abstract} = $desc;
             }
         }
