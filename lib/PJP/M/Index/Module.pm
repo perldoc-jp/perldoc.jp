@@ -122,6 +122,9 @@ sub _generate {
             debugf("Japanese Description: %s, %s", $name, $desc);
             $row->{abstract} = $desc;
         }
+        else {
+            $row->{abstract} = undef;
+        }
 
         $row->{repository} = $repository;
 
