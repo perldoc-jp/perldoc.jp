@@ -20,46 +20,12 @@ use Data::Dumper;
 use Regexp::Common qw/URI/;
 use PJP::Util qw/slurp/;
 
-sub get {
-    my ($class, $c) = @_;
-
-    my $fname = $class->cache_path($c);
-    unless (-f $fname) {
-        die "Missing '$fname'";
-    }
-
-    return do $fname;
-}
-
-sub cache_path {
-    my ($class, $c) = @_;
-    return catfile($c->assets_dir(), 'index-article.pl');
-}
-
-sub generate_and_save {
-    my ($class, $c) = @_;
-
-    my $fname = $class->cache_path($c);
-
-    my @data = $class->generate($c);
-    local $Data::Dumper::Terse  = 1;
-    local $Data::Dumper::Indent = 1;
-    local $Data::Dumper::Purity = 1;
-
-    open my $fh, '>', $fname;
-    print $fh Dumper(\@data);
-    close $fh;
-
-    return;
-}
-
 sub generate {
     my ($class, $c) = @_;
 
     # 情報をかきあつめる
     my @files;
     for my $base (map { File::Spec->catdir( $c->assets_dir(), $_) } qw(
-        perldoc.jp/docs/articles/
         translation/docs/articles/
     )) {
         push @files, $class->_get_files($c, $base) if -d $base;

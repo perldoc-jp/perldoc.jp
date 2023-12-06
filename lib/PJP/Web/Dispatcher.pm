@@ -129,11 +129,11 @@ get '/index/module' => sub {
 get '/index/article' => sub {
     my $c = shift;
 
-    my $content = $c->cache->file_cache("index/article", PJP::M::Index::Article->cache_path($c), sub {
-        my $index = PJP::M::Index::Article->get($c);
+    my $content = $c->cache->get_or_set('index/article', sub {
+        my @index = PJP::M::Index::Article->generate($c);
         $c->create_view->render(
             'index/article.tt' => {
-                index => $index,
+                index => \@index,
             }
         );
     });

@@ -38,6 +38,7 @@ sub get_or_set {
 
     $val = $cb->();
     $self->{cache}->set($key, $val, $xt || '1 day');
+    return $val;
 }
 
 1;
