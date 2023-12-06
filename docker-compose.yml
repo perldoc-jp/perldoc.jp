@@ -1,7 +1,14 @@
 version: '3'
 services:
   web:
-    build: .
+    build:
+      context: .
+      target: web
     ports:
       - "8080:5000"
+
+  test:
+    build:
+      context: .
+      target: test
 

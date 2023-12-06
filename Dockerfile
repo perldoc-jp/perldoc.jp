@@ -1,4 +1,4 @@
-FROM perl:5.38-bookworm
+FROM perl:5.38-bookworm as base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -22,4 +22,11 @@ ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
 # 翻訳データの更新
 RUN perl script/update.pl
 
+
+# テスト用のステージ
+FROM base as test
+RUN cpm install --with-test --with-develop --show-build-log-on-failure
+
+# サーバーを起動したい時のステージ
+FROM base as web
 CMD ["./local/bin/plackup", "-p", "5000", "-Ilib", "app.psgi"]
