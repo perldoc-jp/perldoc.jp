@@ -70,7 +70,10 @@ get '/category/:name/:name2' => sub {
 get '/index/core' => sub {
     my $c = shift;
 
-    my $toc = PJP::M::TOC->render($c);
+    my $toc = $c->cache->get_or_set('index/core', sub {
+        mark_raw(PJP::M::TOC->render_core());
+    });
+
     return $c->render('index/core.tt', {
         header_title => 'Perlのコアドキュメントの翻訳一覧',
         description => '翻訳されたPerlのコアドキュメントの一覧',

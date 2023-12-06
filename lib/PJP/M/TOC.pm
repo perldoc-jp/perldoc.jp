@@ -9,21 +9,7 @@ use Log::Minimal;
 use Pod::Functions;
 use HTML::Entities qw/encode_entities/;
 
-sub render {
-    my ($class, $c) = @_;
-    $c // die;
-
-    return mark_raw($c->cache->file_cache
-                    (
-                     "toc:4", 'toc.txt', sub {
-                         debugf("regen toc");
-                         my $ret = $class->_render();
-                         return $ret;
-                     }
-                    ));
-}
-
-sub _render {
+sub render_core {
     my ($class) = @_;
 
     open my $fh, '<:utf8', 'toc.txt' or die "Cannot open toc.txt: $!";
