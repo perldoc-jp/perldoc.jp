@@ -37,17 +37,37 @@ L<"注意">
 ...
 
 subtest 'pod2html' => sub {
-    my $html = PJP::M::Pod->pod2html(\$pod);
-    # 目次
-    like $html, qr{<li><a href="\#pod27880-24847">注意</a></li>};
-    like $html, qr{<li><a href="\#GETTING32HELP">ヘルプを見る</a></li>};
 
-    # 見出し
-    like $html, qr{<h1 id="pod27880-24847">注意<a href="\#27880-24847" class="toc_link">&\#182;</a></h1>};
-    like $html, qr{<h1 id="GETTING32HELP">ヘルプを見る<a href="\#GETTING32HELP" class="toc_link">&\#182;</a></h1>};
+    subtest 'PODを期待通りparseして、HTML化できているか' => sub {
+        my $html = PJP::M::Pod->pod2html(\$pod);
+        # 目次
+        like $html, qr{<li><a href="\#pod27880-24847">注意</a></li>};
+        like $html, qr{<li><a href="\#GETTING32HELP">ヘルプを見る</a></li>};
 
-    todo 'pod2html', sub {
-        fail 'GETTING32HELP のhrefが目次と見出しで重複しているので調整した方が良さそう';
+        # 見出し
+        like $html, qr{<h1 id="pod27880-24847">注意<a href="\#27880-24847" class="toc_link">&\#182;</a></h1>};
+        like $html, qr{<h1 id="GETTING32HELP">ヘルプを見る<a href="\#GETTING32HELP" class="toc_link">&\#182;</a></h1>};
+
+        todo 'pod2html', sub {
+            fail 'GETTING32HELP のhrefが目次と見出しで重複しているので調整した方が良さそう';
+        };
+    };
+
+    subtest 'HTMLタグが閉じられてるか' => sub {
+        my $html = PJP::M::Pod->pod2html("@{[$c->assets_dir]}translation/docs/perl/5.12.1/perl.pod");
+
+        todo 'pod2html', sub {
+            fail 'HTMLタグが閉じられているかのテストが失敗している';
+        };
+
+        # my $testee = $html;
+        # for my $tag (qw/div pre p h1 h2 code b a ul li nobr i/) {
+        #     my ($open, $close) = (0, 0);
+        #     $testee =~ s/<$tag[^>]*>/$open++/gei;
+        #     $testee =~ s!</$tag[^>]*>!$close++!gei;
+        #     ok $open > 0, "$tag があり、";
+        #     ok $open == $close, '開始タグと終了タグの数が一致している';
+        # }
     };
 };
 
