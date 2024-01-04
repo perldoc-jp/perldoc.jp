@@ -91,7 +91,7 @@ sub render_function {
         foreach my $func (@{$Pod::Functions::Kinds{$type}}) {
             my $func_link = $func;
             $func_link =~ s{^(y|s|tr|m)///?$}{$1};
-            $func_link =~ s{^(q|qq|qr)/STRING/$}{$1};
+            $func_link =~ s{^(q|qq|qr|qx|qw)/STRING/$}{$1};
             if ($strlen > 40) {
                 $out .= "<br />\n";
                 $strlen = 0;
