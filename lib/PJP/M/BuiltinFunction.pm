@@ -68,7 +68,7 @@ sub generate {
             while (<$fh>) {
                 $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
                 s{E<sol>}{/}g;
-                my @names = m{C<(\-?[a-zA-Z_]+)(?:[^>]+)?>}g;
+                my @names = m{C<(\-?[a-zA-Z0-9_]+)(?:[^>]+)?>}g;
                 push @_candidate, map {s{^($OPS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names;
             }
             close $fh;
