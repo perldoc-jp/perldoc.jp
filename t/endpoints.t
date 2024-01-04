@@ -64,12 +64,18 @@ subtest 'GET /index/function' => sub {
     $mech->get('/index/function');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'Perlの組み込み関数の翻訳一覧 - perldoc.jp';
+
+    my @links = $mech->find_all_links( url_regex => qr[/func/] );
+    $mech->links_ok( \@links, 'Check all links for function links' );
 };
 
 subtest 'GET /index/variable' => sub {
     $mech->get('/index/variable');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'Perlの組み込み変数の翻訳一覧 - perldoc.jp';
+
+    my @links = $mech->find_all_links( url_regex => qr[/variable/] );
+    $mech->links_ok( \@links, 'Check all links for variable links' );
 };
 
 subtest 'GET /index/module' => sub {
