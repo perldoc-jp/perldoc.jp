@@ -18,6 +18,8 @@ use PJP::M::PodFile;
 use Regexp::Common qw/URI/;
 use URI::Escape qw/uri_escape/;
 use Text::Markdown;
+use Markdent::Simple::Document;
+use Encode qw(decode_utf8);
 
 get '/' => sub {
     my $c = shift;
@@ -373,16 +375,17 @@ get '/docs/{path:articles/.+\.md}' => sub {
     my $src  = PJP::M::PodFile->slurp($p->{path})   // return $c->res_404();
 
     my ($title, $abstract) = $c->abstract_title_description_from_md($src);
-    my $md = Text::Markdown->new;
-    my $html = $md->markdown($src);
+    my $parser = Markdent::Simple::Document->new;
+
+    my $html = $parser->markdown_to_html(
+        title    => $title,
+        dialect  => 'GitHub',
+        markdown => decode_utf8($src),
+    );
 
     $html =~ s{^.*<(?:body)[^>]*>}{}si;
     $html =~ s{</(?:body)>.*$}{}si;
-    $html =~ s{\n<!--\s+original(.*?)-->\n}{<div class="original">$1</div>}sg;
-    $html =~ s{~~~(?:\s*(sh|perl)\s+)?(.+?)\s*~~~}
-	      {'<pre class="prettyprint ' . ($1 ? ' lang-' . $1 : ''). qq{"><code>$2</code></pre>}}seg;
-    $html =~ s{<p>```</p>\s*<blockquote>\s*<p>(?:\s*(sh|perl)\s+)?(.+?)```</p>\s*</blockquote>}
-	      {'<pre class="prettyprint ' . ($1 ? ' lang-' . $1 : ''). qq{"><code>$2</code></pre>}}seg;
+    $html =~ s{<!--\s+original(.*?)-->}{<div class="original">$1</div>}sg;
 
     return $c->render('pod.tt',
                       {
