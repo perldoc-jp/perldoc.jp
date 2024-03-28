@@ -19,6 +19,7 @@ requires 'Regexp::Common';
 requires 'Regexp::Assemble';
 requires 'Text::Diff::FormattedHTML';
 requires 'Text::Markdown';
+requires 'Markdent' => '0.40'; # for GitHub Flavored Markdown
 requires 'SQL::Interp';
 requires 'Carp::Clan';
 requires 'JSON';
