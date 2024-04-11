@@ -18,8 +18,9 @@ requires 'DBIx::TransactionManager';
 requires 'Regexp::Common';
 requires 'Regexp::Assemble';
 requires 'Text::Diff::FormattedHTML';
-requires 'Text::Markdown';
-requires 'Markdent' => '0.40'; # for GitHub Flavored Markdown
+requires 'YAML::Tiny'; # for Markdown::Perl
+requires 'Unicode::CaseFold'; # for Markdown::Perl
+requires 'Markdown::Perl' => '1.03';
 requires 'SQL::Interp';
 requires 'Carp::Clan';
 requires 'JSON';
