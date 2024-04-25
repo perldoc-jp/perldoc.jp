@@ -1,10 +1,12 @@
 package PJP;
 use strict;
 use warnings;
+use feature qw(state);
 use parent qw/Amon2/;
 our $VERSION='0.01';
 use 5.01000;
 
+use Markdown::Perl;
 use Amon2::Config::Simple;
 sub load_config { Amon2::Config::Simple->load(shift) }
 
@@ -58,10 +60,13 @@ sub abstract_title_description_from_md {
     ($abstract) = $1;
   }
   if ($abstract) {
-    $abstract = Text::Markdown->new->markdown($abstract);
+    state $md = Markdown::Perl->new(mode => 'github');
+    $abstract = $md->convert($abstract);
     ($abstract) = $abstract =~ m{^<p>(.+?)</p>};
   }
-  $abstract =~ s{<.*?>}{}g;
+  if ($abstract) {
+    $abstract =~ s{<.*?>}{}g;
+  }
   return ($title, $abstract);
 }
 

@@ -1,18 +1,17 @@
 
 .PHONY: build
 build:
-	docker-compose -f docker-compose.yml build web
+	docker compose build
 
 .PHONY: up
 up:
-	make build
-	docker-compose -f docker-compose.yml up -d web
+	docker compose up
 
 .PHONY: down
 down:
-	docker-compose -f docker-compose.yml down
+	docker compose down
 
 .PHONY: test
+test: TEST_TARGET = t
 test:
-	docker-compose -f docker-compose.yml build test
-	docker-compose -f docker-compose.yml run   test prove -Ilib -r -v t
+	docker compose run --rm app prove -lrv $(TEST_TARGET)
