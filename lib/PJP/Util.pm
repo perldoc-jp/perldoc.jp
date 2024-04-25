@@ -5,7 +5,7 @@ use warnings;
 use feature qw(state);
 use parent 'Exporter';
 
-use Markdent::Simple::Document;
+use Text::Markdown::Discount ();
 
 our @EXPORT_OK = qw/slurp markdown_to_html/;
 
@@ -20,15 +20,9 @@ sub slurp {
 }
 
 sub markdown_to_html {
-    my ($markdown, $title) = @_;
-    $title //= 'PJP';
+    my ($markdown) = @_;
 
-    state $parser = Markdent::Simple::Document->new;
-    my $html = $parser->markdown_to_html(
-        title    => $title,
-        dialect  => 'GitHub',
-        markdown => $markdown,
-    );
+    my $html = Text::Markdown::Discount::markdown($markdown);
 
     # perldoc.jp 用の加工
     $html =~ s{^.*<(?:body)[^>]*>}{}si;
