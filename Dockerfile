@@ -25,6 +25,4 @@ COPY . .
 RUN sqlite3 perldocjp.master.db < sql/sqlite.sql
 RUN cp perldocjp.master.db perldocjp.slave.db
 
-# 翻訳データの更新
-RUN perl script/update.pl
 
