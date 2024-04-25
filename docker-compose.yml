@@ -9,4 +9,5 @@ services:
     command: ./local/bin/plackup -p 8080 -r -Ilib app.psgi
     volumes:
       - ./lib:/usr/src/app/lib
+      - ./t:/usr/src/app/t
 
