@@ -5,7 +5,7 @@ build:
 
 .PHONY: up
 up:
-	docker compose up -d app
+	docker compose up
 
 .PHONY: down
 down:
@@ -14,4 +14,4 @@ down:
 .PHONY: test
 test: TEST_TARGET = t
 test:
-	docker compose exec app prove -lrv $(TEST_TARGET)
+	docker compose run --rm app prove -lrv $(TEST_TARGET)
