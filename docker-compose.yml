@@ -3,12 +3,10 @@ services:
   web:
     build:
       context: .
-      target: web
+      target: dev
     ports:
-      - "8080:5000"
-
-  test:
-    build:
-      context: .
-      target: test
+      - "8080:8080"
+    command: ./local/bin/plackup -p 8080 -Ilib app.psgi
+    volumes:
+      - ./lib:/usr/src/app/lib
 
