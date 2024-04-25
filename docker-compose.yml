@@ -6,7 +6,7 @@ services:
       target: dev
     ports:
       - "8080:8080"
-    command: ./local/bin/plackup -p 8080 -Ilib app.psgi
+    command: ./local/bin/plackup -p 8080 -r -Ilib app.psgi
     volumes:
       - ./lib:/usr/src/app/lib
 
