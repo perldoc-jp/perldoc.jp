@@ -64,7 +64,9 @@ sub abstract_title_description_from_md {
     $abstract = $md->convert($abstract);
     ($abstract) = $abstract =~ m{^<p>(.+?)</p>};
   }
-  $abstract =~ s{<.*?>}{}g;
+  if ($abstract) {
+    $abstract =~ s{<.*?>}{}g;
+  }
   return ($title, $abstract);
 }
 
