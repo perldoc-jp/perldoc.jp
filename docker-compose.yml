@@ -1,9 +1,9 @@
 version: '3'
 services:
-  web:
+  app:
     build:
       context: .
-      target: dev
+      target: app
     ports:
       - "8080:8080"
     command: ./local/bin/plackup -p 8080 -r -Ilib app.psgi

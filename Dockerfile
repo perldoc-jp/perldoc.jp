@@ -17,7 +17,7 @@ ENV PERL5LIB=/usr/src/app/local/lib/perl5
 ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 
-FROM base as dev
+FROM base as app
 
 RUN carton install --deployment
 COPY . .
