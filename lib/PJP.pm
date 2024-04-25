@@ -6,7 +6,8 @@ use parent qw/Amon2/;
 our $VERSION='0.01';
 use 5.01000;
 
-use Markdown::Perl;
+use PJP::Util qw(markdown_to_html);
+
 use Amon2::Config::Simple;
 sub load_config { Amon2::Config::Simple->load(shift) }
 
@@ -60,8 +61,7 @@ sub abstract_title_description_from_md {
     ($abstract) = $1;
   }
   if ($abstract) {
-    state $md = Markdown::Perl->new(mode => 'github');
-    $abstract = $md->convert($abstract);
+    $abstract = markdown_to_html($abstract);
     ($abstract) = $abstract =~ m{^<p>(.+?)</p>};
   }
   if ($abstract) {

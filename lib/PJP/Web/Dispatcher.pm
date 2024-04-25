@@ -11,6 +11,7 @@ use File::stat;
 use Try::Tiny;
 use Text::Xslate::Util qw/mark_raw/;
 
+use PJP::Util qw(markdown_to_html);
 use PJP::M::TOC;
 use PJP::M::Index::Module;
 use PJP::M::Index::Article;
@@ -18,7 +19,6 @@ use PJP::M::Pod;
 use PJP::M::PodFile;
 use Regexp::Common qw/URI/;
 use URI::Escape qw/uri_escape/;
-use Markdown::Perl;
 use Encode qw(decode_utf8);
 
 get '/' => sub {
@@ -375,12 +375,7 @@ get '/docs/{path:articles/.+\.md}' => sub {
     my $src  = PJP::M::PodFile->slurp($p->{path})   // return $c->res_404();
 
     my ($title, $abstract) = $c->abstract_title_description_from_md($src);
-    state $md = Markdown::Perl->new(mode => 'github');
-    my $html = $md->convert($src);
-
-    $html =~ s{^.*<(?:body)[^>]*>}{}si;
-    $html =~ s{</(?:body)>.*$}{}si;
-    $html =~ s{<!--\s+original(.*?)-->}{<div class="original">$1</div>}sg;
+    my $html = markdown_to_html($src);
 
     return $c->render('pod.tt',
                       {

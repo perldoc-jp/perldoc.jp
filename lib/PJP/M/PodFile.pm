@@ -13,7 +13,7 @@ use File::Basename;
 use version;
 use PJP::M::Index::Article;
 use PJP::M::BuiltinFunction;
-use Markdown::Perl;
+use PJP::Util qw(markdown_to_html);
 
 sub slurp {
     my ($class, $path) = @_;
@@ -278,8 +278,7 @@ sub generate_one_file_md {
 
                     $package or die "cannot get package name: $relpath";
 
-                    state $md = Markdown::Perl->new(mode => 'github');
-                    my $html = $md->convert($md_src);
+                    my $html = markdown_to_html($md_src);
 
                     $distvname =~ s!/.+!!;
                     +{
