@@ -18,9 +18,7 @@ requires 'DBIx::TransactionManager';
 requires 'Regexp::Common';
 requires 'Regexp::Assemble';
 requires 'Text::Diff::FormattedHTML';
-requires 'YAML::Tiny'; # for Markdown::Perl
-requires 'Unicode::CaseFold'; # for Markdown::Perl
-requires 'Markdown::Perl' => '1.03';
+requires 'Text::Markdown';
 requires 'SQL::Interp';
 requires 'Carp::Clan';
 requires 'JSON';
