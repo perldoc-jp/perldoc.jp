@@ -22,7 +22,12 @@ sub slurp {
 sub markdown_to_html {
     my ($markdown) = @_;
 
-    my $html = Text::Markdown::Discount::markdown($markdown);
+    state $flag = Text::Markdown::Discount::MKD_NOHEADER
+                | Text::Markdown::Discount::MKD_NOPANTS
+                | 0x02000000 # MKD_FENCEDCODE
+                ;
+
+    my $html = Text::Markdown::Discount::markdown($markdown, $flag);
 
     # perldoc.jp 用の加工
     $html =~ s{^.*<(?:body)[^>]*>}{}si;
