@@ -1,6 +1,7 @@
 use strict;
 use warnings;
 use utf8;
+use feature qw(state);
 
 package PJP::M::PodFile;
 use Amon2::Declare;
@@ -12,7 +13,7 @@ use File::Basename;
 use version;
 use PJP::M::Index::Article;
 use PJP::M::BuiltinFunction;
-use Text::Markdown;
+use PJP::Util qw(markdown_to_html);
 
 sub slurp {
     my ($class, $path) = @_;
@@ -277,8 +278,7 @@ sub generate_one_file_md {
 
                     $package or die "cannot get package name: $relpath";
 
-                    my $md = Text::Markdown->new;
-                    my $html = $md->markdown($md_src);
+                    my $html = markdown_to_html($md_src);
 
                     $distvname =~ s!/.+!!;
                     +{

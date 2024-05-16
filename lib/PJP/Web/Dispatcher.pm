@@ -2,6 +2,7 @@ package PJP::Web::Dispatcher;
 use strict;
 use warnings;
 use utf8;
+use feature qw(state);
 
 use Amon2::Web::Dispatcher::Lite;
 
@@ -10,6 +11,7 @@ use File::stat;
 use Try::Tiny;
 use Text::Xslate::Util qw/mark_raw/;
 
+use PJP::Util qw(markdown_to_html);
 use PJP::M::TOC;
 use PJP::M::Index::Module;
 use PJP::M::Index::Article;
@@ -17,7 +19,7 @@ use PJP::M::Pod;
 use PJP::M::PodFile;
 use Regexp::Common qw/URI/;
 use URI::Escape qw/uri_escape/;
-use Text::Markdown;
+use Encode qw(decode_utf8);
 
 get '/' => sub {
     my $c = shift;
@@ -373,16 +375,7 @@ get '/docs/{path:articles/.+\.md}' => sub {
     my $src  = PJP::M::PodFile->slurp($p->{path})   // return $c->res_404();
 
     my ($title, $abstract) = $c->abstract_title_description_from_md($src);
-    my $md = Text::Markdown->new;
-    my $html = $md->markdown($src);
-
-    $html =~ s{^.*<(?:body)[^>]*>}{}si;
-    $html =~ s{</(?:body)>.*$}{}si;
-    $html =~ s{\n<!--\s+original(.*?)-->\n}{<div class="original">$1</div>}sg;
-    $html =~ s{~~~(?:\s*(sh|perl)\s+)?(.+?)\s*~~~}
-	      {'<pre class="prettyprint ' . ($1 ? ' lang-' . $1 : ''). qq{"><code>$2</code></pre>}}seg;
-    $html =~ s{<p>```</p>\s*<blockquote>\s*<p>(?:\s*(sh|perl)\s+)?(.+?)```</p>\s*</blockquote>}
-	      {'<pre class="prettyprint ' . ($1 ? ' lang-' . $1 : ''). qq{"><code>$2</code></pre>}}seg;
+    my $html = markdown_to_html($src);
 
     return $c->render('pod.tt',
                       {
