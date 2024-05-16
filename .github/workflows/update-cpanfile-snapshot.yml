@@ -1,0 +1,41 @@
+name: Update cpanfile.snapshot
+
+on:
+  pull_request:
+    paths:
+      - cpanfile
+      - cpanfile.target
+  workflow_dispatch:
+
+jobs:
+  update-cpanfile-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: Check cpanfile.target
+      id: check-cpanfile-target
+      continue-on-error: true
+      run: sha256sum -c cpanfile.target
+
+    - name: Update cpanfile.snapshot and cpanfile.target
+      if: steps.check-cpanfile-target.outcome == 'failure'
+      run: |
+        docker build . -t perl-app-image --target base
+        docker run --rm -v $(pwd):/usr/src/app perl-app-image bash -c 'carton install'
+        sha256sum cpanfile > cpanfile.target
+
+    - uses: stefanzweifel/git-auto-commit-action@v5.0.0
+      with:
+        commit_user_name: GitHub Actions
+        commit_user_email: noreply@github.com
+        commit_message: Update cpanfile.snapshot and cpanfile.target
+        file_pattern: cpanfile.snapshot cpanfile.target cpanfile
+
