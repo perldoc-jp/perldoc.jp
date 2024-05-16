@@ -15,5 +15,5 @@ jobs:
 
     - name: Run test
       run: |
-        make ci
+        make test
 
