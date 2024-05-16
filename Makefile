@@ -1,30 +1,18 @@
 
 .PHONY: build
 build:
-	docker compose build
+	docker-compose -f docker-compose.yml build web
 
 .PHONY: up
 up:
-	docker compose up
+	make build
+	docker-compose -f docker-compose.yml up -d web
 
 .PHONY: down
 down:
-	docker compose down
+	docker-compose -f docker-compose.yml down
 
 .PHONY: test
-test: TEST_TARGET = t
 test:
-	docker compose exec app prove -lrv $(TEST_TARGET)
-
-.PHONY: ci
-ci:
-	docker compose up -d
-	make setup-data
-	make test
-
-# 翻訳データのセットアップ
-# TODO: 翻訳データのセットアップは他にもあるので、全部ひとまとめにできると良さそう
-.PHONY: setup-data
-setup-data:
-	docker compose exec app perl script/update.pl
-
+	docker-compose -f docker-compose.yml build test
+	docker-compose -f docker-compose.yml run   test prove -Ilib -r -v t
