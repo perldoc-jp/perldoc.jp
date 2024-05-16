@@ -18,7 +18,7 @@ requires 'DBIx::TransactionManager';
 requires 'Regexp::Common';
 requires 'Regexp::Assemble';
 requires 'Text::Diff::FormattedHTML';
-requires 'Text::Markdown';
+requires 'Text::Markdown::Discount';
 requires 'SQL::Interp';
 requires 'Carp::Clan';
 requires 'JSON';
@@ -39,4 +39,5 @@ requires 'Log::Minimal';
 on 'test' => sub {
     requires 'Test2::V0';
     requires 'Test::WWW::Mechanize::PSGI';
+    requires 'Unicode::GCString';
 };
