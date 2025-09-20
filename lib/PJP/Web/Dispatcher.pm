@@ -442,6 +442,25 @@ get '/docs/perl/{path:.[^/]+\.pod}' => sub { # perl
 
 get '/docs/{path:(?:modules|perl|articles)/.+\.pod}' => $display_pod;
 
+# GET /search?q=%s でドキュメント検索を行う
+# 設置理由:
+# - 検索フォームで利用しやすくするため
+# - サイト内検索のショートカットを設定を案内しやすくするため
+# Ref: https://support.google.com/chrome/answer/95426?hl=ja#zippy=%2Curls%E6%A4%9C%E7%B4%A2%E8%AA%9E%E5%8F%A5-%E6%AC%84
+get '/search' => sub {
+    my ($c) = @_;
+
+    my $q = $c->req->param('q');
+
+    if (!$q) {
+        return $c->res_404();
+    }
+
+    return $c->redirect("/$q");
+};
+
+# 以下、ルーティングルールを用いて、ドキュメント検索を行っている
+
 get '/perl*' => sub {
     my ($c, $p) = @_;
     my ($splat) = @{$p->{splat}};
@@ -469,7 +488,7 @@ get '/{name:[A-Z-a-z][\w:]+}' => sub {
         return $c->redirect('/docs/' . $path);
     }
 
-    return $c->redirect('/func/' . $p->{name});
+    return $c->res_404({ query => $p->{name} })
 };
 
 1;

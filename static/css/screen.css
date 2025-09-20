@@ -631,6 +631,10 @@ dd {
 }
 /* line 35, ../../scss/_class.scss */
 .nav form {
+  display: inline-block;
+  vertical-align: middle;
+}
+.nav .search-container {
   position: absolute;
   right: 7.292%;
   top: 10px;

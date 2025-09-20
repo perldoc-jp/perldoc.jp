@@ -332,23 +332,44 @@ subtest 'perldoc.jp/$VALUE のように指定したら、よしなにリダイ�
         };
     };
 
-    subtest '/{name} - いずれにも該当しなかった場合、最新ドキュメントか組み込み関数のページへリダイレクトする' => sub {
-        subtest '/Acme::Bleach は、/docs/modules/Acme-Bleach-1.12/Bleach.pod にリダイレクトされる' => sub {
+    subtest '/{name} - いずれにも該当しなかった場合、404が返る' => sub {
+        subtest '/Acme::Bleach は、/docs/modules/Acme-Bleach-*.*/Bleach.pod にリダイレクトされる' => sub {
             $mech->get('/Acme::Bleach');
             is $mech->status, 200, 'status is 200';
             like $mech->title, qr/^Acme::Bleach/;
 
-            $mech->base_like(qr{/docs/modules/Acme-Bleach-1.12/Bleach.pod$});
+            $mech->base_like(qr{/docs/modules/Acme-Bleach-\d+\.\d+/Bleach.pod$});
         };
 
-        subtest '/fuga は、/func/fuga にリダイレクトされる' => sub {
+        subtest '/fuga は、404が返る' => sub {
             $mech->get('/fuga');
             is $mech->status, 404, 'status is 404';
-            is $mech->title, "'fuga' は Perl の組み込み関数ではありません。 - perldoc.jp";
-
-            $mech->base_like(qr{/func/fuga$});
-            $mech->text_contains("'fuga' は Perl の組み込み関数ではありません。");
+            $mech->content_contains('fuga');
+            $mech->content_contains('検索結果が見つかりませんでした');
         };
+    };
+};
+
+subtest 'GET /search' => sub {
+    subtest '検索クエリが指定された場合、/$qへリダイレクトされる' => sub {
+        # /search?q=chomp -> /chomp -> /func/chomp
+        $mech->get('/search?q=chomp');
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'Perlの組み込み関数 chomp の翻訳 - perldoc.jp';
+        $mech->base_like(qr{/func/chomp$});
+    };
+
+    subtest 'モジュール名を検索した場合も/$qへリダイレクトされる' => sub {
+        # /search?q=Acme::Bleach -> /Acme::Bleach -> /docs/modules/...
+        $mech->get('/search?q=Acme::Bleach');
+        is $mech->status, 200, 'status is 200';
+        like $mech->title, qr/^Acme::Bleach/;
+        $mech->base_like(qr{/docs/modules/Acme-Bleach-\d+\.\d+/Bleach\.pod$});
+    };
+
+    subtest 'qパラメータがない場合、404が返る' => sub {
+        $mech->get('/search');
+        is $mech->status, 404, 'status is 404';
     };
 };
 

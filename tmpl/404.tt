@@ -2,8 +2,12 @@
 [% IF is_hash_ref(message) && message.package %]
    [% message.package %]はみつかりませんでした。
    <div>
-   <a href="http://search.cpan.org/dist/[% message.package.replace('::','-') %]">CPANで見る</a><br />
    <a href="http://metacpan.org/module/[% message.package %]">MetaCPANで見る</a>
+   </div>
+[% ELSIF is_hash_ref(message) && message.query %]
+   「[% message.query %]」の検索結果が見つかりませんでした。
+   <div>
+   <a href="https://www.google.co.jp/search?q=[% uri_escape('site:perldoc.jp ' _ message.query) %]">Google でサイト内を検索する</a>
    </div>
 [% ELSE %]
    [% message || '該当のページは見つかりませんでした。' %]
