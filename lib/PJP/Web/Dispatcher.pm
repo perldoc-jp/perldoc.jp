@@ -456,7 +456,27 @@ get '/search' => sub {
         return $c->create_simple_status_page(400, 'Bad Request');
     }
 
-    return $c->redirect("/$q");
+    if ($q =~ /^(perl.*)/) {
+        return $c->redirect("/pod/$1");
+    }
+
+    if ($q =~ /^([\$\@\%].+)/) {
+        return $c->redirect("/variable/" . uri_escape($1));
+    }
+
+    foreach my $function_regexp (@PJP::M::BuiltinFunction::REGEXP) {
+        if ($q =~ /^($function_regexp)/) {
+            return $c->redirect("/func/$1");
+        }
+    }
+
+    if ($q =~ /^([A-Z-a-z][\w:]+)/) {
+        if (my $path = PJP::M::PodFile->get_latest($1)) {
+            return $c->redirect('/docs/' . $path);
+        }
+    }
+
+    return $c->res_404({ query => $q });
 };
 
 # 以下、ルーティングルールを用いて、ドキュメント検索を行っている

@@ -381,20 +381,43 @@ subtest 'perldoc.jp/$VALUE のように指定したら、よしなにリダイ�
 };
 
 subtest 'GET /search' => sub {
-    subtest '検索クエリが指定された場合、/$qへリダイレクトされる' => sub {
-        # /search?q=chomp -> /chomp -> /func/chomp
+    subtest 'perlで始まるクエリの場合、/pod/perlxxxへリダイレクトされる' => sub {
+        # /search?q=perlintro -> /pod/perlintro -> /docs/perl/.../perlintro.pod
+        $mech->get('/search?q=perlintro');
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'perlintro - Perl の概要 - perldoc.jp';
+        $mech->base_like(qr{/docs/perl/[^/]+/perlintro\.pod$});
+    };
+
+    subtest '組み込み変数を検索した場合、/variable/へリダイレクトされる' => sub {
+        # /search?q=$_ -> /variable/$_
+        $mech->get('/search?q=$_');
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'Perlの組み込み変数 $_ の翻訳 - perldoc.jp';
+        $mech->base_like(qr{/variable/%24_$});
+    };
+
+    subtest '組み込み関数を検索した場合、/func/へリダイレクトされる' => sub {
+        # /search?q=chomp -> /func/chomp
         $mech->get('/search?q=chomp');
         is $mech->status, 200, 'status is 200';
         is $mech->title, 'Perlの組み込み関数 chomp の翻訳 - perldoc.jp';
         $mech->base_like(qr{/func/chomp$});
     };
 
-    subtest 'モジュール名を検索した場合も/$qへリダイレクトされる' => sub {
-        # /search?q=Acme::Bleach -> /Acme::Bleach -> /docs/modules/...
+    subtest 'モジュール名を検索した場合、/docs/modules/へリダイレクトされる' => sub {
+        # /search?q=Acme::Bleach -> /docs/modules/...
         $mech->get('/search?q=Acme::Bleach');
         is $mech->status, 200, 'status is 200';
         like $mech->title, qr/^Acme::Bleach/;
         $mech->base_like(qr{/docs/modules/Acme-Bleach-\d+\.\d+/Bleach\.pod$});
+    };
+
+    subtest '存在しないものを検索した場合、404が返る' => sub {
+        $mech->get('/search?q=DoesNotExist');
+        is $mech->status, 404, 'status is 404';
+        $mech->content_contains('DoesNotExist');
+        $mech->content_contains('検索結果が見つかりませんでした');
     };
 
     subtest 'qパラメータがない場合、400が返る' => sub {
@@ -405,6 +428,24 @@ subtest 'GET /search' => sub {
     subtest '空白のみのqパラメータの場合、400が返る' => sub {
         $mech->get('/search?q=  ');
         is $mech->status, 400, 'status is 400';
+    };
+
+    subtest '特殊なクエリのテスト' => sub {
+        # 数値のみ
+        $mech->get('/search?q=123');
+        is $mech->status, 404, 'status is 404 for numeric query';
+
+        # falsy値 "0"
+        $mech->get('/search?q=0');
+        is $mech->status, 404, 'status is 404 for falsy value 0';
+
+        # URL形式
+        $mech->get('/search?q=https://example.com');
+        is $mech->status, 404, 'status is 404 for URL-like query';
+
+        # 既存のページへのリクエスト
+        $mech->get('/search?q=about');
+        is $mech->status, 404, 'status is 404 for existing page name query';
     };
 };
 
