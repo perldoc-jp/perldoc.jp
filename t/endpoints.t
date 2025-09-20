@@ -349,6 +349,27 @@ subtest 'perldoc.jp/$VALUE のように指定したら、よしなにリダイ�
             $mech->content_contains('fuga');
             $mech->content_contains('検索結果が見つかりませんでした');
         };
+
+        subtest '/does/not/exist は、404が返る' => sub {
+            $mech->get('/does/not/exist');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('does/not/exist');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
+
+        subtest '/123 は、404が返る' => sub {
+            $mech->get('/123');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('123');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
+
+        subtest '/0 は、404が返る(falsy値)' => sub {
+            $mech->get('/0');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('0');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
     };
 };
 
@@ -369,9 +390,14 @@ subtest 'GET /search' => sub {
         $mech->base_like(qr{/docs/modules/Acme-Bleach-\d+\.\d+/Bleach\.pod$});
     };
 
-    subtest 'qパラメータがない場合、404が返る' => sub {
+    subtest 'qパラメータがない場合、400が返る' => sub {
         $mech->get('/search');
-        is $mech->status, 404, 'status is 404';
+        is $mech->status, 400, 'status is 400';
+    };
+
+    subtest '空白のみのqパラメータの場合、400が返る' => sub {
+        $mech->get('/search?q=  ');
+        is $mech->status, 400, 'status is 400';
     };
 };
 

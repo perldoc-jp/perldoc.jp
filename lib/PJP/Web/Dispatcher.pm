@@ -452,8 +452,8 @@ get '/search' => sub {
 
     my $q = $c->req->param('q');
 
-    if (!$q) {
-        return $c->res_404();
+    if (!defined $q || $q =~ /^\s*$/) {
+        return $c->create_simple_status_page(400, 'Bad Request');
     }
 
     return $c->redirect("/$q");
@@ -482,13 +482,17 @@ get "/{name:[\$\@\%].+}" => sub {
     return $c->redirect("/variable/" . uri_escape($p->{name}));
 };
 
-get '/{name:[A-Z-a-z][\w:]+}' => sub {
+get '/*' => sub {
     my ($c, $p) = @_;
-    if (my $path = PJP::M::PodFile->get_latest($p->{name})) {
-        return $c->redirect('/docs/' . $path);
+
+    my ($splat) = @{$p->{splat}};
+    if ($splat =~ /^[A-Z-a-z][\w:]+/) {
+        if (my $path = PJP::M::PodFile->get_latest($splat)) {
+            return $c->redirect('/docs/' . $path);
+        }
     }
 
-    return $c->res_404({ query => $p->{name} })
+    return $c->res_404({ query => $splat })
 };
 
 1;

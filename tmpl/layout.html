@@ -59,10 +59,10 @@
 
             <!-- SiteSearch -->
             <div class="search-container">
-            <form method="get" action="/search" id="search-form">
+            <form method="get" action="/search" id="search-form" onsubmit="return document.getElementById('search-input').value.trim() !== ''">
             <input type="text" name="q" size="31" maxlength="255" value="" id="search-input">
             <button type="submit">検索</button>
-            <button type="button" onclick="window.location.href='https://www.google.co.jp/search?q='+encodeURIComponent('site:perldoc.jp '+document.getElementById('search-input').value)">Google検索</button>
+            <button type="button" onclick="var q=document.getElementById('search-input').value.trim(); if(q) window.location.href='https://www.google.co.jp/search?q='+encodeURIComponent('site:perldoc.jp '+q)">Google検索</button>
             </form>
             </div>
             <!-- SiteSearch -->
