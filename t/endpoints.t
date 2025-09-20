@@ -370,6 +370,13 @@ subtest 'perldoc.jp/$VALUE のように指定したら、よしなにリダイ�
             $mech->content_contains('0');
             $mech->content_contains('検索結果が見つかりませんでした');
         };
+
+        subtest '/https://example.com/ は、404が返る(スキーム付きURL)' => sub {
+            $mech->get('/https://example.com/');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('https://example.com/');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
     };
 };
 
