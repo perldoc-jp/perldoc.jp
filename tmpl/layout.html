@@ -57,17 +57,15 @@
             <li><a href="/about">このサイトについて</a></li>
             </ul>
 
-            <!-- SiteSearch Google -->
-            <form method=get action="http://www.google.co.jp/search" id="GoogleSearch">
-            <input type=text name=q size=31 maxlength=255 value="">
-            <input type=hidden name=ie value=UTF-8>
-            <input type=hidden name=oe value=UTF-8>
-            <input type=hidden name=hl value="ja">
-            <input type=hidden name=domains value="perldoc.jp">
-            <input type="hidden" name="sitesearch" value="https://perldoc.jp">
-            <input type=submit name=btnG value="Google 検索">
+            <!-- SiteSearch -->
+            <div class="search-container">
+            <form method="get" action="/search" id="search-form" onsubmit="return document.getElementById('search-input').value.trim() !== ''">
+            <input type="text" name="q" size="31" maxlength="255" value="" id="search-input">
+            <button type="submit">検索</button>
+            <button type="button" onclick="var q=document.getElementById('search-input').value.trim(); if(q) window.location.href='https://www.google.co.jp/search?q='+encodeURIComponent('site:perldoc.jp '+q)">Google検索</button>
             </form>
-            <!-- SiteSearch Google -->
+            </div>
+            <!-- SiteSearch -->
         </div>
         <div id="main" class="span-24 last">
             <div id="content">[% content %]</div>

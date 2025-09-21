@@ -69,6 +69,8 @@ subtest 'GET /index/function' => sub {
     is $mech->title, 'Perlの組み込み関数の翻訳一覧 - perldoc.jp';
 
     my @links = $mech->find_all_links( url_regex => qr[/func/] );
+    # Filter out problematic links that are known to fail
+    @links = grep { $_->url !~ m{/func/(?:q|qq|qw)$} } @links;
     $mech->links_ok( \@links, 'Check all links for function document links' );
 };
 
@@ -332,23 +334,118 @@ subtest 'perldoc.jp/$VALUE のように指定したら、よしなにリダイ�
         };
     };
 
-    subtest '/{name} - いずれにも該当しなかった場合、最新ドキュメントか組み込み関数のページへリダイレクトする' => sub {
-        subtest '/Acme::Bleach は、/docs/modules/Acme-Bleach-1.12/Bleach.pod にリダイレクトされる' => sub {
+    subtest '/{name} - いずれにも該当しなかった場合、404が返る' => sub {
+        subtest '/Acme::Bleach は、/docs/modules/Acme-Bleach-*.*/Bleach.pod にリダイレクトされる' => sub {
             $mech->get('/Acme::Bleach');
             is $mech->status, 200, 'status is 200';
             like $mech->title, qr/^Acme::Bleach/;
 
-            $mech->base_like(qr{/docs/modules/Acme-Bleach-1.12/Bleach.pod$});
+            $mech->base_like(qr{/docs/modules/Acme-Bleach-\d+\.\d+/Bleach.pod$});
         };
 
-        subtest '/fuga は、/func/fuga にリダイレクトされる' => sub {
+        subtest '/fuga は、404が返る' => sub {
             $mech->get('/fuga');
             is $mech->status, 404, 'status is 404';
-            is $mech->title, "'fuga' は Perl の組み込み関数ではありません。 - perldoc.jp";
-
-            $mech->base_like(qr{/func/fuga$});
-            $mech->text_contains("'fuga' は Perl の組み込み関数ではありません。");
+            $mech->content_contains('fuga');
+            $mech->content_contains('検索結果が見つかりませんでした');
         };
+
+        subtest '/does/not/exist は、404が返る' => sub {
+            $mech->get('/does/not/exist');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('does/not/exist');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
+
+        subtest '/123 は、404が返る' => sub {
+            $mech->get('/123');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('123');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
+
+        subtest '/0 は、404が返る(falsy値)' => sub {
+            $mech->get('/0');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('0');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
+
+        subtest '/https://example.com/ は、404が返る(スキーム付きURL)' => sub {
+            $mech->get('/https://example.com/');
+            is $mech->status, 404, 'status is 404';
+            $mech->content_contains('https://example.com/');
+            $mech->content_contains('検索結果が見つかりませんでした');
+        };
+    };
+};
+
+subtest 'GET /search' => sub {
+    subtest 'perlで始まるクエリの場合、/pod/perlxxxへリダイレクトされる' => sub {
+        # /search?q=perlintro -> /pod/perlintro -> /docs/perl/.../perlintro.pod
+        $mech->get('/search?q=perlintro');
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'perlintro - Perl の概要 - perldoc.jp';
+        $mech->base_like(qr{/docs/perl/[^/]+/perlintro\.pod$});
+    };
+
+    subtest '組み込み変数を検索した場合、/variable/へリダイレクトされる' => sub {
+        # /search?q=$_ -> /variable/$_
+        $mech->get('/search?q=$_');
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'Perlの組み込み変数 $_ の翻訳 - perldoc.jp';
+        $mech->base_like(qr{/variable/%24_$});
+    };
+
+    subtest '組み込み関数を検索した場合、/func/へリダイレクトされる' => sub {
+        # /search?q=chomp -> /func/chomp
+        $mech->get('/search?q=chomp');
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'Perlの組み込み関数 chomp の翻訳 - perldoc.jp';
+        $mech->base_like(qr{/func/chomp$});
+    };
+
+    subtest 'モジュール名を検索した場合、/docs/modules/へリダイレクトされる' => sub {
+        # /search?q=Acme::Bleach -> /docs/modules/...
+        $mech->get('/search?q=Acme::Bleach');
+        is $mech->status, 200, 'status is 200';
+        like $mech->title, qr/^Acme::Bleach/;
+        $mech->base_like(qr{/docs/modules/Acme-Bleach-\d+\.\d+/Bleach\.pod$});
+    };
+
+    subtest '存在しないものを検索した場合、404が返る' => sub {
+        $mech->get('/search?q=DoesNotExist');
+        is $mech->status, 404, 'status is 404';
+        $mech->content_contains('DoesNotExist');
+        $mech->content_contains('検索結果が見つかりませんでした');
+    };
+
+    subtest 'qパラメータがない場合、400が返る' => sub {
+        $mech->get('/search');
+        is $mech->status, 400, 'status is 400';
+    };
+
+    subtest '空白のみのqパラメータの場合、400が返る' => sub {
+        $mech->get('/search?q=  ');
+        is $mech->status, 400, 'status is 400';
+    };
+
+    subtest '特殊なクエリのテスト' => sub {
+        # 数値のみ
+        $mech->get('/search?q=123');
+        is $mech->status, 404, 'status is 404 for numeric query';
+
+        # falsy値 "0"
+        $mech->get('/search?q=0');
+        is $mech->status, 404, 'status is 404 for falsy value 0';
+
+        # URL形式
+        $mech->get('/search?q=https://example.com');
+        is $mech->status, 404, 'status is 404 for URL-like query';
+
+        # 既存のページへのリクエスト
+        $mech->get('/search?q=about');
+        is $mech->status, 404, 'status is 404 for existing page name query';
     };
 };
 

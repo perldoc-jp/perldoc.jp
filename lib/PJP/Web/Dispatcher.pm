@@ -442,6 +442,45 @@ get '/docs/perl/{path:.[^/]+\.pod}' => sub { # perl
 
 get '/docs/{path:(?:modules|perl|articles)/.+\.pod}' => $display_pod;
 
+# GET /search?q=%s でドキュメント検索を行う
+# 設置理由:
+# - 検索フォームで利用しやすくするため
+# - サイト内検索のショートカットを設定を案内しやすくするため
+# Ref: https://support.google.com/chrome/answer/95426?hl=ja#zippy=%2Curls%E6%A4%9C%E7%B4%A2%E8%AA%9E%E5%8F%A5-%E6%AC%84
+get '/search' => sub {
+    my ($c) = @_;
+
+    my $q = $c->req->param('q');
+
+    if (!defined $q || $q =~ /^\s*$/) {
+        return $c->create_simple_status_page(400, 'Bad Request');
+    }
+
+    if ($q =~ /^(perl.*)/) {
+        return $c->redirect("/pod/$1");
+    }
+
+    if ($q =~ /^([\$\@\%].+)/) {
+        return $c->redirect("/variable/" . uri_escape($1));
+    }
+
+    foreach my $function_regexp (@PJP::M::BuiltinFunction::REGEXP) {
+        if ($q =~ /^($function_regexp)/) {
+            return $c->redirect("/func/$1");
+        }
+    }
+
+    if ($q =~ /^([A-Z-a-z][\w:]+)/) {
+        if (my $path = PJP::M::PodFile->get_latest($1)) {
+            return $c->redirect('/docs/' . $path);
+        }
+    }
+
+    return $c->res_404({ query => $q });
+};
+
+# 以下、ルーティングルールを用いて、ドキュメント検索を行っている
+
 get '/perl*' => sub {
     my ($c, $p) = @_;
     my ($splat) = @{$p->{splat}};
@@ -463,13 +502,17 @@ get "/{name:[\$\@\%].+}" => sub {
     return $c->redirect("/variable/" . uri_escape($p->{name}));
 };
 
-get '/{name:[A-Z-a-z][\w:]+}' => sub {
+get '/*' => sub {
     my ($c, $p) = @_;
-    if (my $path = PJP::M::PodFile->get_latest($p->{name})) {
-        return $c->redirect('/docs/' . $path);
+
+    my ($splat) = @{$p->{splat}};
+    if ($splat =~ /^[A-Z-a-z][\w:]+/) {
+        if (my $path = PJP::M::PodFile->get_latest($splat)) {
+            return $c->redirect('/docs/' . $path);
+        }
     }
 
-    return $c->redirect('/func/' . $p->{name});
+    return $c->res_404({ query => $splat })
 };
 
 1;

@@ -33,10 +33,13 @@
     }
   }
   form {
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .search-container {
     position: absolute;
     right: $gap;
     top: 10px;
-
   }
 }
 
