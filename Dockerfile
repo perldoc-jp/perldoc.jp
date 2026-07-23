@@ -28,6 +28,9 @@ RUN carton install --deployment
 FROM deps AS app
 
 ENV PLACK_ENV=docker
+# make ci / make setup-data が実行する生成スクリプトを databuild と
+# 同じ TZ で動かす (詳細は databuild 側のコメントを参照)
+ENV TZ=Asia/Tokyo
 
 COPY . .
 
@@ -39,6 +42,13 @@ RUN cp perldocjp.master.db perldocjp.slave.db
 FROM deps AS databuild
 
 ENV PLACK_ENV=build
+
+# 生成スクリプトの時刻の扱いを旧 VPS (JST) と揃える。UTC のままだと
+# - create_recent.pl の RSS が localtime に固定の +0900 表記を付けるため 9 時間ズレる
+# - PJP::M::Repository の git log --since (TZ なし文字列) が UTC で解釈され、
+#   JST 元旦 00:00〜09:00 のコミットが年次統計から恒久的に漏れる
+# - 下の date +%Y が JST の年と食い違う時間帯が生じる
+ENV TZ=Asia/Tokyo
 
 # translation の取得コミットを build-arg で指定する。
 # CI が HEAD の SHA を渡すことで、translation が更新されたときだけ
@@ -97,6 +107,8 @@ RUN apt-get update && \
 WORKDIR /usr/src/app
 
 ENV PLACK_ENV=deployment
+# 現状 runtime に localtime 依存のコードはないが、ビルド時 (databuild) と揃えておく
+ENV TZ=Asia/Tokyo
 ENV PERL5LIB=/usr/src/app/local/lib/perl5
 ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
