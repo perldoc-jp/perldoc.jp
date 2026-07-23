@@ -290,10 +290,11 @@ sub diff {
             alarm $option->{timeout};
         }
         $diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
-        if ($option->{timeout} > 0) {
-            alarm 0;
-        }
     };
+    # timeout 以外の die でも必ず解除する。eval 内だけで解除していると、
+    # armed のまま local の ALRM ハンドラが復元され、残タイマーの着弾が
+    # デフォルト動作 (プロセス終了) でワーカーを即死させる
+    alarm 0;
     if ($@ =~m{diff timeout}) {
         # should record time out combination and generate by batch program.
         warn "diff timeout: $origin $target";
