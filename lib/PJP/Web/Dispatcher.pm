@@ -40,7 +40,14 @@ get '/about' => sub {
 
 get '/translators' => sub {
     my $c = shift;
-    return $c->render('translators.tt', {years => scalar config_do('data/years.pl')});
+
+    # data/years.pl は 800KB 超あり毎年成長するため、リクエスト毎に parse
+    # せずプロセス内にメモ化する (コンテンツはデプロイ単位で不変)
+    my $years = $c->cache->get_or_set('translators', sub {
+        scalar config_do('data/years.pl');
+    });
+
+    return $c->render('translators.tt', {years => $years});
 };
 
 get '/index/core' => sub {
