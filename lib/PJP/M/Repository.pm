@@ -47,7 +47,9 @@ sub recent_data {
       }
   }
   my %tmp;
-  @updates = ( sort {($tmp{$b} ||= $b->{date}) cmp ($tmp{$a} ||= $a->{date})} @updates );
+  # path のタイブレークで同時刻のエントリの順序を決定的にする
+  # (File::Find の走査順は FS 依存で、生成物の diff にノイズが出る)
+  @updates = ( sort {($tmp{$b} ||= $b->{date}) cmp ($tmp{$a} ||= $a->{date}) || $a->{path} cmp $b->{path}} @updates );
   return \@updates;
 }
 

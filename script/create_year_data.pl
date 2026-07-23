@@ -42,7 +42,7 @@ sub main {
     # 同じ結果になるよう、年内最後のコミットを別窓で取る)
     my $updates = PJP::M::Repository->recent_data($pjp, $since, $until);
     push @$updates, @{ PJP::M::Repository->recent_data($pjp, $until) };
-    @$updates = sort { $b->{date} cmp $a->{date} } @$updates;
+    @$updates = sort { $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} } @$updates;
     create_file($updates, $year);
     update_pod_update_time($pjp, $updates);
 }
@@ -73,7 +73,9 @@ sub create_file {
     # 過去年のデータを黙って失うことになるので config_do に croak させる。
     my $year = -e 'data/years.pl' ? scalar config_do('data/years.pl') : undef;
     if ($year) {
-        push @$updates, sort { $b->{date} cmp $a->{date} }map { @{$year->{$_}->{modules}} } grep {$_ < $target_year} keys %$year;
+        # path のタイブレークで同時刻エントリの順序を決定的にする
+        # (keys の列挙順に依存させない)
+        push @$updates, sort { $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} }map { @{$year->{$_}->{modules}} } grep {$_ < $target_year} keys %$year;
     } else {
         $year = {};
     }
@@ -119,9 +121,11 @@ sub create_file {
                      [ $_, $year->{$y}->{commit_count_all}->{$_}, $year->{$y}->{commit_count}->{$_} ]
                  }
                  sort {
+                     # 同数のときは名前順で決定的にする
                      ($tmp{$b} ||= $year->{$y}->{commit_count_all}->{$b})
                          <=>
                      ($tmp{$a} ||= $year->{$y}->{commit_count_all}->{$a})
+                         || $a cmp $b
                  } keys %{$year->{$y}->{commit_count_all}}
                 ];
         }
