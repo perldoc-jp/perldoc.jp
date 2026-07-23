@@ -248,6 +248,11 @@ sub diff {
     my ($self, $origin, $target, $option) = @_;
     $option //= {};
 
+    # target はクエリパラメータ由来で、未指定のままアクセスされうる
+    if (!defined $target || $target eq '') {
+        return {error => 'no_pod'};
+    }
+
     if ($origin =~m{perl[\w-]*delta\.pod} or $target =~m{perl[\w-]*delta\.pod}) {
         return {error => 'perldelta'};
     }
@@ -255,11 +260,15 @@ sub diff {
     my ($origin_pod_name) = $origin =~ m{([^/]+\.pod)};
     my ($target_pod_name) = $target =~ m{([^/]+\.pod)};
 
-    if ($origin_pod_name ne $target_pod_name) {
+    if (!defined $origin_pod_name or !defined $target_pod_name
+        or $origin_pod_name ne $target_pod_name) {
         return {error => 'different_file'};
     }
 
-    my $pod = PJP::M::PodFile->retrieve($origin);
+    # DB に無い pod は slurp より先にここで弾く (undef のまま進めると
+    # 下の {%$pod, ...} が undef デリファレンスで die し 500 になる)
+    my $pod = PJP::M::PodFile->retrieve($origin)
+        or return {error => 'no_pod'};
 
     my $origin_content = PJP::M::PodFile->slurp($origin) // return {%$pod, error => 'no_pod'};
     my $target_content = PJP::M::PodFile->slurp($target) // return {%$pod, error => 'no_pod'};

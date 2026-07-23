@@ -220,10 +220,22 @@ subtest '/docs/(modules|perl|articles)/*.(html|pod).pod' => sub {
 };
 
 subtest '/docs/(modules|perl)/*.pod/diff' => sub {
-    $mech->get('/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod');
+    subtest '両方の翻訳が存在すれば、差分が表示される' => sub {
+        $mech->get('/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod');
 
-    is $mech->status, 200, 'status is 200';
-    is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
+    };
+
+    subtest 'DBに存在しないpodの場合、404が返る (500にならない)' => sub {
+        $mech->get('/docs/modules/DoesNotExist-1.23/DoesNotExist.pod/diff?target=modules%2FDoesNotExist-1.24%2FDoesNotExist.pod');
+        is $mech->status, 404, 'status is 404';
+    };
+
+    subtest 'targetパラメータがない場合、404が返る' => sub {
+        $mech->get('/docs/perl/5.38.0/perl.pod/diff');
+        is $mech->status, 404, 'status is 404';
+    };
 };
 
 subtest '/docs/(articles)/*.html' => sub {
