@@ -13,7 +13,14 @@ use Module::Find qw/useall/;
 
 useall 'PJP::M';
 
-local $Data::Dumper::Terse = 1;
+local $Data::Dumper::Terse    = 1;
+# キー順を決定的にして、data/years.pl を再生成コミットするときの
+# diff レビューを可能にする
+local $Data::Dumper::Sortkeys = 1;
+# author 名など git 由来の文字列が非 ASCII になっても読み手側の
+# エンコーディング解釈に依存しないよう、index データ
+# (create_index_data.pl) と同じく純 ASCII で出力する
+local $Data::Dumper::Useqq    = 1;
 
 my %IGNORE_FILES = (
     'modules/CGI-FastTemplate-1.09/README' => 1,
@@ -115,8 +122,10 @@ sub create_file {
     mkdir './data' or die $! if not -d './data';
 
     open my $fh, '>', "data/years.pl.new" or die $!;
-    print $fh Dumper($year);
+    # 先頭の + は do がブロックと誤解釈しないための明示
+    print $fh '+', Dumper($year);
     close $fh;
-    rename "data/years.pl.new", "data/years.pl";
+    rename "data/years.pl.new", "data/years.pl"
+        or die "Cannot rename data/years.pl.new to data/years.pl: $!";
 }
 

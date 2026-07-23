@@ -14,7 +14,12 @@ use Time::Piece;
 
 useall 'PJP::M';
 
-local $Data::Dumper::Terse = 1;
+local $Data::Dumper::Terse    = 1;
+local $Data::Dumper::Sortkeys = 1;
+# author 名など git 由来の文字列が非 ASCII になっても読み手側の
+# エンコーディング解釈に依存しないよう、index データ
+# (create_index_data.pl) と同じく純 ASCII で出力する
+local $Data::Dumper::Useqq    = 1;
 
 main();
 
@@ -37,8 +42,9 @@ sub create_file {
     mkdir './data' or die $! if not -d './data';
 
     open my $fh, '>', "data/recent.pl.new" or die $!;
-    # Config::PL (config_do) で読めるように HashRef で包む
-    print $fh Dumper({ recent => $updates });
+    # Config::PL (config_do) で読めるように HashRef で包む。
+    # 先頭の + は do がブロックと誤解釈しないための明示
+    print $fh '+', Dumper({ recent => $updates });
     close $fh;
     if (! -e "data/recent.pl" or qx{diff data/recent.pl data/recent.pl.new}) {
         rename "data/recent.pl.new", "data/recent.pl";
