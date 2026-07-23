@@ -20,7 +20,9 @@ sub recent_data {
   foreach my $repos (qw/translation/) {
       foreach my $file (File::Find::Rule->file()->name(qr/\.(pod|html|md)$/)->in("$assets_dir$repos")) {
           my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date' $file} or next;
-          my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) \+\d{4} -- (.+)$} or die $git;
+          # --date=iso はコミットに記録された committer 自身のオフセットを
+          # そのまま出すため、負のオフセット (-0700 など) も受け付ける
+          my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) [-+]\d{4} -- (.+)$} or die $git;
           if (not $uniq{$date . $time}{$file}++) {
               $file =~s{^.+?assets/}{};
               $file =~s{^\Q$repos/\E}{};
