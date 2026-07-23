@@ -30,6 +30,11 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   `/docs/*/diff` はクエリ付き GET で Cloudflare にキャッシュもされない。
   連続アクセスでワーカーが飽和しうるので、Cloudflare のレートリミットルールを
   設定しておくことを推奨する。
+  ただし `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は
+  公開のままであり、Cloudflare を経由しない直アクセスにはレートリミットは
+  効かない。直アクセス側の実質的な上限装置は max-instances (=3) で、
+  コスト暴走はしない前提の設計になっている (完全に塞ぐには LB + ingress
+  制限が必要で、本構成のコスト方針とは釣り合わない)。
 
 ## 初期セットアップ (一度だけ)
 
@@ -184,6 +189,12 @@ Read and write 権限を持つ fine-grained PAT (または GitHub App トーク�
 
 ### 7. カスタムドメイン (Cloudflare は既存のものを流用)
 
+> **注意**: Cloud Run のドメインマッピングはプレビュー段階の機能で、
+> Google はレイテンシの問題を理由に本番用途には推奨していない
+> (asia-northeast1 が対応リージョンであることは確認済み)。
+> 本構成は Cloudflare が前面に立つため影響は限定的と見込むが、
+> レイテンシや証明書で問題が出る場合は末尾の Worker 代替に切り替えること。
+
 1. ドメインマッピングを作成:
    ```sh
    gcloud beta run domain-mappings create \
@@ -234,6 +245,13 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
 
 - **翻訳の反映**: translation への push → 自動デプロイ (数分)。手動で回す場合は
   Actions の Deploy workflow を workflow_dispatch で実行
+- **schedule の自動無効化に注意**: public リポジトリの scheduled workflow は、
+  リポジトリに 60 日間アクティビティが無いと GitHub により自動で無効化される。
+  perldoc.jp 本体はコミット頻度が低く、translation の更新 (repository_dispatch)
+  はこの判定のアクティビティにならないため、「日次保険」だけが黙って止まる
+  ことがある。Actions タブの Deploy workflow に無効化の告知が出ていたら
+  re-enable すること (repository_dispatch / workflow_dispatch 起動は無効化の
+  対象外なので、translation 起点の反映は止まらない)
 - **ロールバック**: `gcloud run services update-traffic perldoc-jp \
   --region asia-northeast1 --to-revisions <REVISION>=100`
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。
