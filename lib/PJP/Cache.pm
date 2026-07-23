@@ -32,7 +32,7 @@ sub file_cache {
 }
 
 sub get_or_set {
-    my ($self, $key, $cb, $xt) = @_;
+    my ($self, $key, $cb) = @_;
 
     $key .= rand() if $ENV{DEBUG};
 
