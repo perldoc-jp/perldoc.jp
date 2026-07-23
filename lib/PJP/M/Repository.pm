@@ -19,7 +19,14 @@ sub recent_data {
 
   foreach my $repos (qw/translation/) {
       foreach my $file (File::Find::Rule->file()->name(qr/\.(pod|html|md)$/)->in("$assets_dir$repos")) {
-          my $git = qx{cd $assets_dir/$repos/; git log -1 --date=iso --pretty='%cd -- %an' --since='$date' $file} or next;
+          # ファイル名は translation リポジトリ由来の外部入力なので、シェルを
+          # 経由せず list 形式で exec する。'--' でオプション解釈も遮断する
+          open my $git_fh, '-|', 'git', '-C', "$assets_dir$repos",
+              'log', '-1', '--date=iso', '--pretty=%cd -- %an', "--since=$date", '--', $file
+              or die "Cannot run git: $!";
+          my $git = do { local $/; <$git_fh> };
+          close $git_fh;
+          $git or next;
           # --date=iso はコミットに記録された committer 自身のオフセットを
           # そのまま出すため、負のオフセット (-0700 など) も受け付ける
           my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) [-+]\d{4} -- (.+)$} or die $git;
