@@ -59,10 +59,6 @@ subtest 'GET /translators' => sub {
     like $mech->content, qr{<h2>\d{4}年</h2>}, 'yearly sections are rendered';
 };
 
-# TODO: カテゴリは現在コメントアウトされて、利用されてなさそうなので該当コードを削除してよさそう
-# subtest 'GET /category/:name/:name2' => sub {
-# }
-
 subtest 'GET /index/core' => sub {
     $mech->get('/index/core');
     is $mech->status, 200, 'status is 200';

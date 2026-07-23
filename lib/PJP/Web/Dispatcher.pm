@@ -43,36 +43,6 @@ get '/translators' => sub {
     return $c->render('translators.tt', {years => scalar config_do('data/years.pl')});
 };
 
-# NOTE: 2021/12/27: search.cpan.orgからmetacpan.orgへの移行に伴い意味不明な分類になっていたので廃止
-# get '/category' => sub {
-#     my $c = shift;
-#
-#     return $c->render('category.tt', {
-#                                    en2ja               => do "data/category_en2ja.pl",
-#                                    categorized_modules => do "data/category_data.pl",
-#                                   });
-# };
-#
-# get '/category/:name' => sub {
-#     my ($c, $args) = @_;
-#     my $modules =  do "data/category_data.pl";
-#     return $c->render('category/index.tt', {
-#                                       en2ja    => do "data/category_en2ja.pl",
-#                                       category => $args->{name},
-#                                       modules  => $modules->{category_modules}->{$args->{name}},
-#                                      });
-# };
-
-get '/category/:name/:name2' => sub {
-    my ($c, $args) = @_;
-    my $modules =  do "data/category_data.pl";
-    my $name = $args->{name} . '/' . $args->{name2};
-    return $c->render('category/index.tt', {
-                                      category  => $name,
-                                      modules   => $modules->{category_modules}->{$name},
-                                     });
-};
-
 get '/index/core' => sub {
     my $c = shift;
 
