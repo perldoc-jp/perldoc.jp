@@ -1,0 +1,83 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+  # perldoc-jp/translation の push を受けて再ビルドする
+  repository_dispatch:
+    types:
+      - translation-updated
+  # repository_dispatch の取りこぼし保険 (JST 4:00)
+  schedule:
+    - cron: '0 19 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: asia-northeast1
+  SERVICE: perldoc-jp
+  IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/perldoc-jp/app
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+      # translation の HEAD を build-arg に渡し、translation が更新された
+      # ときだけ databuild ステージのキャッシュを無効化する
+      - name: Resolve translation HEAD
+        id: translation
+        run: echo "sha=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: |
+            TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+
+      # サービス設定を毎回明示し、デプロイの実行順序に依存せず
+      # self-correcting にする。特に concurrency は Starlet の
+      # --max-workers 4 と一致させる (デフォルト 80 では 4 ワーカーに
+      # 大量のリクエストが詰まる)。
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:$GITHUB_SHA" \
+            --region "$REGION" \
+            --execution-environment gen2 \
+            --memory 1Gi --cpu 1 \
+            --min-instances 0 --max-instances 3 \
+            --concurrency 4 --cpu-boost \
+            --timeout 60 --port 8080 \
+            --allow-unauthenticated \
+            --quiet

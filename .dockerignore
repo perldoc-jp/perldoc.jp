@@ -1,2 +1,14 @@
 Dockerfile
 local/
+.git/
+.carmel/
+assets/
+db/
+*.db
+data/recent.pl
+static/docs.json
+static/rss/
+functions.txt
+xtc/
+.sass-cache/
+nytprof/

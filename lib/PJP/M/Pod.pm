@@ -298,30 +298,12 @@ sub diff {
 
 sub select_heavy_diff {
     my ($self, $origin, $target) = @_;
-    my $c = c();
-    my $sth = $c->dbh_master->search(heavy_diff =>
-                                     {
-                                      origin    => $origin,
-                                      target    => $target,
-                                     });
-    return $sth->fetchrow_hashref();
+    return c()->heavy_diff_cache->get($origin, $target);
 }
 
 sub save_as_heavy_diff {
     my ($self, $origin, $target, $diff) = @_;
-    my $c = c();
-    my $heavy_diff = $self->select_heavy_diff($origin, $target);
-    if (! $heavy_diff) {
-        $heavy_diff = $c->dbh_master->insert(heavy_diff =>
-                                             {
-                                              origin    => $origin,
-                                              target    => $target,
-                                              time      => (time + 9 * 3600),
-                                              is_cached => ($diff ? 1 : 0),
-                                              diff       => $diff,
-                                             });
-    }
-    return $heavy_diff;
+    return c()->heavy_diff_cache->set($origin, $target, $diff);
 }
 
 1;

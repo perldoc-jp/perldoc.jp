@@ -13,7 +13,7 @@ db/
 /.carmel/
 /local/
 /data/recent.pl
-/data/years.pl
+/production.db
 /static/docs.json
 /static/rss/
 xtc/

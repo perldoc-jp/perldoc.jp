@@ -15,6 +15,7 @@ SQLiteに保存しておき、それを表示しています。
 組み込み関数や組み込み変数などの一覧情報は、perldocの情報を元に生成しています.
 
 現在は、Japan Perl Associationが管理しているVPS上で動作しています。
+Google Cloud Run への移行構成を用意してあります。詳細は [docs/cloud-run.md](docs/cloud-run.md) を参照してください。
 
 # WORKFLOW
 

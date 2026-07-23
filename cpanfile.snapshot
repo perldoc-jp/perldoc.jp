@@ -155,6 +155,15 @@ DISTRIBUTIONS
       ExtUtils::MakeMaker 0
       File::Spec 0.82
       Storable 1.014
+  Cache-LRU-0.04
+    pathname: K/KA/KAZUHO/Cache-LRU-0.04.tar.gz
+    provides:
+      Cache::LRU 0.04
+    requirements:
+      ExtUtils::MakeMaker 6.42
+      Test::More 0.88
+      Test::Requires 0
+      perl 5.008001
   Canary-Stability-2013
     pathname: M/ML/MLEHMANN/Canary-Stability-2013.tar.gz
     provides:
@@ -225,6 +234,13 @@ DISTRIBUTIONS
       perl 5.008001
       strict 0
       warnings 0
+  Config-PL-0.03
+    pathname: S/SO/SONGMU/Config-PL-0.03.tar.gz
+    provides:
+      Config::PL 0.03
+    requirements:
+      Module::Build::Tiny 0.035
+      perl 5.008001
   Cookie-Baker-0.11
     pathname: K/KA/KAZEBURO/Cookie-Baker-0.11.tar.gz
     provides:

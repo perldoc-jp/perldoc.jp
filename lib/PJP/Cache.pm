@@ -3,14 +3,15 @@ use warnings;
 use utf8;
 
 package PJP::Cache;
-use Cache::FileCache;
+use Cache::LRU;
 use File::stat;
-use File::Spec;
 
+# コンテンツはデプロイ単位で不変なため、有効期限なしのオンメモリ LRU で足りる。
+# (データ更新 = イメージ再ビルド + 再デプロイ = プロセス入れ替え)
 sub new {
     my $class = shift;
     bless {
-           cache => Cache::FileCache->new({cache_root => File::Spec->tmpdir() . '/perldoc.jp-file_cache/'}),
+           cache => Cache::LRU->new(size => 256),
           }, $class;
 }
 
@@ -39,9 +40,8 @@ sub get_or_set {
     return $val if defined $val;
 
     $val = $cb->();
-    $self->{cache}->set($key, $val, $xt || '1 day');
+    $self->{cache}->set($key, $val);
     return $val;
 }
 
 1;
-

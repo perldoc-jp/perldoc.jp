@@ -15,6 +15,13 @@ sub connect {
         }
         my $dbh = $self->SUPER::connect($dsn, $user, $pass, $attr);
         $dbh->do('PRAGMA synchronous = OFF');
+        if ($dsn =~ /^dbi:SQLite:/) {
+                # Cloud Run の Image Streaming 下では DB ファイルは遅延ページ
+                # フォールトで読まれる。mmap で読み込みを安価にし、ページ
+                # キャッシュも広めに取る。read-only/immutable 接続でも無害。
+                $dbh->do('PRAGMA mmap_size = 268435456'); # 256MB
+                $dbh->do('PRAGMA cache_size = -65536');    # 64MB
+        }
         return $dbh;
 }
 
