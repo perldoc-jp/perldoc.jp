@@ -17,7 +17,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 [ユーザー] → Cloudflare → Cloud Run (asia-northeast1)
                            - min-instances=0 (無アクセス時のコストほぼゼロ)
                            - イメージに read-only SQLite + translation docs を焼き込み
-                           - 実行時のファイル書き込みなし (完全イミュータブル)
+                           - 実行時の書き込みは /tmp (tmpfs) の Xslate キャッシュのみ
 ```
 
 - データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
@@ -26,6 +26,10 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 - 重い diff のキャッシュ (旧 heavy_diff テーブル) は廃止し、`PJP::HeavyDiffCache`
   という NOP のインターフェースに置き換えた。将来 GCS / Cloudflare R2 などへの
   保存をこのインターフェースの実装として追加できる。
+  廃止に伴い重い diff は毎回計算し直す (最大 6 秒 CPU を占有して 503) ため、
+  `/docs/*/diff` はクエリ付き GET で Cloudflare にキャッシュもされない。
+  連続アクセスでワーカーが飽和しうるので、Cloudflare のレートリミットルールを
+  設定しておくことを推奨する。
 
 ## 初期セットアップ (一度だけ)
 
@@ -99,12 +103,15 @@ gcloud iam service-accounts add-iam-policy-binding \
 gcloud iam workload-identity-pools create github \
   --location=global
 
+# ref 条件により master 以外のブランチからは認証できない
+# (workflow_dispatch で誤って別ブランチを選んでも未レビューのコードは
+# デプロイされない)
 gcloud iam workload-identity-pools providers create-oidc perldoc-jp \
   --location=global \
   --workload-identity-pool=github \
   --issuer-uri="https://token.actions.githubusercontent.com" \
   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --attribute-condition="assertion.repository == 'perldoc-jp/perldoc.jp'"
+  --attribute-condition="assertion.repository == 'perldoc-jp/perldoc.jp' && assertion.ref == 'refs/heads/master'"
 
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 gcloud iam service-accounts add-iam-policy-binding "$SA" \
@@ -230,7 +237,9 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
 - **ロールバック**: `gcloud run services update-traffic perldoc-jp \
   --region asia-northeast1 --to-revisions <REVISION>=100`
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。
-  アクセスログは Plack ミドルウェアが STDERR に出すものが Cloud Logging に入る
+  リクエストログは Cloud Run が自動で記録する。アプリケーションログ
+  (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
+  Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
 - **年次作業**: `data/years.pl` は年をまたいだら
   `perl script/create_year_data.pl <前年>` の結果をコミットしておくと、
   ビルド時の再集計が当年分だけで済む
