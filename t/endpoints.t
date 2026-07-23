@@ -105,12 +105,21 @@ subtest 'GET /index/module' => sub {
     $mech->get('/index/module');
     is $mech->status, 200, 'status is 200';
     is $mech->title, '翻訳されたPerlモジュールの一覧 - perldoc.jp';
+
+    # data/index-module.pl の生成漏れや空生成でもタイトルまでは返ってしまうので、
+    # モジュールへのリンクが十分な数描画されていることまで確認する
+    my @links = $mech->find_all_links(url_regex => qr{^/docs/modules/});
+    cmp_ok scalar(@links), '>', 100, 'module index links are rendered';
 };
 
 subtest 'GET /index/article' => sub {
     $mech->get('/index/article');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'Perlに関係するその他の翻訳の一覧 - perldoc.jp';
+
+    # 同上 (data/index-article.pl)
+    my @links = $mech->find_all_links(url_regex => qr{^/docs/articles/});
+    cmp_ok scalar(@links), '>', 10, 'article index links are rendered';
 };
 
 subtest 'GET /pod/*' => sub {

@@ -79,6 +79,7 @@ RUN cp db/perldocjp.master.db db/perldocjp.db
 RUN perl script/create_recent.pl
 RUN perl script/create_year_data.pl "$(date +%Y)"
 RUN perl script/create_docs_json.pl
+RUN perl script/create_index_data.pl
 
 # create_year_data.pl が master に書いた update_time を配信用 DB に反映する
 RUN cp db/perldocjp.master.db db/perldocjp.db

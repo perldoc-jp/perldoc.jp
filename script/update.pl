@@ -43,9 +43,6 @@ if (! $ENV{SKIP_ASSETS_UPDATE}) {
     system(qq{cd $assets_dir/translation; git pull origin master});
 }
 
-unlink "$assets_dir/index-module.pl";
-unlink "$assets_dir/index-article.pl";
-
 chdir $code_dir;
 if (! -e $sqlite_db) {
     system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql});

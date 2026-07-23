@@ -17,8 +17,6 @@ use Config::PL;
 
 use PJP::Util qw(markdown_to_html);
 use PJP::M::TOC;
-use PJP::M::Index::Module;
-use PJP::M::Index::Article;
 use PJP::M::Pod;
 use PJP::M::PodFile;
 use Regexp::Common qw/URI/;
@@ -92,11 +90,15 @@ get '/index/variable' => sub {
 get '/index/module' => sub {
     my $c = shift;
 
+    # 目次データは script/create_index_data.pl がビルド時に生成する。
+    # index/module.tt は versions.shift() で index データを破壊するため、
+    # メモ化は必ずレンダリング済み HTML に対して行うこと (データの方を
+    # キャッシュして使い回すと 2 回目以降の描画が壊れる)
     my $content = $c->cache->get_or_set('index/module', sub {
-        my @data = PJP::M::Index::Module->generate($c);
+        my $index = config_do('data/index-module.pl')->{index};
         $c->create_view->render(
             'index/module.tt' => {
-                index => \@data,
+                index => $index,
             }
         );
     });
@@ -115,11 +117,12 @@ get '/index/module' => sub {
 get '/index/article' => sub {
     my $c = shift;
 
+    # 目次データは script/create_index_data.pl がビルド時に生成する
     my $content = $c->cache->get_or_set('index/article', sub {
-        my @index = PJP::M::Index::Article->generate($c);
+        my $index = config_do('data/index-article.pl')->{index};
         $c->create_view->render(
             'index/article.tt' => {
-                index => \@index,
+                index => $index,
             }
         );
     });

@@ -6,6 +6,8 @@ assets/
 db/
 *.db
 data/recent.pl
+data/index-module.pl
+data/index-article.pl
 static/docs.json
 static/rss/
 functions.txt
