@@ -73,13 +73,15 @@ RUN perl script/create_docs_json.pl
 # create_year_data.pl が master に書いた update_time を配信用 DB に反映する
 RUN cp db/perldocjp.master.db db/perldocjp.db
 
+# 本番同等データでの全テスト実行 (デプロイゲート)。
+# master DB 削除前に実行するので dbh_master 依存のテストも通る。
+# 一部のテストは slave に書き込んで復元するため、VACUUM より前に実行して
+# テストの書き込みを経ていない DB を配信する
+RUN prove -lr t/
+
 # ページサイズ変更を VACUUM で反映しつつ断片化を解消し、
 # ANALYZE でプランナ統計を焼き込む
 RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
-
-# 本番同等データでの全テスト実行 (デプロイゲート)。
-# master DB 削除前に実行するので dbh_master 依存のテストも通る。
-RUN prove -lr t/
 
 RUN rm -rf assets/translation/.git db/perldocjp.master.db
 
