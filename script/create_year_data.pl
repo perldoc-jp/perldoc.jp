@@ -10,8 +10,6 @@ use lib qw(./lib);
 use PJP;
 use Config::PL;
 use Module::Find qw/useall/;
-use XML::RSS;
-use Time::Piece;
 
 useall 'PJP::M';
 
