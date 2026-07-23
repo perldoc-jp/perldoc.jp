@@ -1,22 +1,20 @@
-my $master_db = '/var/lib/jpa/perldoc.jp/db/perldocjp.db';
-my $slave_db  = '/var/lib/jpa/perldoc.jp/db/perldocjp.slave.db';
+# Cloud Run 用のランタイム設定。
+# DB や translation の docs ツリーはビルド時にイメージへ焼き込まれた
+# read-only のファイルを参照する (config/build.pl で生成する)。
+my $slave_db = '/usr/src/app/db/perldocjp.db';
 +{
-    master_db => $master_db,
-    slave_db  => $slave_db,
-    DB => [
-            "dbi:SQLite:dbname=" . $master_db,
-            '',
-            '',
-    ],
+    slave_db => $slave_db,
+    # immutable=1: ファイルが変化しない前提でロック取得や journal 検査を
+    # 完全に省略する SQLite の読み取り専用モード
     DBSlave => [
-            "dbi:SQLite:dbname=" . $slave_db,
+            "dbi:SQLite:uri=file:$slave_db?immutable=1",
             '',
             '',
     ],
     'Text::Xslate' => {
-        cache_dir => "/tmp/perldoc.jp-xslate.cache/",
+        path      => ['tmpl/'],
+        cache_dir => '/tmp/perldoc.jp-xslate.cache/',
     },
-    'assets_dir' => "/var/lib/jpa/perldoc.jp/assets/",
-    'code_dir'   => "/var/lib/jpa/perldoc.jp/code/",
-    'perl'       => "/opt/local/perl-5.18.2/bin -Mlib=./local/lib/perl5 -Ilib",
+    'assets_dir' => '/usr/src/app/assets/',
+    'code_dir'   => '/usr/src/app/',
 };
