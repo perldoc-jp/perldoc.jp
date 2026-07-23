@@ -65,6 +65,25 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
+      # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
+      # databuild の prove (PLACK_ENV=build) では検証されないため、push した
+      # イメージを Cloud Run 相当の FS 制約で起動して開通確認してからデプロイする
+      - name: Smoke test image
+        shell: bash
+        run: |
+          docker run -d --name smoke --read-only --tmpfs /tmp \
+            -e PORT=8080 -p 8080:8080 "$IMAGE:$GITHUB_SHA"
+          trap 'docker logs smoke' ERR
+          for _ in $(seq 1 30); do
+            curl -fsS -o /dev/null http://127.0.0.1:8080/ && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/ | grep 'perldoc.jp' > /dev/null
+          curl -fsS -o /dev/null http://127.0.0.1:8080/docs/perl/perl.pod
+          curl -fsS http://127.0.0.1:8080/translators | grep '年</h2>' > /dev/null
+          curl -fsS http://127.0.0.1:8080/static/docs.json | grep 'Acme::Bleach' > /dev/null
+          docker rm -f smoke
+
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず
       # self-correcting にする。特に concurrency は Starlet の
       # --max-workers 4 と一致させる (デフォルト 80 では 4 ワーカーに
