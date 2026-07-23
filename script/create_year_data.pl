@@ -8,6 +8,7 @@ use Data::Dumper;
 use Time::Piece;
 use lib qw(./lib);
 use PJP;
+use Config::PL;
 use Module::Find qw/useall/;
 use XML::RSS;
 use Time::Piece;
@@ -46,10 +47,6 @@ sub update_pod_update_time {
 	if (my $data = PJP::M::PodFile->retrieve($update->{path})) {
 	    $data->{update_time} = Time::Piece->strptime($update->{date}, '%Y-%m-%d %H:%M:%S')->epoch;
 	    $pjp->dbh_master->replace(pod => $data);
-	    $pjp->dbh_master->update
-		( heavy_diff => {origin => $data->{path}, time => {'<' => $data->{update_time}}} , {is_cached => 0});
-	    $pjp->dbh_master->update
-		( heavy_diff => {target => $data->{path}, time => {'<' => $data->{update_time}}} , {is_cached => 0});
 	} else {
 	    next if $IGNORE_FILES{$update->{path}};
 	    warn "the path cannot be found in DB: " . $update->{path};
@@ -59,7 +56,9 @@ sub update_pod_update_time {
 
 sub create_file {
     my ($updates, $target_year) = @_;
-    my $year = do("data/years.pl");
+    # 初回ビルド時のみ data/years.pl が存在しない。存在するのに読めない場合は
+    # 過去年のデータを黙って失うことになるので config_do に croak させる。
+    my $year = -e 'data/years.pl' ? scalar config_do('data/years.pl') : undef;
     if ($year) {
         push @$updates, sort { $b->{date} cmp $a->{date} }map { @{$year->{$_}->{modules}} } grep {$_ < $target_year} keys %$year;
     } else {

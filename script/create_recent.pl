@@ -37,7 +37,8 @@ sub create_file {
     mkdir './data' or die $! if not -d './data';
 
     open my $fh, '>', "data/recent.pl.new" or die $!;
-    print $fh Dumper($updates);
+    # Config::PL (config_do) で読めるように HashRef で包む
+    print $fh Dumper({ recent => $updates });
     close $fh;
     if (! -e "data/recent.pl" or qx{diff data/recent.pl data/recent.pl.new}) {
         rename "data/recent.pl.new", "data/recent.pl";

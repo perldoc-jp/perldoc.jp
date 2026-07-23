@@ -36,6 +36,11 @@ subtest 'GET /' => sub {
     $mech->get('/');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'perldoc.jp';
+
+    # data/recent.pl の読み込みに失敗しても 200 とタイトルは返ってしまうので、
+    # 「最近の更新」の各エントリ (日付から始まる li) が実際に描画されている
+    # ことまで確認する
+    like $mech->content, qr{<li>\d{4}-\d{2}-\d{2}}, 'recent updates are rendered';
 };
 
 subtest 'GET /about' => sub {
@@ -48,6 +53,10 @@ subtest 'GET /translators' => sub {
     $mech->get('/translators');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'Perlドキュメントの翻訳者一覧 - perldoc.jp';
+
+    # data/years.pl の読み込みに失敗しても 200 とタイトルは返ってしまうので、
+    # 年ごとの見出しが実際に描画されていることまで確認する
+    like $mech->content, qr{<h2>\d{4}年</h2>}, 'yearly sections are rendered';
 };
 
 # TODO: カテゴリは現在コメントアウトされて、利用されてなさそうなので該当コードを削除してよさそう

@@ -10,6 +10,10 @@ use Log::Minimal;
 use File::stat;
 use Try::Tiny;
 use Text::Xslate::Util qw/mark_raw/;
+# config_do は @INC を cwd と呼び出し元のディレクトリに限定し、
+# ファイルが見つからない/壊れている場合に croak する。
+# 素の do はどちらも黙って undef を返すため、生成物の欠損に気づけない。
+use Config::PL;
 
 use PJP::Util qw(markdown_to_html);
 use PJP::M::TOC;
@@ -25,7 +29,7 @@ get '/' => sub {
     my $c = shift;
 
     return $c->render('index.tt', {
-                                   recent => do "data/recent.pl"
+                                   recent => config_do('data/recent.pl')->{recent}
                                   });
 };
 
@@ -36,7 +40,7 @@ get '/about' => sub {
 
 get '/translators' => sub {
     my $c = shift;
-    return $c->render('translators.tt', {years => do 'data/years.pl'});
+    return $c->render('translators.tt', {years => scalar config_do('data/years.pl')});
 };
 
 # NOTE: 2021/12/27: search.cpan.orgからmetacpan.orgへの移行に伴い意味不明な分類になっていたので廃止
