@@ -107,6 +107,15 @@ FROM databuild AS test
 RUN prove -lr t/ && touch /tests-passed
 
 
+# years-export: deploy.yml の commit-years-data ジョブが、ビルドで再導出された
+# data/years.pl を取り出して master へ書き戻すための export 専用ステージ。
+# (databuild が git から再導出するのは前年+当年だけなので、書き戻しが無いと
+# ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう)
+FROM scratch AS years-export
+
+COPY --from=databuild /usr/src/app/data/years.pl /years.pl
+
+
 # runtime: Cloud Run 用。レイヤは変更頻度の低い順に重ね、DB を最後に置く。
 FROM perl:5.38-slim-bookworm AS runtime
 

@@ -17,10 +17,8 @@ concurrency:
   group: deploy
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  id-token: write
-
+# permissions はジョブレベルで宣言する。WIF の資格情報を扱う deploy ジョブには
+# contents: write を与えず、リポジトリへの書き込みは commit-years-data ジョブに分離する
 env:
   REGION: asia-northeast1
   SERVICE: perldoc-jp
@@ -36,6 +34,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       # 外部 action はコミット SHA にピン留めする (この workflow は WIF の
@@ -82,6 +83,23 @@ jobs:
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
+      # ビルドで再導出された data/years.pl を取り出す (デプロイ成功後に
+      # commit-years-data ジョブが master へ書き戻す)。直前のビルドと同じ
+      # builder・同じ build-arg なのでレイヤキャッシュに当たり、databuild が
+      # 再実行されることはない
+      - name: Export data/years.pl
+        run: |
+          docker buildx build --target years-export \
+            --build-arg TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }} \
+            --output type=local,dest=years-out .
+
+      - name: Upload data/years.pl
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: years-data
+          path: years-out/years.pl
+          retention-days: 1
+
       # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
       # databuild の prove (PLACK_ENV=build) では検証されないため、push した
       # イメージを Cloud Run 相当の FS 制約で起動して開通確認してからデプロイする
@@ -117,3 +135,41 @@ jobs:
             --timeout 60 --port 8080 \
             --allow-unauthenticated \
             --quiet
+
+  # デプロイ成功後、ビルドで再導出された data/years.pl に変更があれば master へ
+  # 自動コミットする。databuild が git から再導出するのは前年+当年だけなので、
+  # この書き戻しが無いと、ある年の統計は 2 年後にシードのコミット時点の内容で
+  # 凍結されてしまう (手順書の「運用」参照)。
+  # GITHUB_TOKEN による push は GitHub の再帰防止によりワークフローを
+  # 再トリガーしないため、デプロイのループは起きない。
+  commit-years-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: deploy
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # トリガー時点の sha ではなく最新の master に対してコミットする
+          ref: master
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: years-data
+          path: years-out
+
+      - name: Commit data/years.pl if changed
+        run: |
+          cp years-out/years.pl data/years.pl
+          if git diff --quiet -- data/years.pl; then
+            echo 'data/years.pl: no changes'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/years.pl
+          git commit -m 'data/years.pl を最新の再導出結果で更新する'
+          git push origin HEAD:master

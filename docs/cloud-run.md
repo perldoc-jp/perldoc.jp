@@ -249,7 +249,8 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
   リポジトリに 60 日間アクティビティが無いと GitHub により自動で無効化される。
   perldoc.jp 本体はコミット頻度が低く、translation の更新 (repository_dispatch)
   はこの判定のアクティビティにならないため、「日次保険」だけが黙って止まる
-  ことがある。Actions タブの Deploy workflow に無効化の告知が出ていたら
+  ことがある (commit-years-data ジョブの自動コミットはアクティビティになるため、
+  translation の更新が続いている限りは起きにくい)。Actions タブの Deploy workflow に無効化の告知が出ていたら
   re-enable すること (repository_dispatch / workflow_dispatch 起動は無効化の
   対象外なので、translation 起点の反映は止まらない)
 - **ロールバック**: `gcloud run services update-traffic perldoc-jp \
@@ -258,12 +259,15 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
   Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
-- **年次作業は不要**: databuild は `create_year_data.pl <前年>` で実行するため、
-  前年+当年の統計は毎ビルド translation の git 履歴から再導出され、年をまたいでも
-  自動で完全な状態が保たれる。ただし `recent_data` は「現存するファイル」しか
-  走査しないため、翻訳ファイルがリポジトリから削除されるとその年の該当エントリは
-  再導出できない。任意で年に一度 `data/years.pl` を再生成してコミットしておくと、
-  この削除に対する保険になる (必須ではない)
+- **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_year_data.pl <前年>`
+  で前年+当年を毎ビルド translation の git 履歴から再導出し、デプロイ成功後に
+  deploy.yml の `commit-years-data` ジョブが再導出結果を master へ自動コミット
+  する (変更がある場合のみ)。再導出されるのは前年+当年だけなので、この書き戻しが
+  無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
+  自動コミットが止まっていた場合も、対象年の翌年中に一度
+  `perl script/create_year_data.pl <対象年>` の結果をコミットすれば回復する。
+  継続的な書き戻しは、翻訳ファイルの削除で再導出できなくなるエントリを
+  削除前に確定させる保険も兼ねる
 - **`data/years.pl` の完全性 (cutover の必須前提)**: `create_year_data.pl` は
   既存の `data/years.pl` に当年分を累積マージする方式なので、空の状態から
   ビルドすると当年分の翻訳者統計しか含まれない。過去年 (2013〜) を含む
