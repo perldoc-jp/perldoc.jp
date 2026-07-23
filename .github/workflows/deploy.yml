@@ -25,6 +25,12 @@ env:
   REGION: asia-northeast1
   SERVICE: perldoc-jp
   IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/perldoc-jp/app
+  # schedule / repository_dispatch では github.sha が変わらないまま中身の
+  # 異なるイメージ (translation 更新分) が作られ、:<sha> タグは上書きで
+  # 移動してしまう。ビルドを後から特定できるよう run 毎に一意なタグも
+  # 付け、smoke test とデプロイはそちらを参照する
+  # (run_id は re-run で同一になるため run_attempt まで含める)
+  TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
   deploy:
@@ -65,7 +71,9 @@ jobs:
           context: .
           target: runtime
           push: true
-          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:${{ env.TAG }}
           build-args: |
             TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
@@ -78,7 +86,7 @@ jobs:
         shell: bash
         run: |
           docker run -d --name smoke --read-only --tmpfs /tmp \
-            -e PORT=8080 -p 8080:8080 "$IMAGE:$GITHUB_SHA"
+            -e PORT=8080 -p 8080:8080 "$IMAGE:$TAG"
           trap 'docker logs smoke' ERR
           for _ in $(seq 1 30); do
             curl -fsS -o /dev/null http://127.0.0.1:8080/ && break
@@ -97,7 +105,7 @@ jobs:
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
-            --image "$IMAGE:$GITHUB_SHA" \
+            --image "$IMAGE:$TAG" \
             --region "$REGION" \
             --execution-environment gen2 \
             --memory 1Gi --cpu 1 \
