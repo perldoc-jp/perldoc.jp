@@ -6,7 +6,7 @@ package PJP::M::Repository;
 use Time::Piece;
 
 sub recent_data {
-  my ($class, $c, $date) = @_;
+  my ($class, $c, $date, $until) = @_;
 
   my $config     = $c->config;
   my $mode_name  = $c->mode_name || 'development';
@@ -22,7 +22,8 @@ sub recent_data {
           # ファイル名は translation リポジトリ由来の外部入力なので、シェルを
           # 経由せず list 形式で exec する。'--' でオプション解釈も遮断する
           open my $git_fh, '-|', 'git', '-C', "$assets_dir$repos",
-              'log', '-1', '--date=iso', '--pretty=%cd -- %an', "--since=$date", '--', $file
+              'log', '-1', '--date=iso', '--pretty=%cd -- %an', "--since=$date",
+              ($until ? ("--until=$until") : ()), '--', $file
               or die "Cannot run git: $!";
           my $git = do { local $/; <$git_fh> };
           close $git_fh;

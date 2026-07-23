@@ -33,8 +33,16 @@ main();
 sub main {
     my $pjp  = PJP->bootstrap;
     my $year = $ARGV[0] or die "year is needed\n";
-    my $date = Time::Piece->strptime("$year-01-01 00:00:00", '%Y-%m-%d %H:%M:%S');
-    my $updates = PJP::M::Repository->recent_data($pjp, $date);
+    my $since = Time::Piece->strptime("$year-01-01 00:00:00",         '%Y-%m-%d %H:%M:%S');
+    my $until = Time::Piece->strptime(($year + 1) . "-01-01 00:00:00", '%Y-%m-%d %H:%M:%S');
+    # ターゲット年は年末 (until) で打ち切って「その年の最終状態」を導出する。
+    # 打ち切らずに 1 回の git log -1 でまとめて取ると、翌年に再修正された
+    # ファイルは最新コミット (翌年) の日付だけが返り、ターゲット年の記録から
+    # 消えてしまう (VPS が毎日の実行で年末時点の状態を凍結していたのと
+    # 同じ結果になるよう、年内最後のコミットを別窓で取る)
+    my $updates = PJP::M::Repository->recent_data($pjp, $since, $until);
+    push @$updates, @{ PJP::M::Repository->recent_data($pjp, $until) };
+    @$updates = sort { $b->{date} cmp $a->{date} } @$updates;
     create_file($updates, $year);
     update_pod_update_time($pjp, $updates);
 }
