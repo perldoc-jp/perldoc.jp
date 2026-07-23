@@ -59,6 +59,13 @@ RUN mkdir -p db && \
   cp db/perldocjp.master.db db/perldocjp.db
 
 RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
+
+# update.pl も内部で master→slave をコピーするが、後続の create_year_data.pl /
+# create_docs_json.pl が読む slave の内容を update.pl の実装詳細に依存させない
+# よう、ここで明示的にコピーしておく (空の slave を読んでも各スクリプトは
+# 警告や空の生成物を出すだけでビルドは成功してしまうため)
+RUN cp db/perldocjp.master.db db/perldocjp.db
+
 RUN perl script/create_recent.pl
 RUN perl script/create_year_data.pl "$(date +%Y)"
 RUN perl script/create_docs_json.pl

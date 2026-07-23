@@ -28,6 +28,7 @@ use Test2::V0;
 
 use Test::WWW::Mechanize::PSGI;
 use Plack::Util;
+use JSON::XS qw/decode_json/;
 
 my $app = Plack::Util::load_psgi 'app.psgi';
 my $mech = Test::WWW::Mechanize::PSGI->new(app => $app);
@@ -57,6 +58,18 @@ subtest 'GET /translators' => sub {
     # data/years.pl の読み込みに失敗しても 200 とタイトルは返ってしまうので、
     # 年ごとの見出しが実際に描画されていることまで確認する
     like $mech->content, qr{<h2>\d{4}年</h2>}, 'yearly sections are rendered';
+};
+
+subtest 'GET /static/docs.json' => sub {
+    $mech->get('/static/docs.json');
+    is $mech->status, 200, 'status is 200';
+
+    # docs.json は Chrome 拡張 / Firefox アドオンが参照する外部契約
+    # (docs/cloud-run.md 参照)。生成手順の不整合で空の JSON になっても
+    # ビルド自体は成功してしまうため、中身までここでゲートする
+    my $docs = decode_json($mech->response->content);
+    cmp_ok scalar(keys %$docs), '>', 500, 'has enough entries';
+    like $docs->{'Acme::Bleach'}, qr{^modules/Acme-Bleach-}, 'maps package to path';
 };
 
 subtest 'GET /index/core' => sub {
