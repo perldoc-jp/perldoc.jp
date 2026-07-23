@@ -220,7 +220,7 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 |---|---|---|
 | `update_deployment.sh` (= `script/update.pl`) | 1日4回 (3〜6時台) | Dockerfile の databuild ステージ。translation への push で即時、加えて日次 schedule |
 | `script/create_recent.pl` | 毎時 | 同上 (databuild) |
-| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild) |
+| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。ターゲットは前年に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
 | `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_docs_json.pl` に置き換え |
 | `script/generate_heavy_diff.pl` | 毎時 | **廃止**。`PJP::HeavyDiffCache` が NOP のため重い diff は都度計算し、6秒超は 503 |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
@@ -258,9 +258,12 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
   Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
-- **年次作業**: `data/years.pl` は年をまたいだら
-  `perl script/create_year_data.pl <前年>` の結果をコミットしておくと、
-  ビルド時の再集計が当年分だけで済む
+- **年次作業は不要**: databuild は `create_year_data.pl <前年>` で実行するため、
+  前年+当年の統計は毎ビルド translation の git 履歴から再導出され、年をまたいでも
+  自動で完全な状態が保たれる。ただし `recent_data` は「現存するファイル」しか
+  走査しないため、翻訳ファイルがリポジトリから削除されるとその年の該当エントリは
+  再導出できない。任意で年に一度 `data/years.pl` を再生成してコミットしておくと、
+  この削除に対する保険になる (必須ではない)
 - **`data/years.pl` の完全性 (cutover の必須前提)**: `create_year_data.pl` は
   既存の `data/years.pl` に当年分を累積マージする方式なので、空の状態から
   ビルドすると当年分の翻訳者統計しか含まれない。過去年 (2013〜) を含む

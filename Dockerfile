@@ -77,7 +77,11 @@ RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
 RUN cp db/perldocjp.master.db db/perldocjp.db
 
 RUN perl script/create_recent.pl
-RUN perl script/create_year_data.pl "$(date +%Y)"
+# 前年をターゲットにすると --since が前年 1/1 からになり、前年+当年の
+# 両方を毎ビルド git から再導出する。当年ターゲットだと年をまたいだ瞬間に
+# 前年分が data/years.pl のシード (最終コミット時点) で凍結され、
+# シード更新から年末までの統計がサイレントに欠落する
+RUN perl script/create_year_data.pl "$(($(date +%Y) - 1))"
 RUN perl script/create_docs_json.pl
 RUN perl script/create_index_data.pl
 
