@@ -261,8 +261,8 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
   Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
 - **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_year_data.pl <前年>`
   で前年+当年を毎ビルド translation の git 履歴から再導出し、デプロイ成功後に
-  deploy.yml の `commit-years-data` ジョブが再導出結果を master へ自動コミット
-  する (変更がある場合のみ)。再導出されるのは前年+当年だけなので、この書き戻しが
+  `commit-years-data` ジョブが再導出結果を master へ自動コミットする
+  (変更がある場合のみ。実装は `.github/workflows/commit-years-data.yml`)。再導出されるのは前年+当年だけなので、この書き戻しが
   無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
   自動コミットが止まっていた場合も、対象年の翌年中に一度
   `perl script/create_year_data.pl <対象年>` の結果をコミットすれば回復する。

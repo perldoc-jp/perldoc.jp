@@ -137,39 +137,10 @@ jobs:
             --quiet
 
   # デプロイ成功後、ビルドで再導出された data/years.pl に変更があれば master へ
-  # 自動コミットする。databuild が git から再導出するのは前年+当年だけなので、
-  # この書き戻しが無いと、ある年の統計は 2 年後にシードのコミット時点の内容で
-  # 凍結されてしまう (手順書の「運用」参照)。
-  # GITHUB_TOKEN による push は GitHub の再帰防止によりワークフローを
-  # 再トリガーしないため、デプロイのループは起きない。
+  # 自動コミットする。実装と設計理由は呼び出し先ファイルを参照
+  # (パス参照なので、ファイルをリネームするとここがエラーになって気づける)
   commit-years-data:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
     needs: deploy
     permissions:
       contents: write
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          # トリガー時点の sha ではなく最新の master に対してコミットする
-          ref: master
-
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: years-data
-          path: years-out
-
-      - name: Commit data/years.pl if changed
-        run: |
-          cp years-out/years.pl data/years.pl
-          if git diff --quiet -- data/years.pl; then
-            echo 'data/years.pl: no changes'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add data/years.pl
-          git commit -m 'data/years.pl を最新の再導出結果で更新する'
-          git push origin HEAD:master
+    uses: ./.github/workflows/commit-years-data.yml
