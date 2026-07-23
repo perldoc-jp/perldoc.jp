@@ -47,7 +47,10 @@ gcloud artifacts repositories create perldoc-jp \
   --repository-format=docker \
   --location=asia-northeast1
 
-# 古いイメージの自動削除 (最新5世代 + buildcache タグを保持)
+# 古いイメージの自動削除 (最新15世代 + buildcache タグを保持)。
+# schedule ビルドにより変更が無い日も日次でイメージが積まれるため、
+# keepCount が小さいと平穏な期間だけで実質同一イメージに埋まり
+# ロールバックに使える世代が残らなくなることに注意
 cat > /tmp/cleanup-policy.json <<'EOF'
 [
   {
@@ -58,7 +61,7 @@ cat > /tmp/cleanup-policy.json <<'EOF'
   {
     "name": "keep-recent",
     "action": {"type": "Keep"},
-    "mostRecentVersions": {"keepCount": 5}
+    "mostRecentVersions": {"keepCount": 15}
   },
   {
     "name": "delete-old",
