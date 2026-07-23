@@ -38,7 +38,7 @@ RUN sqlite3 perldocjp.master.db < sql/sqlite.sql
 RUN cp perldocjp.master.db perldocjp.slave.db
 
 
-# databuild: translation 取得 → SQLite 構築 → 生成物作成 → DB 仕上げ → テスト
+# databuild: translation 取得 → SQLite 構築 → 生成物作成 → DB 仕上げ
 FROM deps AS databuild
 
 ENV PLACK_ENV=build
@@ -88,17 +88,23 @@ RUN perl script/create_index_data.pl
 # create_year_data.pl が master に書いた update_time を配信用 DB に反映する
 RUN cp db/perldocjp.master.db db/perldocjp.db
 
-# 本番同等データでの全テスト実行 (デプロイゲート)。
-# master DB 削除前に実行するので dbh_master 依存のテストも通る。
-# 一部のテストは slave に書き込んで復元するため、VACUUM より前に実行して
-# テストの書き込みを経ていない DB を配信する
-RUN prove -lr t/
-
 # ページサイズ変更を VACUUM で反映しつつ断片化を解消し、
 # ANALYZE でプランナ統計を焼き込む
 RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
 
 RUN rm -rf assets/translation/.git db/perldocjp.master.db
+
+
+# test: 本番同等データでの全テスト実行 (デプロイゲート)。
+# databuild の完成状態、つまり VACUUM/ANALYZE 済みで配信するものとバイト同一の
+# DB・生成物に対して prove を実行する。テストが slave DB に書き込んでも
+# このステージのレイヤに隔離され、配信物には影響しない
+# (t/ に dbh_master 依存は無いので master DB 削除後の状態で通る)。
+# runtime が /tests-passed を COPY して依存するため、このステージを通らずに
+# runtime イメージが完成することは構造的にない。
+FROM databuild AS test
+
+RUN prove -lr t/ && touch /tests-passed
 
 
 # runtime: Cloud Run 用。レイヤは変更頻度の低い順に重ね、DB を最後に置く。
@@ -125,6 +131,12 @@ COPY --from=databuild /usr/src/app/static/rss ./static/rss
 COPY --from=databuild /usr/src/app/static/docs.json ./static/docs.json
 COPY --from=databuild /usr/src/app/assets ./assets
 COPY --from=databuild /usr/src/app/db/perldocjp.db ./db/perldocjp.db
+
+# test ステージへの依存アンカー。BuildKit はターゲットに不要なステージを
+# ビルドしないため、この COPY が「prove 成功なしに runtime を完成させない」
+# デプロイゲートそのもの。無意味なファイルコピーに見えても消さないこと
+# (実行時は /tmp に tmpfs がマウントされるため配信物への影響もない)。
+COPY --from=test /tests-passed /tmp/
 
 # exec 形式 + exec で plackup を PID 1 にし、Cloud Run が送る SIGTERM を
 # 直接受けてグレースフルにシャットダウンできるようにする。
