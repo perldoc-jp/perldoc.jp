@@ -17,6 +17,14 @@ use PJP::M::Index::Article;
 local $Data::Dumper::Terse    = 1;
 local $Data::Dumper::Indent   = 1;
 local $Data::Dumper::Sortkeys = 1;
+# abstract には Encode::decode 済みの日本語 (wide) 文字列が含まれるため、
+# 非 ASCII を \x{} 等でエスケープした純 ASCII で出力し、Data::Dumper の
+# 実装 (XS/PP) に依存しないラウンドトリップにする。ファイルに use utf8
+# ヘッダを書く方式は、読み手の config_do が do 時に @INC を cwd に限定
+# するため「利用側プロセスが utf8.pm をロード済みか」に成否が依存して
+# しまい使えない (素の生バイト出力は data/recent.pl のような ASCII のみの
+# ペイロードでしか成立しない)。
+local $Data::Dumper::Useqq    = 1;
 
 my $pjp = PJP->bootstrap;
 
@@ -30,17 +38,11 @@ my @articles = PJP::M::Index::Article->generate($pjp);
 die "PJP::M::Index::Article->generate returned no entries" unless @articles;
 write_data_pl('data/index-article.pl', { index => \@articles });
 
-# Config::PL (config_do → do) で読み戻すファイルを書く。
-# abstract には Encode::decode 済みの日本語 (wide) 文字列が含まれるため、
-# use utf8 ヘッダ + :encoding(UTF-8) で書き出し、do 時にファイル自身の
-# プラグマで文字列として復元させる。data/recent.pl はペイロードが ASCII
-# のみなので素の Dumper で足りているが、ここで同じ方式を使うと
-# Data::Dumper の実装 (XS は \x{} エスケープ / PP は生出力) に挙動が
-# 依存してしまう。先頭の + は do がブロックと誤解釈しないための明示。
+# 先頭の + は do がブロックと誤解釈しないための明示。
 sub write_data_pl {
     my ($path, $data) = @_;
-    open my $fh, '>:encoding(UTF-8)', "$path.new" or die "Cannot open $path.new: $!";
-    print {$fh} "use utf8;\n+", Dumper($data);
+    open my $fh, '>', "$path.new" or die "Cannot open $path.new: $!";
+    print {$fh} '+', Dumper($data);
     close $fh;
     rename "$path.new", $path or die "Cannot rename $path.new to $path: $!";
 }
