@@ -1311,24 +1311,6 @@ DISTRIBUTIONS
       perl 5.006
       strict 0
       warnings 0
-  File-Slurp-9999.32
-    pathname: C/CA/CAPOEIRAB/File-Slurp-9999.32.tar.gz
-    provides:
-      File::Slurp 9999.32
-    requirements:
-      B 0
-      Carp 0
-      Errno 0
-      Exporter 5.57
-      ExtUtils::MakeMaker 0
-      Fcntl 0
-      File::Basename 0
-      File::Spec 3.01
-      File::Temp 0
-      IO::Handle 0
-      POSIX 0
-      strict 0
-      warnings 0
   File-Which-1.27
     pathname: P/PL/PLICEASE/File-Which-1.27.tar.gz
     provides:
@@ -2801,16 +2783,6 @@ DISTRIBUTIONS
       overload 0
       perl 5.008001
       utf8 0
-  Text-Diff-FormattedHTML-0.08
-    pathname: A/AM/AMBS/Text-Diff-FormattedHTML-0.08.tar.gz
-    provides:
-      Text::Diff::FormattedHTML 0.08
-    requirements:
-      Algorithm::Diff 1.1900
-      ExtUtils::MakeMaker 0
-      File::Slurp 0
-      String::Diff 0.04
-      Test::More 0
   Text-Glob-0.11
     pathname: R/RC/RCLAMP/Text-Glob-0.11.tar.gz
     provides:
@@ -3342,7 +3314,7 @@ DISTRIBUTIONS
       HTTP::Request 6
       HTTP::Request::Common 6
       HTTP::Response 6
-      HTTP::Status 6.07
+      HTTP::Status 6.18
       IO::Select 0
       IO::Socket 0
       LWP::MediaTypes 6
