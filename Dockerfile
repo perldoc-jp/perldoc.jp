@@ -119,9 +119,11 @@ COPY --from=databuild /usr/src/app/data/years.pl /years.pl
 # runtime: Cloud Run 用。レイヤは変更頻度の低い順に重ね、DB を最後に置く。
 FROM perl:5.38-slim-bookworm AS runtime
 
-# XML::Parser (XS) が libexpat を動的リンクしているため slim には追加が必要
+# XML::Parser (XS) が libexpat を動的リンクしているため slim には追加が必要。
+# diffutils は slim にも標準で入っているが、PJP::HTMLDiff が外部コマンドの
+# diff に依存していることを明示するため宣言しておく (入っていれば no-op)
 RUN apt-get update && \
-  apt-get install -y --no-install-recommends libexpat1 && \
+  apt-get install -y --no-install-recommends libexpat1 diffutils && \
   rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app

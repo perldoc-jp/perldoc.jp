@@ -15,10 +15,6 @@ use PJP::Cache;
 my $cache = PJP::Cache->new();
 sub cache { $cache }
 
-use PJP::HeavyDiffCache;
-my $heavy_diff_cache = PJP::HeavyDiffCache->new();
-sub heavy_diff_cache { $heavy_diff_cache }
-
 use PJP::DBI;
 sub dbh {
         my $c = shift;

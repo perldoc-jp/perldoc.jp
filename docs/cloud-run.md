@@ -23,13 +23,11 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 - データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
   cron (10分毎の script/update.pl) に相当する処理は Dockerfile の databuild
   ステージが担う。
-- 重い diff のキャッシュ (旧 heavy_diff テーブル) は廃止し、`PJP::HeavyDiffCache`
-  という NOP のインターフェースに置き換えた。将来 GCS / Cloudflare R2 などへの
-  保存をこのインターフェースの実装として追加できる。
-  廃止に伴い重い diff は毎回計算し直す (最大 6 秒 CPU を占有して 503) ため、
-  `/docs/*/diff` はクエリ付き GET で Cloudflare にキャッシュもされない。
-  連続アクセスでワーカーが飽和しうるので、Cloudflare のレートリミットルールを
-  設定しておくことを推奨する。
+- 翻訳の diff (`/docs/*/diff`) はキャッシュせず都度計算する。GNU diff の
+  外部コマンド化 (`PJP::HTMLDiff`) により perlfunc.pod 級の最悪ケースでも
+  数秒以内に収まる。クエリ付き GET のため Cloudflare にはキャッシュされず
+  毎回 Cloud Run に届くので、連続アクセス対策として Cloudflare の
+  レートリミットルールを設定しておくことを推奨する。
   ただし `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は
   公開のままであり、Cloudflare を経由しない直アクセスにはレートリミットは
   効かない。直アクセス側の実質的な上限装置は max-instances (=3) で、
@@ -222,7 +220,7 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 | `script/create_recent.pl` | 毎時 | 同上 (databuild) |
 | `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。ターゲットは前年に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
 | `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_docs_json.pl` に置き換え |
-| `script/generate_heavy_diff.pl` | 毎時 | **廃止**。`PJP::HeavyDiffCache` が NOP のため重い diff は都度計算し、6秒超は 503 |
+| `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため、都度計算で足りる |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
 
 反映頻度は旧構成 (1日4回) より速くなる。translation の push を

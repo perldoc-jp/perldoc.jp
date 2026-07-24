@@ -225,6 +225,8 @@ subtest '/docs/(modules|perl)/*.pod/diff' => sub {
 
         is $mech->status, 200, 'status is 200';
         is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
+        $mech->content_contains(q{<table class='diff'>}, 'diff テーブルが描画される');
+        $mech->content_contains(q{<tr class='match'>}, '共通行が描画される');
     };
 
     subtest 'DBに存在しないpodの場合、404が返る (500にならない)' => sub {

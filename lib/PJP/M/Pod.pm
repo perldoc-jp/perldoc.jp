@@ -9,7 +9,7 @@ use Text::Xslate::Util qw/mark_raw html_escape/;
 use Encode ();
 use HTML::Entities ();
 use Amon2::Declare;
-use Text::Diff::FormattedHTML ();
+use PJP::HTMLDiff ();
 
 sub parse_name_section {
     my ($class, $stuff) = @_;
@@ -289,14 +289,13 @@ sub diff {
         if ($option->{timeout} > 0) {
             alarm $option->{timeout};
         }
-        $diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
+        $diff = PJP::HTMLDiff::diff_strings_vertical($target_content, $origin_content);
     };
     # timeout 以外の die でも必ず解除する。eval 内だけで解除していると、
     # armed のまま local の ALRM ハンドラが復元され、残タイマーの着弾が
     # デフォルト動作 (プロセス終了) でワーカーを即死させる
     alarm 0;
     if ($@ =~m{diff timeout}) {
-        # should record time out combination and generate by batch program.
         warn "diff timeout: $origin $target";
         return {%$pod, error => 'timeout'};
     } elsif ($@) {
@@ -304,16 +303,6 @@ sub diff {
     }
 
     return { %$pod, diff => $diff };
-}
-
-sub select_heavy_diff {
-    my ($self, $origin, $target) = @_;
-    return c()->heavy_diff_cache->get($origin, $target);
-}
-
-sub save_as_heavy_diff {
-    my ($self, $origin, $target, $diff) = @_;
-    return c()->heavy_diff_cache->set($origin, $target, $diff);
 }
 
 1;
