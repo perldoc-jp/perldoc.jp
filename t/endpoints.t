@@ -72,6 +72,14 @@ subtest 'GET /static/docs.json' => sub {
     like $docs->{'Acme::Bleach'}, qr{^modules/Acme-Bleach-}, 'maps package to path';
 };
 
+subtest 'GET /favicon.ico' => sub {
+    # 実体は static/favicon.ico にしかない。VPS 時代は nginx の alias が
+    # /favicon.ico を吸収していたので、アプリだけで解決できることをここで守る
+    $mech->get('/favicon.ico');
+    is $mech->status, 200, 'status is 200';
+    ok $mech->header_like('Content-Type', qr{^image/}), 'Content-Type is an image';
+};
+
 subtest 'GET /index/core' => sub {
     $mech->get('/index/core');
     is $mech->status, 200, 'status is 200';

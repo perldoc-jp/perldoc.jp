@@ -119,6 +119,8 @@ jobs:
           curl -fsS -o /dev/null http://127.0.0.1:8080/docs/perl/perl.pod
           curl -fsS http://127.0.0.1:8080/translators | grep '年</h2>' > /dev/null
           curl -fsS http://127.0.0.1:8080/static/docs.json | grep 'Acme::Bleach' > /dev/null
+          # イメージへの static/favicon.ico の取り込み漏れを検出する
+          curl -fsS -o /dev/null http://127.0.0.1:8080/favicon.ico
           docker rm -f smoke
 
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず

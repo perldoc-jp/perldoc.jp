@@ -6,8 +6,12 @@ use Log::Minimal;
 
 builder {
     enable 'Plack::Middleware::Static',
-        path => qr{^(/static/|/favicon\.ico|/robots\.txt)},
+        path => qr{^(/static/|/robots\.txt)},
         root => './';
+    # favicon.ico の実体は static/ にしか無いので root を分ける
+    enable 'Plack::Middleware::Static',
+        path => qr{^/favicon\.ico$},
+        root => './static/';
     enable 'Plack::Middleware::ReverseProxy';
     enable sub {
         my $app = shift;
