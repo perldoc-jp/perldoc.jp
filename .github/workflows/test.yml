@@ -13,6 +13,23 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+    # app イメージを GHA キャッシュ付きで事前ビルドする。make ci の
+    # docker compose up は同名イメージが存在すればビルドしないため、
+    # ここで load したイメージがそのまま使われる。キャッシュ書き込みは
+    # master push のみ (デフォルトブランチのキャッシュは fork PR を含む
+    # 全 PR から読める)
+    - name: Build app image
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      with:
+        context: .
+        target: app
+        tags: perldocjp-app:latest
+        load: true
+        cache-from: type=gha
+        cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
+
     - name: Run test
       run: |
         make ci
