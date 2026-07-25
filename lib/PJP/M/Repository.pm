@@ -4,6 +4,7 @@ use utf8;
 
 package PJP::M::Repository;
 use Time::Piece;
+use Encode ();
 
 sub recent_data {
   my ($class, $c, $date, $until) = @_;
@@ -28,6 +29,13 @@ sub recent_data {
           my $git = do { local $/; <$git_fh> };
           close $git_fh;
           $git or next;
+          # %an は git 由来の非 ASCII バイト列になりうるため、ここで decode
+          # する (未 decode のままだと Data::Dumper の Useqq がバイト単位の
+          # \xHH を吐き、config_do で読み戻した文字列が不正なバイト列のまま
+          # 後段の wide 文字列と混ざって文字化けする)。不正な UTF-8 は
+          # decode_utf8 の既定動作で置換文字に倒し、単一コミットの文字化けで
+          # databuild 全体が die しないようにする
+          $git = Encode::decode_utf8($git);
           # --date=iso はコミットに記録された committer 自身のオフセットを
           # そのまま出すため、負のオフセット (-0700 など) も受け付ける
           my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) [-+]\d{4} -- (.+)$} or die $git;
