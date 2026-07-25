@@ -84,13 +84,15 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
 
       # ビルドで再導出された data/years.pl を取り出す (デプロイ成功後に
-      # commit-years-data ジョブが master へ書き戻す)。直前のビルドと同じ
-      # builder・同じ build-arg なのでレイヤキャッシュに当たり、databuild が
+      # commit-years-data ジョブが master へ書き戻す)。同じ build-arg・
+      # 直前の build-push-action が書いた registry buildcache を明示的に
+      # 参照するため、builder のローカル状態 (GC 等) に関わらず databuild が
       # 再実行されることはない
       - name: Export data/years.pl
         run: |
           docker buildx build --target years-export \
             --build-arg TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }} \
+            --cache-from type=registry,ref=$IMAGE:buildcache \
             --output type=local,dest=years-out .
 
       - name: Upload data/years.pl
