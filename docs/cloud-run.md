@@ -37,23 +37,38 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 
 ## 初期セットアップ (一度だけ)
 
-`PROJECT_ID` は作成するプロジェクト ID に読み替えること。
+gcloud のデフォルトプロジェクト設定には依存せず、すべてのコマンドで `--project` を
+明示する。以下のシェル変数を定義してから順に実行すること。
+
+```sh
+PROJECT_ID=perldoc-jp-XXXXXX  # 作成するプロジェクト ID
+REGION=asia-northeast1
+```
 
 ### 1. プロジェクトと API
 
 ```sh
-gcloud projects create PROJECT_ID
-gcloud config set project PROJECT_ID
-gcloud services enable run.googleapis.com artifactregistry.googleapis.com \
-  iamcredentials.googleapis.com sts.googleapis.com
+gcloud projects create "$PROJECT_ID"
+
+# 請求先アカウントの紐付け。これが無いと services enable が失敗する
+gcloud billing projects link "$PROJECT_ID" \
+  --billing-account=XXXXXX-XXXXXX-XXXXXX
+
+gcloud services enable --project="$PROJECT_ID" \
+  run.googleapis.com artifactregistry.googleapis.com \
+  iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 ```
+
+`compute.googleapis.com` は有効化しない。Cloud Run のランタイムには専用のサービス
+アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。
 
 ### 2. Artifact Registry
 
 ```sh
 gcloud artifacts repositories create perldoc-jp \
+  --project="$PROJECT_ID" \
   --repository-format=docker \
-  --location=asia-northeast1
+  --location="$REGION"
 
 # 古いイメージの自動削除 (最新15世代 + buildcache タグを保持)。
 # schedule ビルドにより変更が無い日も日次でイメージが積まれるため、
@@ -79,69 +94,45 @@ cat > /tmp/cleanup-policy.json <<'EOF'
 ]
 EOF
 gcloud artifacts repositories set-cleanup-policies perldoc-jp \
-  --location=asia-northeast1 \
-  --policy-file=/tmp/cleanup-policy.json
+  --project="$PROJECT_ID" \
+  --location="$REGION" \
+  --policy=/tmp/cleanup-policy.json \
+  --no-dry-run
 ```
 
-### 3. デプロイ用サービスアカウントと Workload Identity Federation
+### 3. ランタイムサービスアカウント
 
-GitHub Actions からキーレスで認証するための設定。
+Cloud Run のインスタンスが名乗るサービスアカウント。アプリは Google Cloud の API を
+一切呼ばないため、ロールは付与しない。
 
 ```sh
-gcloud iam service-accounts create perldoc-jp-deployer
+gcloud iam service-accounts create perldoc-jp-run \
+  --project="$PROJECT_ID" \
+  --display-name='perldoc.jp Cloud Run runtime'
 
-PROJECT_ID=$(gcloud config get-value project)
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
-SA=perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com
-
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$SA" --role=roles/run.admin
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$SA" --role=roles/artifactregistry.writer
-# Cloud Run のランタイム SA (デフォルトの compute SA) として動作させる権限。
-# 名前は PROJECT_NUMBER-compute@... (PROJECT_ID ではない)。
-gcloud iam service-accounts add-iam-policy-binding \
-  "${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --member="serviceAccount:$SA" --role=roles/iam.serviceAccountUser
-
-gcloud iam workload-identity-pools create github \
-  --location=global
-
-# ref 条件により master 以外のブランチからは認証できない
-# (workflow_dispatch で誤って別ブランチを選んでも未レビューのコードは
-# デプロイされない)
-gcloud iam workload-identity-pools providers create-oidc perldoc-jp \
-  --location=global \
-  --workload-identity-pool=github \
-  --issuer-uri="https://token.actions.githubusercontent.com" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --attribute-condition="assertion.repository == 'perldoc-jp/perldoc.jp' && assertion.ref == 'refs/heads/master'"
-
-PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
-gcloud iam service-accounts add-iam-policy-binding "$SA" \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/perldoc-jp/perldoc.jp" \
-  --role=roles/iam.workloadIdentityUser
+RUNTIME_SA=perldoc-jp-run@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
-### 4. GitHub リポジトリの Variables
+デフォルトの Compute Engine SA (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`)
+はプロジェクトレベルの `roles/editor` を持つため使わない。
 
-perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Variables に:
+Artifact Registry からイメージを pull するのは Cloud Run のサービスエージェント
+(`service-<PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`) で、これは
+API 有効化時に自動で作られプロジェクトレベルの `roles/run.serviceAgent` を持つ。
+権限を絞る作業でこのバインドを消すとデプロイがイメージを取得できなくなる。
 
-| 変数 | 値 |
-|---|---|
-| `GCP_PROJECT_ID` | プロジェクト ID |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp` |
-| `GCP_SERVICE_ACCOUNT` | `perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
+### 4. Cloud Run サービスの作成
 
-### 5. 初回デプロイ
-
-一度 deploy.yml を回してイメージを push した後 (または手元から push した後)、
-サービスの設定を確定させる:
+サービス単位で IAM を付与する (§5) には、リソースとしてのサービスが先に存在している
+必要がある。Artifact Registry にはまだイメージが無いので、Google が公開している
+プレースホルダイメージで作る。
 
 ```sh
 gcloud run deploy perldoc-jp \
-  --image asia-northeast1-docker.pkg.dev/${PROJECT_ID}/perldoc-jp/app:<SHA> \
-  --region asia-northeast1 \
+  --project="$PROJECT_ID" \
+  --image us-docker.pkg.dev/cloudrun/container/hello \
+  --region "$REGION" \
+  --service-account "$RUNTIME_SA" \
   --execution-environment gen2 \
   --memory 1Gi --cpu 1 \
   --min-instances 0 --max-instances 3 \
@@ -155,11 +146,75 @@ gcloud run deploy perldoc-jp \
 - `--concurrency 4` は Starlet のワーカー数 (`STARLET_MAX_WORKERS`、既定 4) に
   合わせている。変える場合は両方を揃えること。デフォルトの 80 のままだと
   4 ワーカーに大量のリクエストが詰まりタイムアウトの原因になる。
-- deploy.yml も同じフラグ一式を毎回指定しているため、この初回コマンドと
+- deploy.yml も `--image` 以外は同じフラグ一式を毎回指定しているため、この初回コマンドと
   デプロイの実行順序に関わらずサービス設定は self-correcting になる。
   設定を変えるときは deploy.yml 側も合わせて更新すること。
 
-### 6. translation リポジトリ側の workflow
+### 5. デプロイ用サービスアカウントと Workload Identity Federation
+
+GitHub Actions からキーレスで認証するための設定。権限はプロジェクトではなく、操作対象の
+リソース (Cloud Run サービス / Artifact Registry リポジトリ / サービスアカウント) に
+付与する。
+
+```sh
+gcloud iam service-accounts create perldoc-jp-deployer \
+  --project="$PROJECT_ID" \
+  --display-name='perldoc.jp GitHub Actions deployer'
+
+PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
+SA=perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com
+
+# リビジョンの作成・トラフィック切替・IAM ポリシー設定 (--allow-unauthenticated)
+gcloud run services add-iam-policy-binding perldoc-jp \
+  --project="$PROJECT_ID" --region="$REGION" \
+  --member="serviceAccount:$SA" --role=roles/run.admin
+
+# イメージの push と buildcache の読み書き
+gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
+  --project="$PROJECT_ID" --location="$REGION" \
+  --member="serviceAccount:$SA" --role=roles/artifactregistry.writer
+
+# ランタイム SA を名乗らせてデプロイする権限
+gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
+  --project="$PROJECT_ID" \
+  --member="serviceAccount:$SA" --role=roles/iam.serviceAccountUser
+
+gcloud iam workload-identity-pools create github \
+  --project="$PROJECT_ID" \
+  --location=global
+
+# ref 条件により master 以外のブランチからは認証できない
+# (workflow_dispatch で誤って別ブランチを選んでも未レビューのコードは
+# デプロイされない)
+gcloud iam workload-identity-pools providers create-oidc perldoc-jp \
+  --project="$PROJECT_ID" \
+  --location=global \
+  --workload-identity-pool=github \
+  --issuer-uri="https://token.actions.githubusercontent.com" \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
+  --attribute-condition="assertion.repository == 'perldoc-jp/perldoc.jp' && assertion.ref == 'refs/heads/master'"
+
+gcloud iam service-accounts add-iam-policy-binding "$SA" \
+  --project="$PROJECT_ID" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/perldoc-jp/perldoc.jp" \
+  --role=roles/iam.workloadIdentityUser
+```
+
+### 6. GitHub リポジトリの Variables
+
+perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Variables に:
+
+| 変数 | 値 |
+|---|---|
+| `GCP_PROJECT_ID` | プロジェクト ID |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp` |
+| `GCP_SERVICE_ACCOUNT` | `perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
+
+ここまで済んだら master へ merge する。Deploy workflow が回り、§4 で置いた
+プレースホルダイメージが実イメージに置き換わる。WIF の attribute-condition が
+`refs/heads/master` に固定されているため、feature ブランチからはデプロイできない。
+
+### 7. translation リポジトリ側の workflow
 
 perldoc-jp/translation に以下を追加すると、翻訳の push で即座に再ビルドされる
 (なくても日次の schedule で反映される):
@@ -186,7 +241,7 @@ jobs:
 `PERLDOC_JP_DISPATCH_TOKEN` は perldoc-jp/perldoc.jp への Contents:
 Read and write 権限を持つ fine-grained PAT (または GitHub App トークン)。
 
-### 7. カスタムドメイン (Cloudflare は既存のものを流用)
+### 8. カスタムドメイン (Cloudflare は既存のものを流用)
 
 > **注意**: Cloud Run のドメインマッピングはプレビュー段階の機能で、
 > Google はレイテンシの問題を理由に本番用途には推奨していない
@@ -194,18 +249,24 @@ Read and write 権限を持つ fine-grained PAT (または GitHub App トーク�
 > 本構成は Cloudflare が前面に立つため影響は限定的と見込むが、
 > レイテンシや証明書で問題が出る場合は末尾の Worker 代替に切り替えること。
 
-1. ドメインマッピングを作成:
+1. ドメインの所有権を確認する (ブラウザで Search Console が開く)。これが済んでいないと
+   次のドメインマッピング作成が失敗する:
+   ```sh
+   gcloud domains verify perldoc.jp
+   ```
+2. ドメインマッピングを作成:
    ```sh
    gcloud beta run domain-mappings create \
-     --service perldoc-jp --domain perldoc.jp --region asia-northeast1
+     --project="$PROJECT_ID" \
+     --service perldoc-jp --domain perldoc.jp --region "$REGION"
    ```
-2. Cloudflare の perldoc.jp のレコードを一時的に DNS only (グレー雲) にして、
+3. Cloudflare の perldoc.jp のレコードを一時的に DNS only (グレー雲) にして、
    案内された `ghs.googlehosted.com` への CNAME に変更する
-3. Google 管理証明書の発行完了を待つ (`gcloud beta run domain-mappings
-   describe` で確認)
-4. Cloudflare の proxy (オレンジ雲) を有効に戻し、SSL/TLS モードを
+4. Google 管理証明書の発行完了を待つ (`gcloud beta run domain-mappings describe
+   --project="$PROJECT_ID" --domain perldoc.jp --region "$REGION"` で確認)
+5. Cloudflare の proxy (オレンジ雲) を有効に戻し、SSL/TLS モードを
    **Full (strict)** にする
-5. キャッシュルール: `/static/*` は Cache Everything + 長め TTL を推奨。
+6. キャッシュルール: `/static/*` は Cache Everything + 長め TTL を推奨。
    HTML はデプロイ連動で変わるため既定のままでよい
 
 証明書の更新で問題が出る場合の代替: Cloudflare Worker で
@@ -253,7 +314,7 @@ Cloudflare のキャッシュルールで `/static/*` を Cache Everything に�
   re-enable すること (repository_dispatch / workflow_dispatch 起動は無効化の
   対象外なので、translation 起点の反映は止まらない)
 - **ロールバック**: `gcloud run services update-traffic perldoc-jp \
-  --region asia-northeast1 --to-revisions <REVISION>=100`
+  --project <PROJECT_ID> --region asia-northeast1 --to-revisions <REVISION>=100`
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが

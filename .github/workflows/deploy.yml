@@ -128,6 +128,7 @@ jobs:
           gcloud run deploy "$SERVICE" \
             --image "$IMAGE:$TAG" \
             --region "$REGION" \
+            --service-account "perldoc-jp-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
             --execution-environment gen2 \
             --memory 1Gi --cpu 1 \
             --min-instances 0 --max-instances 3 \
