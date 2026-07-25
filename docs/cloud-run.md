@@ -238,18 +238,19 @@ TRANSLATION_COMMIT=$(git ls-remote https://github.com/perldoc-jp/translation.git
 test -n "$TRANSLATION_COMMIT"
 
 # Cloud Run は linux/amd64 のみ対応。Apple Silicon ではエミュレーションで動くため、
-# 初回は carton install の XS ビルドを含めて時間がかかる
+# 初回は CPAN 依存の XS ビルドを含めて時間がかかる
 docker buildx build \
   --platform linux/amd64 \
   --target runtime \
   --build-arg "TRANSLATION_COMMIT=$TRANSLATION_COMMIT" \
+  --cache-from "type=registry,ref=$IMAGE:buildcache" \
   --tag "$IMAGE:$TAG" \
   --push \
   .
 ```
 
-- Artifact Registry に buildcache が積まれた後は
-  `--cache-from type=registry,ref=$IMAGE:buildcache` を足すと databuild の再実行を避けられる。
+- `$IMAGE:buildcache` がまだ push されていない場合は警告が出るだけで、通常の
+  フルビルドになる。
 - push したイメージを Cloud Run が受け付けない場合は `--provenance=false` を足す
   (buildx が既定で付ける attestation により manifest が image index になるため)。
 
