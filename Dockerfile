@@ -4,11 +4,21 @@ FROM perl:5.38-bookworm AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && \
-  apt-get -y upgrade && \
-  apt-get install -y wget gcc g++ make sqlite3 git
+# apt のダウンロード済み .deb とインデックスを BuildKit の cache mount に残す
+# (既定の docker-clean はキャッシュを消すため無効化する)。cache mount は
+# 同一マシンでの再ビルドにのみ効き、registry cache には乗らない
+RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
+  echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
-RUN cpm install -g Carton
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt-get update && \
+  apt-get install -y --no-install-recommends wget gcc g++ make sqlite3 git
+
+# Carton は update-cpanfile-snapshot.yml の snapshot 再生成と、deps の
+# cpm --resolver snapshot (Carton::Snapshot を require する) の両方が使う
+RUN --mount=type=cache,target=/root/.perl-cpm \
+  cpm install -g Carton
 
 WORKDIR /usr/src/app
 
@@ -19,9 +29,15 @@ ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bi
 
 
 # deps: CPAN 依存のインストール。cpanfile が変わったときだけ再ビルドされる。
+# cpm の既定は -L local / 5 並列 / モジュールテストなし (carton install も
+# Menlo に --notest を渡すので従来と同じ)。--no-default-resolvers により
+# cpanfile.snapshot に無いモジュールは MetaCPAN 等へフォールバックせず失敗する。
+# tarball / prebuilt / build.log は cache mount 側に置かれレイヤに残らないため、
+# 失敗時の詳細は --show-build-log-on-failure で標準エラーに出す
 FROM base AS deps
 
-RUN carton install --deployment
+RUN --mount=type=cache,target=/root/.perl-cpm \
+  cpm install --resolver snapshot --no-default-resolvers --show-build-log-on-failure
 
 
 # app: docker-compose での開発用 (従来構成そのまま)
