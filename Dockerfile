@@ -1,6 +1,6 @@
 # base: ビルドツールと Carton のみ。
 # .github/workflows/update-cpanfile-snapshot.yml が --target base を使う。
-FROM perl:5.38-bookworm AS base
+FROM perl:5.42-trixie AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -133,7 +133,7 @@ COPY --from=databuild /usr/src/app/data/years.pl /years.pl
 
 
 # runtime: Cloud Run 用。レイヤは変更頻度の低い順に重ね、DB を最後に置く。
-FROM perl:5.38-slim-bookworm AS runtime
+FROM perl:5.42-slim-trixie AS runtime
 
 # XML::Parser (XS) が libexpat を動的リンクしているため slim には追加が必要。
 # diffutils は slim にも標準で入っているが、PJP::HTMLDiff が外部コマンドの

@@ -20,7 +20,8 @@ requires 'Regexp::Common';
 requires 'Regexp::Assemble';
 requires 'Algorithm::Diff';
 requires 'String::Diff';
-requires 'Text::Markdown::Discount';
+# 0.16 同梱の discount-2.2.7 は gcc 14 (trixie) でコンパイルできない
+requires 'Text::Markdown::Discount', '0.18';
 requires 'SQL::Interp';
 requires 'Carp::Clan';
 requires 'JSON';
