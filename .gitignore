@@ -18,3 +18,5 @@ db/
 /static/rss/
 xtc/
 functions.txt
+/worker/.dev.vars
+/worker/.wrangler/

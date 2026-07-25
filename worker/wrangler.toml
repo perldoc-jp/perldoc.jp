@@ -1,0 +1,17 @@
+name = "perldoc-jp"
+main = "src/index.js"
+compatibility_date = "2026-07-25"
+
+# ORIGIN (Cloud Run のサービス URL) はここには置かず、デプロイ時に
+# --var で注入する。手元で wrangler dev するときは worker/.dev.vars に
+# ORIGIN=https://... を書く
+
+# 本番の Custom Domain (perldoc.jp) は routes に書かない。deploy が DNS の
+# 切り替えを伴うと事故になるため、cutover は Cloudflare 側の操作として分けている
+# (docs/cloud-run.md §9)。staging は壊れても影響がないので宣言的に作る
+[env.staging]
+name = "perldoc-jp-staging"
+
+[[env.staging.routes]]
+pattern = "staging.perldoc.jp"
+custom_domain = true

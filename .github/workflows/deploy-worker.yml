@@ -1,0 +1,44 @@
+name: Deploy Worker
+
+# Worker のコードは Cloud Run のイメージとは独立しているので、
+# worker/ が変わったときだけデプロイする
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      # 外部 action はコミット SHA にピン留めする (この workflow は Cloudflare の
+      # API トークンを扱うため)。更新時は SHA とコメントのバージョンを両方書き換えること
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # cloudflare/wrangler-action は使わず npx でバージョンを固定して呼ぶ。
+      # ピン留めが必要な外部 action を増やさないため
+      - name: Deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUD_RUN_URL: ${{ vars.CLOUD_RUN_URL }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: |
+          # 空の ORIGIN でデプロイすると Worker が全リクエストで例外を投げるので、
+          # 変数の設定漏れはここで落とす
+          test -n "$CLOUD_RUN_URL"
+          npx --yes wrangler@4.112.0 deploy --var "ORIGIN:$CLOUD_RUN_URL"

@@ -14,7 +14,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
                   → テスト → Docker build → Artifact Registry push
                   → Cloud Run deploy
                                                          v
-[ユーザー] → Cloudflare → Cloud Run (asia-northeast1)
+[ユーザー] → Cloudflare (Worker) → Cloud Run (asia-northeast1)
                            - min-instances=0 (無アクセス時のコストほぼゼロ)
                            - イメージに read-only SQLite + translation docs を焼き込み
                            - 実行時の書き込みは /tmp (tmpfs) のみ
@@ -200,7 +200,7 @@ gcloud iam service-accounts add-iam-policy-binding "$SA" \
   --role=roles/iam.workloadIdentityUser
 ```
 
-### 6. GitHub リポジトリの Variables
+### 6. GitHub リポジトリの Variables と Secrets
 
 perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Variables に:
 
@@ -209,6 +209,14 @@ perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Var
 | `GCP_PROJECT_ID` | プロジェクト ID |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp` |
 | `GCP_SERVICE_ACCOUNT` | `perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare のアカウント ID |
+| `CLOUD_RUN_URL` | Cloud Run のサービス URL (§9 の Worker のオリジン) |
+
+Secrets に:
+
+| シークレット | 値 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | 権限に **Edit Cloudflare Workers** を持つ API トークン |
 
 WIF の attribute-condition が `refs/heads/master` に固定されているため、master へ
 merge するまで GitHub Actions からはデプロイできない。cutover までは §7 の手順で
@@ -267,6 +275,7 @@ curl -fsS http://127.0.0.1:8080/ | grep 'perldoc.jp' > /dev/null
 curl -fsS -o /dev/null http://127.0.0.1:8080/docs/perl/perl.pod
 curl -fsS http://127.0.0.1:8080/translators | grep '年</h2>' > /dev/null
 curl -fsS http://127.0.0.1:8080/static/docs.json | grep 'Acme::Bleach' > /dev/null
+curl -fsS -o /dev/null http://127.0.0.1:8080/favicon.ico
 docker rm -f smoke
 ```
 
@@ -342,36 +351,202 @@ jobs:
 `PERLDOC_JP_DISPATCH_TOKEN` は perldoc-jp/perldoc.jp への Contents:
 Read and write 権限を持つ fine-grained PAT (または GitHub App トークン)。
 
-### 9. カスタムドメイン (Cloudflare は既存のものを流用)
+### 9. Cloudflare (Worker で Cloud Run にリバースプロキシする)
 
-> **注意**: Cloud Run のドメインマッピングはプレビュー段階の機能で、
-> Google はレイテンシの問題を理由に本番用途には推奨していない
-> (asia-northeast1 が対応リージョンであることは確認済み)。
-> 本構成は Cloudflare が前面に立つため影響は限定的と見込むが、
-> レイテンシや証明書で問題が出る場合は末尾の Worker 代替に切り替えること。
+perldoc.jp へのリクエストは Cloudflare の Worker が受け、`<service>.run.app` へ
+リバースプロキシする。Cloud Run のドメインマッピングは使わない。
 
-1. ドメインの所有権を確認する (ブラウザで Search Console が開く)。これが済んでいないと
-   次のドメインマッピング作成が失敗する:
+- オリジンが `<service>.run.app` なので、TLS 証明書は Google が管理する run.app の
+  ものがそのまま使える。証明書の発行・更新が運用対象にならない。Cloud Run の
+  ドメインマッピングは自前証明書を持ち込めず、Google 管理証明書の更新時に
+  Cloudflare のような前段プロキシが検証リクエストを傍受して更新が失敗しうる
+- perldoc.jp 側の証明書は Cloudflare の Universal SSL が担う (`*.perldoc.jp` を含む)
+- Cloud Run 側のドメイン所有権確認 (`gcloud domains verify`) は不要
+
+#### Worker
+
+実装は `worker/src/index.js`、設定は `worker/wrangler.toml`。master への push で
+`worker/` が変わったときだけ `.github/workflows/deploy-worker.yml` がデプロイする。
+
+- `X-Forwarded-Host` の付与は必須。`Amon2::Web::redirect` は `Plack::Request->base`
+  (= `HTTP_HOST` 由来) で `Location` の絶対 URL を組むため、これが無いと `/func/*`
+  などの正規化リダイレクトが `Location: https://<service>.run.app/...` を返す。
+  app.psgi の `Plack::Middleware::ReverseProxy` がこのヘッダを `HTTP_HOST` に戻す
+- オリジンの URL は wrangler.toml に置かず、デプロイ時に `--var` で注入する。
+  値は GitHub Variables の `CLOUD_RUN_URL` (§6)
+
+`CLOUD_RUN_URL` に入れる値:
+
+```sh
+gcloud run services describe perldoc-jp \
+  --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)'
+```
+
+手元からデプロイする場合 (cutover 時など)。wrangler のバージョンは
+deploy-worker.yml と揃えること:
+
+```sh
+cd worker
+export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
+npx wrangler@4.112.0 deploy --var "ORIGIN:$(gcloud run services describe perldoc-jp \
+  --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')"
+```
+
+#### DNS
+
+- `perldoc.jp` (apex) は Worker の **Custom Domain** として登録する。DNS レコードと
+  証明書は Cloudflare が自動で作る。Workers の route にプレースホルダの
+  `AAAA 100::` を置く方式は Cloudflare が非推奨としている
+- `www.perldoc.jp` と `new.perldoc.jp` は apex への proxied な CNAME を置く。
+  リクエストは下の Redirect Rule がエッジで終端するのでオリジンには届かない
+
+#### Redirect Rules (www / new → apex)
+
+- 式: `http.host in {"www.perldoc.jp" "new.perldoc.jp"}`
+- 種類: Dynamic、URL: `concat("https://perldoc.jp", http.request.uri)`
+- ステータス: 301
+- 「クエリ文字列を保持」は**オフ**。`http.request.uri` がクエリを含むため、
+  オンにすると二重に付く (`http.request.uri.path` はクエリを含まない)
+
+Worker の Custom Domain は apex だけなので、www/new は Worker を起動せず
+Redirect Rules だけで処理される。
+
+#### Cache Rules
+
+`/static/*` は Cloud Run 上のアプリ (`Plack::Middleware::Static`) が配信する。
+オリジンは `Cache-Control` も `ETag` も返さない (`Last-Modified` のみ) ため、
+TTL は Cache Rules で明示する。Cloudflare のドキュメント上、Worker の `fetch()` に
+よる subrequest にも Cache Rules は適用される (優先順位は Worker の `cf` 設定 >
+Cache Rules > Page Rules)。式をパスだけで書いておけばオリジンのホスト名は影響しない。
+ルールを入れたら `cf-cache-status` が `DYNAMIC` から変わることを必ず確認する。
+
+同じ設定に複数のルールがマッチすると順序依存になるため、2 本を排他な式で置く:
+
+- 長期: `starts_with(http.request.uri.path, "/static/") and not starts_with(http.request.uri.path, "/static/rss/") and http.request.uri.path ne "/static/docs.json"`
+  → Eligible for cache / Edge TTL 1ヶ月
+- 短期: `http.request.uri.path eq "/static/docs.json" or starts_with(http.request.uri.path, "/static/rss/")`
+  → Eligible for cache / Edge TTL 1時間
+
+`css` / `js` / `png` / `ico` は Cloudflare の既定キャッシュ対象拡張子だが、
+`.json` と `.rss` は対象外なので短期ルール側は Eligible for cache の明示が必須
+(ルールが無いと `/static/docs.json` と `/static/rss/recent.rss` は `cf-cache-status:
+DYNAMIC` のままオリジンに毎回届く)。オリジンが `Cache-Control` を返さないため
+ブラウザ向けには Cloudflare の既定 (Browser Cache TTL = 4 時間) が入るので、
+長期ルール側は Browser TTL も合わせて延ばす。
+キャッシュキーは `cf.cacheKey` が Enterprise 限定のため run.app の URL になり、
+perldoc.jp のゾーンからの URL 単位パージは効かない前提で TTL を短くしている。
+
+HTML は Cloudflare の既定でキャッシュされないためルールは不要。
+
+#### SSL/TLS
+
+- SSL/TLS モード: **Full (strict)**
+- `Always Use HTTPS`: 有効
+
+#### 動作確認 (staging.perldoc.jp)
+
+本番の apex に触らないまま構成をまるごと検証する。`staging.perldoc.jp` を Worker の
+Custom Domain にすれば、Cache Rules の式がパスベースなのでそのまま適用され、cutover
+後の挙動を事前に確かめられる。`workers.dev` のサブドメインだけではゾーンの Cache
+Rules も Redirect Rules も適用されないためキャッシュの確認には足りない。
+
+1. Cloud Run にデプロイし (§7)、URL を取っておく:
    ```sh
-   gcloud domains verify perldoc.jp
+   ORIGIN=$(gcloud run services describe perldoc-jp \
+     --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
    ```
-2. ドメインマッピングを作成:
+2. staging の Worker をデプロイする。`wrangler.toml` の `[env.staging]` が
+   `staging.perldoc.jp` を Custom Domain として作る。`NOINDEX` を渡すと Worker が
+   `X-Robots-Tag: noindex, nofollow` を足すので、本番と重複した内容が検索結果に
+   出るのを防げる:
    ```sh
-   gcloud beta run domain-mappings create \
-     --project="$PROJECT_ID" \
-     --service perldoc-jp --domain perldoc.jp --region "$REGION"
+   cd worker
+   export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
+   npx wrangler@4.112.0 deploy --env staging --var "ORIGIN:$ORIGIN" --var NOINDEX:1
    ```
-3. Cloudflare の perldoc.jp のレコードを一時的に DNS only (グレー雲) にして、
-   案内された `ghs.googlehosted.com` への CNAME に変更する
-4. Google 管理証明書の発行完了を待つ (`gcloud beta run domain-mappings describe
-   --project="$PROJECT_ID" --domain perldoc.jp --region "$REGION"` で確認)
-5. Cloudflare の proxy (オレンジ雲) を有効に戻し、SSL/TLS モードを
-   **Full (strict)** にする
-6. キャッシュルール: `/static/*` は Cache Everything + 長め TTL を推奨。
-   HTML はデプロイ連動で変わるため既定のままでよい
+3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
+4. 確認する:
+   ```sh
+   BASE=https://staging.perldoc.jp
 
-証明書の更新で問題が出る場合の代替: Cloudflare Worker で
-`https://<service>.run.app` へリバースプロキシする (ドメインマッピング不要)。
+   # アプリの主要な経路 (deploy.yml の smoke test と同じ観点)
+   curl -fsS "$BASE/" | grep 'perldoc.jp' > /dev/null
+   curl -fsS -o /dev/null "$BASE/docs/perl/perl.pod"
+   curl -fsS "$BASE/translators" | grep '年</h2>' > /dev/null
+   curl -fsS "$BASE/static/docs.json" | grep 'Acme::Bleach' > /dev/null
+   curl -fsS -o /dev/null "$BASE/favicon.ico"
+
+   # 都度計算する diff。perlfunc.pod のような大きい pod でも試しておく
+   curl -fsS -o /dev/null -w '%{time_total}\n' \
+     "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod"
+
+   # X-Forwarded-Host が効いていること。/chomp は /func/chomp へのリダイレクトなので、
+   # ここに run.app が出たら Worker 側の不備 (/func/chomp 自体は 200 なので使えない)
+   curl -sS -o /dev/null -D - "$BASE/chomp" | grep -i '^location:'
+
+   # Cache Rules。2 回叩いて cf-cache-status が MISS → HIT になること
+   curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cf-cache-status:'
+   curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cf-cache-status:'
+
+   # HTML はキャッシュしない (DYNAMIC のままであること)
+   curl -sS -o /dev/null -D - "$BASE/" | grep -i '^cf-cache-status:'
+
+   # staging がクロール除けになっていること
+   curl -sS -o /dev/null -D - "$BASE/" | grep -i '^x-robots-tag:'
+   ```
+5. cutover 後に片付ける (残すと Workers の枠を無駄に使う)。Custom Domain が
+   Cloudflare 側に残っていたら合わせて外す:
+   ```sh
+   npx wrangler@4.112.0 delete --env staging
+   ```
+
+www/new の Redirect Rule は本番のホスト名にしか書けないため、この段階では確認できない。
+cutover 時に確かめる。
+
+#### 切り替え手順
+
+1. Cloud Run にデプロイし、`status.url` を確認する
+2. 「動作確認」のとおり staging で構成を検証する
+3. 本番の Worker をデプロイする (`--env` なし):
+   ```sh
+   cd worker
+   npx wrangler@4.112.0 deploy --var "ORIGIN:$ORIGIN"
+   ```
+4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
+   登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる
+5. www/new の CNAME と Redirect Rule を入れる
+6. 確認: apex が 200、`/chomp` の `Location` が perldoc.jp を指すこと、
+   `www.perldoc.jp` が 301 でクエリを保持すること、`/static/docs.json` の
+   `cf-cache-status`。「動作確認」の curl を `BASE=https://perldoc.jp` で回すのが早い
+7. staging の Worker を消す
+
+ロールバックは Custom Domain を外して元の apex レコードに戻す。
+
+#### run.app への直アクセス
+
+`--allow-unauthenticated` のため `<service>.run.app` は公開のままで、Worker を
+経由しないアクセスにはキャッシュもレートリミットも効かない (「構成の概要」のとおり
+実質的な上限装置は max-instances)。
+
+`X-Forwarded-Host` を信頼する構成なので、直アクセスでは `Location` のホストを
+任意の値にできる。Cloudflare のキャッシュには入らない経路なのでキャッシュ汚染には
+繋がらず、攻撃者が自分自身をリダイレクトさせられるだけ。塞ぐなら Worker が共有
+シークレットのヘッダを付け、アプリ側で一致しないリクエストを 403 にするのが最も安い。
+
+#### Workers の枠と、Worker を挟まない構成
+
+Workers Free は 10 万リクエスト/日で、**Cloudflare のキャッシュにヒットした
+リクエストも 1 件として数える**。超える場合は Workers Paid (月 $5, 1000 万
+リクエスト込み、超過 100 万あたり $0.30)。
+
+Worker を挟まない構成にする場合の選択肢:
+
+- Origin Rules の Host header override で run.app を直接オリジンにする。DNS だけでは
+  `Host: perldoc.jp` が run.app に届いて 404 になるため書き換えが必須で、この機能は
+  **Enterprise 限定** (SNI override も同様)
+- Cloud Run を Global External Application Load Balancer の背後に置く。自前証明書
+  (Cloudflare Origin CA) が使えて Google が推奨する構成でもあるが、転送ルールだけで
+  概算 月 $18〜25 かかり、min-instances=0 のコスト方針とは釣り合わない
 
 ## 旧 VPS の cron ジョブとの対応
 
@@ -398,9 +573,8 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
 - <https://chrome.google.com/webstore/detail/iedgkpbokcjamkpoglfbefmdmclkljhc>
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
-Cloudflare のキャッシュルールで `/static/*` を Cache Everything にする場合、
-デプロイ後に古い docs.json が残らないよう TTL を短め (数時間程度) にするか、
-デプロイ時にパージすること。
+デプロイ後に古い docs.json が残る時間は Cloudflare の Edge TTL で決まる。§9 の
+Cache Rules はこれを 1 時間にしている (旧構成の更新間隔は 6 時間毎だった)。
 
 ## 運用
 
