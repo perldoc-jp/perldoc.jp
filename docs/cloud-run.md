@@ -210,11 +210,111 @@ perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Var
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp` |
 | `GCP_SERVICE_ACCOUNT` | `perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
 
-ここまで済んだら master へ merge する。Deploy workflow が回り、§4 で置いた
-プレースホルダイメージが実イメージに置き換わる。WIF の attribute-condition が
-`refs/heads/master` に固定されているため、feature ブランチからはデプロイできない。
+WIF の attribute-condition が `refs/heads/master` に固定されているため、master へ
+merge するまで GitHub Actions からはデプロイできない。cutover までは §7 の手順で
+手元からビルドとデプロイを行う。
 
-### 7. translation リポジトリ側の workflow
+### 7. 手動でのビルドとデプロイ
+
+master へ merge する前の cutover はこの手順で行う。使うのは操作者自身の gcloud
+認証情報で、デプロイ用 SA (§5) は経由しない。
+
+事前に `data/years.pl` が過去年 (2013〜) を含む現物になっていることを確認する。
+`.dockerignore` に含まれないため作業ツリーの内容がそのままイメージに焼き込まれ、
+databuild はそこへ前年+当年を累積マージする (「運用」の最後の項目を参照)。
+
+```sh
+PROJECT_ID=perldoc-jp-XXXXXX
+REGION=asia-northeast1
+RUNTIME_SA=perldoc-jp-run@${PROJECT_ID}.iam.gserviceaccount.com
+IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/perldoc-jp/app
+TAG=manual-$(date +%Y%m%d%H%M%S)
+
+# 一度だけ: docker が Artifact Registry へ push できるようにする
+gcloud auth configure-docker "${REGION}-docker.pkg.dev"
+
+# translation の HEAD に固定する (deploy.yml と同じ)
+TRANSLATION_COMMIT=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
+test -n "$TRANSLATION_COMMIT"
+
+# Cloud Run は linux/amd64 のみ対応。Apple Silicon ではエミュレーションで動くため、
+# 初回は carton install の XS ビルドを含めて時間がかかる
+docker buildx build \
+  --platform linux/amd64 \
+  --target runtime \
+  --build-arg "TRANSLATION_COMMIT=$TRANSLATION_COMMIT" \
+  --tag "$IMAGE:$TAG" \
+  --push \
+  .
+```
+
+- Artifact Registry に buildcache が積まれた後は
+  `--cache-from type=registry,ref=$IMAGE:buildcache` を足すと databuild の再実行を避けられる。
+- push したイメージを Cloud Run が受け付けない場合は `--provenance=false` を足す
+  (buildx が既定で付ける attestation により manifest が image index になるため)。
+
+本番同等の FS 制約で起動確認してからデプロイする (deploy.yml の smoke test と同じ):
+
+```sh
+docker run -d --name smoke --read-only --tmpfs /tmp \
+  -e PORT=8080 -p 8080:8080 "$IMAGE:$TAG"
+for _ in $(seq 1 30); do
+  curl -fsS -o /dev/null http://127.0.0.1:8080/ && break
+  sleep 2
+done
+curl -fsS http://127.0.0.1:8080/ | grep 'perldoc.jp' > /dev/null
+curl -fsS -o /dev/null http://127.0.0.1:8080/docs/perl/perl.pod
+curl -fsS http://127.0.0.1:8080/translators | grep '年</h2>' > /dev/null
+curl -fsS http://127.0.0.1:8080/static/docs.json | grep 'Acme::Bleach' > /dev/null
+docker rm -f smoke
+```
+
+デプロイする。フラグは §4 および deploy.yml と同一で、`--image` だけが変わる:
+
+```sh
+gcloud run deploy perldoc-jp \
+  --project="$PROJECT_ID" \
+  --image "$IMAGE:$TAG" \
+  --region "$REGION" \
+  --service-account "$RUNTIME_SA" \
+  --execution-environment gen2 \
+  --memory 1Gi --cpu 1 \
+  --min-instances 0 --max-instances 3 \
+  --concurrency 4 \
+  --cpu-boost \
+  --timeout 60 \
+  --port 8080 \
+  --allow-unauthenticated
+```
+
+デプロイ後の確認:
+
+```sh
+URL=$(gcloud run services describe perldoc-jp \
+  --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
+
+curl -fsS "$URL/" | grep 'perldoc.jp' > /dev/null
+curl -fsS -o /dev/null "$URL/docs/perl/perl.pod"
+curl -fsS "$URL/translators" | grep '年</h2>' > /dev/null
+curl -fsS "$URL/static/docs.json" | grep 'Acme::Bleach' > /dev/null
+
+# ランタイム SA はロールを持たないので、アプリケーションログが
+# Cloud Logging に届いていることをここで確かめておく
+gcloud logging read \
+  'resource.type="cloud_run_revision" AND resource.labels.service_name="perldoc-jp"' \
+  --project="$PROJECT_ID" --limit=20 --freshness=10m
+
+# --allow-unauthenticated はサービスの IAM ポリシーを書き換える。allUsers の
+# run.invoker と、デプロイ用 SA の run.admin (§5) が両方残っていることを確認する
+gcloud run services get-iam-policy perldoc-jp \
+  --project="$PROJECT_ID" --region="$REGION"
+```
+
+`$URL` が空になる場合は `gcloud run deploy` が最後に表示する `Service URL:` を使う。
+
+master へ merge すると以降は Deploy workflow が自動で回り、この手順は不要になる。
+
+### 8. translation リポジトリ側の workflow
 
 perldoc-jp/translation に以下を追加すると、翻訳の push で即座に再ビルドされる
 (なくても日次の schedule で反映される):
@@ -241,7 +341,7 @@ jobs:
 `PERLDOC_JP_DISPATCH_TOKEN` は perldoc-jp/perldoc.jp への Contents:
 Read and write 権限を持つ fine-grained PAT (または GitHub App トークン)。
 
-### 8. カスタムドメイン (Cloudflare は既存のものを流用)
+### 9. カスタムドメイン (Cloudflare は既存のものを流用)
 
 > **注意**: Cloud Run のドメインマッピングはプレビュー段階の機能で、
 > Google はレイテンシの問題を理由に本番用途には推奨していない
