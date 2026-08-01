@@ -3,7 +3,13 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    const target = new URL(url.pathname + url.search, env.ORIGIN);
+    // ORIGIN の URL に pathname/search だけを差し替える。
+    // new URL(url.pathname + url.search, env.ORIGIN) の形は pathname が
+    // //host 形式のとき protocol-relative URL として解釈され、転送先が
+    // ORIGIN 以外のホストに乗っ取られる (オープンプロキシになる)
+    const target = new URL(env.ORIGIN);
+    target.pathname = url.pathname;
+    target.search = url.search;
 
     const headers = new Headers(request.headers);
     // Amon2::Web::redirect は Plack::Request->base (= HTTP_HOST 由来) で Location の
@@ -12,6 +18,10 @@ export default {
     // Location: https://<service>.run.app/... を返してしまう。
     // app.psgi の Plack::Middleware::ReverseProxy がこのヘッダを HTTP_HOST に戻す
     headers.set('X-Forwarded-Host', url.hostname);
+    // ReverseProxy は X-Forwarded-Proto eq 'https' の完全一致でしか
+    // psgi.url_scheme を https にしない。クライアント由来の値を転送に残さず、
+    // X-Forwarded-Host と同様にここで確定させる
+    headers.set('X-Forwarded-Proto', 'https');
 
     // アプリに POST ルートは無いのでボディは転送しない。
     // redirect: 'manual' が無いと Worker 側が 3xx を追ってしまい、
