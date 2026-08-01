@@ -34,3 +34,15 @@ jobs:
       run: |
         make ci
 
+  # Worker は master への push で無条件に本番デプロイされる
+  # (deploy-worker.yml) ため、PR 段階のゲートをここに置く。数十 ms で
+  # 終わるので paths フィルタは付けず常に回す
+  worker-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Run worker tests
+      working-directory: worker
+      run: node --test

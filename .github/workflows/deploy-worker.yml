@@ -28,6 +28,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # test.yml の worker-test と同じゲートをデプロイ直前にも置く
+      # (workflow_dispatch は PR を経由しないため)
+      - name: Run tests
+        working-directory: worker
+        run: node --test
+
       # cloudflare/wrangler-action は使わず npx でバージョンを固定して呼ぶ。
       # ピン留めが必要な外部 action を増やさないため
       - name: Deploy
