@@ -151,7 +151,17 @@ ENV PERL5LIB=/usr/src/app/local/lib/perl5
 ENV PATH=/usr/src/app/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 COPY --from=deps /usr/src/app/local ./local
-COPY . .
+
+# 配信イメージは COPY . . (denylist) にしない。CI のワークスペースに落ちた
+# ファイル (google-github-actions/auth の gha-creds-*.json 等) を .dockerignore の
+# 列挙漏れひとつで拾ってしまうため、実行時に読むものだけを列挙する。
+# 列挙漏れは deploy.yml の smoke test が検出する (toc.txt → /index/core など)
+COPY app.psgi toc.txt toc-var.txt ./
+COPY config ./config
+COPY lib ./lib
+COPY static ./static
+COPY tmpl ./tmpl
+
 COPY --from=databuild /usr/src/app/functions.txt ./functions.txt
 COPY --from=databuild /usr/src/app/data ./data
 COPY --from=databuild /usr/src/app/static/rss ./static/rss

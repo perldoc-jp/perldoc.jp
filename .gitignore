@@ -20,3 +20,4 @@ xtc/
 functions.txt
 /worker/.dev.vars
 /worker/.wrangler/
+gha-creds-*.json

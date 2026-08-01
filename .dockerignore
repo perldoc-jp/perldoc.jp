@@ -1,5 +1,9 @@
 Dockerfile
 .dockerignore
+# google-github-actions/auth が $GITHUB_WORKSPACE に書く WIF 認証情報ファイル。
+# COPY . . のあるステージ (app/databuild) とレジストリの buildcache に
+# 混入させない (公式 README の推奨どおり)
+gha-creds-*.json
 local/
 .git/
 .git*
