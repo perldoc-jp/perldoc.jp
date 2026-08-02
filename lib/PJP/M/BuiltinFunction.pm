@@ -13,13 +13,22 @@ use PJP::Util qw/slurp/;
 # perlop から検索するものの正規表現
 my $OPS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
 
-our @FUNCTIONS = -e FUNCTION_LIST_FILE ? sort split /\n/, slurp(FUNCTION_LIST_FILE) : ();
-
+our @FUNCTIONS;
 my %FUNCTIONS;
-@FUNCTIONS{@FUNCTIONS} = ();
-
 our @REGEXP;
-{
+
+# functions.txt は generate が書く生成物なので、クリーンビルドではモジュール
+# ロード時にまだ存在しない。ロード時の 1 回だけで確定させると、同一プロセスで
+# generate の後に走る PodFile->generate が空の @REGEXP を使い、perlfunc の
+# HTML から組み込み関数へのリンクが黙って消える。generate の最後に呼び直せる
+# よう sub に括り出してある
+sub _load_functions {
+    @FUNCTIONS = -e FUNCTION_LIST_FILE ? sort split /\n/, slurp(FUNCTION_LIST_FILE) : ();
+
+    %FUNCTIONS = ();
+    @FUNCTIONS{@FUNCTIONS} = ();
+
+    @REGEXP = ();
     my $i = 0;
     my @func_re;
     foreach my $func (@FUNCTIONS) {
@@ -37,7 +46,10 @@ our @REGEXP;
         $ra->add(@func_re);
         $REGEXP[$i] = $ra->as_string;
     }
+    return;
 }
+
+_load_functions();
 
 sub exists {
     my ($class, $name) = @_;
@@ -151,6 +163,11 @@ sub generate {
     chmod 0644, FUNCTION_LIST_FILE . '.update' or die "Cannot chmod " . FUNCTION_LIST_FILE . ".update: $!";
     rename FUNCTION_LIST_FILE . '.update' => FUNCTION_LIST_FILE;
     $txn->commit();
+
+    # 書いたばかりの一覧をこのプロセスに反映する。後続の PodFile->generate が
+    # @REGEXP を使って perlfunc の関数名をリンクにするため、ここで読み直さないと
+    # クリーンビルドのイメージだけリンクの無い HTML が焼き込まれる
+    _load_functions();
 }
 
 1;
