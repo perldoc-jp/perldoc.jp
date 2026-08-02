@@ -186,6 +186,27 @@ subtest 'author 名がイベントに入る' => sub {
     is $events->[0]{author}, 'Some Translator', 'コミットの author が観測される';
 };
 
+subtest '同秒の追加と削除は git のコミット順で返る (author 名に依存しない)' => sub {
+    local $ENV{TZ} = 'Asia/Tokyo';
+    # 同じ秒に「追加 → 削除」の 2 コミット。同秒・同 path では git log の
+    # 出力順だけが真の前後関係を運ぶ。author 等の無関係なキーで並べ替えると
+    # 名前の組み合わせ次第で削除が古い側に落ち、削除済みの翻訳が年次統計に
+    # 生き残る
+    for my $authors ([qw/zzz-adder aaa-remover/], [qw/aaa-adder zzz-remover/]) {
+        my ($adder, $remover) = @$authors;
+        my ($c, $r) = new_repo();
+        $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+        $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo', author => $adder);
+        $r->unlink_file('docs/modules/Foo-1.00/Foo.pod');
+        $r->commit_at('2025-06-01T12:00:00+0900', 'remove Foo', author => $remover);
+
+        my $events = PJP::M::Repository->commit_events($c);
+        is [map { [ $_->{deleted} ? 'D' : 'A', $_->{author} ] } @$events],
+            [['D', $remover], ['A', $adder]],
+            "削除が新しい側に来る ($adder → $remover)";
+    }
+};
+
 subtest 'git log が途中で失敗したらビルドを止める' => sub {
     # 部分出力のまま EOF になっても、正常終了と区別して die しなければ
     # ならない (不完全なイベント列は自動コミットで master に恒久化するため)

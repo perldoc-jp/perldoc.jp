@@ -106,6 +106,20 @@ subtest '同じ path の同年イベントは年内最終だけが数えられ�
     is \%count, { bob => 1 }, '年内最終コミットの author だけが数えられる';
 };
 
+subtest '同秒の追加と削除は配列の先頭側 (新しい方) が勝つ' => sub {
+    # commit_events は同秒・同 path のイベントを git のコミット順 (新しい順)
+    # で返す。年内最終の判定は date の厳密比較なので、同秒では配列で先に
+    # 現れた方が最終イベントとして扱われる
+    my $add = entry(date => '2025-06-01 12:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp');
+    my $del = entry(date => '2025-06-01 12:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp', deleted => 1);
+
+    is PJP::M::YearData->build([$del, $add], undef, 2025)->{2025}, undef,
+        '先頭が削除なら年に現れない';
+    is paths_of(PJP::M::YearData->build([$add, $del], undef, 2025)->{2025}),
+        ['docs/modules/Tmp-1.00/Tmp.pod'],
+        '先頭が追加なら年に現れる';
+};
+
 subtest '再導出が古い年の実績を横取りしない' => sub {
     # 同じ (in, version) が 2010 (seed) と 2025 (イベント) の両方に出る
     # (dist 内の別 pod)。「最初に現れた年に計上する」規則が seed 注入後の

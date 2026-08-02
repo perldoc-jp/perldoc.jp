@@ -112,10 +112,19 @@ sub commit_events {
               . ($? & 127 ? 'killed by signal ' . ($? & 127) : 'exit status ' . ($? >> 8));
       }
   }
-  # 日付の降順。同時刻は path・author で締めて git の出力順に依存させない
-  @events = sort {
-      $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} || $a->{author} cmp $b->{author}
-  } @events;
+  # 日付の降順。同時刻・同 path のイベントは git log の出力順 (子コミットが
+  # 親より先 = 新しい順) だけが真のコミット順を運ぶため、パース時の添字で
+  # その順序を保存する。下流 (YearData の年内最終判定、create_recent の
+  # path 初出採用) は配列の先頭側を新しい方として扱うので、ここに author 等の
+  # 無関係なキーを挟むと同秒の「追加→削除」が逆転して削除が見えなくなる。
+  # 異なる path 同士は path で締めて hash の列挙順に依存させない
+  @events = @events[
+      sort {
+          $events[$b]{date} cmp $events[$a]{date}
+              || $events[$a]{path} cmp $events[$b]{path}
+              || $a <=> $b
+      } 0 .. $#events
+  ];
   return \@events;
 }
 
