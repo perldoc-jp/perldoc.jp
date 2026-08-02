@@ -59,12 +59,13 @@ FROM deps AS databuild
 
 ENV PLACK_ENV=build
 
-# 生成スクリプトの時刻の扱いを旧 VPS (JST) と揃える。UTC のままだと
-# - create_recent.pl の RSS が git log --date=iso-local 由来の日時 (TZ 依存) に
-#   固定の +0900 表記を付けるため 9 時間ズレる
-# - PJP::M::Repository の git log --since (TZ なし文字列) が UTC で解釈され、
-#   JST 元旦 00:00〜09:00 のコミットが年次統計から恒久的に漏れる
-# - 下の date +%Y が JST の年と食い違う時間帯が生じる
+# 生成スクリプトの時刻の扱いを旧 VPS (JST) と揃える。PJP::M::Repository の
+# git log --date=iso-local はこの TZ に変換した壁時計を出し、オフセットを
+# 捨てた日時が全生成物の入力になる。UTC のままだと
+# - create_recent.pl の RSS が UTC の壁時計に固定の +0900 表記を付けるため
+#   9 時間ズレる
+# - JST 元旦 00:00〜09:00 のコミットが前年扱いになり、年次統計の集計年と、
+#   create_year_data.pl が最新イベントから導出する対象年の両方がズレる
 ENV TZ=Asia/Tokyo
 
 # translation の取得コミットを build-arg で指定する。
