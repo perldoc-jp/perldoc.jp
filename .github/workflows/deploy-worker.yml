@@ -21,6 +21,13 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    # CLOUDFLARE_API_TOKEN はこの environment の secret に置く (docs/cloud-run.md §6)。
+    # environment の deployment branch policy が master のみを許可するため、
+    # workflow_dispatch で他の ref を選んでもジョブ開始前に拒否される。
+    # yml 内の ref ガードは、workflow_dispatch では実行者が選んだ ref の
+    # yml ごと差し替えられるため防御にならない。GCP 側 (deploy.yml) を WIF の
+    # attribute-condition で master に固定しているのと同じ境界
+    environment: cloudflare-production
 
     steps:
       # 外部 action はコミット SHA にピン留めする (この workflow は Cloudflare の

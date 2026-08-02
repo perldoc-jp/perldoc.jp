@@ -233,14 +233,41 @@ perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Var
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare のアカウント ID |
 | `CLOUD_RUN_URL` | Cloud Run のサービス URL (§9 の Worker のオリジン) |
 
-Secrets に:
+いずれも秘匿情報ではないため repository variable でよい。
 
-| シークレット | 値 |
-|---|---|
-| `CLOUDFLARE_API_TOKEN` | 権限に **Edit Cloudflare Workers** を持つ API トークン |
+`CLOUDFLARE_API_TOKEN` (権限に **Edit Cloudflare Workers** を持つ API トークン) は
+repository secret ではなく environment `cloudflare-production` の secret に置く。
+このトークンはアカウントスコープで、漏れると同一アカウントの全 Worker を
+書き換えられる。environment の deployment branch policy を master に限定する
+ことで、workflow_dispatch で他の ref を選んでもジョブ開始前に拒否される
+(yml 内の ref ガードは、workflow_dispatch では実行者が選んだ ref の yml ごと
+差し替えられるため防御にならない)。GCP 側で WIF の attribute-condition (§5) が
+担っている境界の Cloudflare 版にあたる。
 
-WIF の attribute-condition が `refs/heads/master` に固定されているため、master へ
-merge するまで GitHub Actions からはデプロイできない。cutover までは §7 の手順で
+```sh
+# environment の作成。custom branch policy を使う (protected_branches=true は
+# 「保護ルールを持つ全ブランチを許可」の意味で、後からどこかのブランチに
+# 保護ルールを足すと許可範囲も一緒に広がってしまう)
+gh api --method PUT repos/perldoc-jp/perldoc.jp/environments/cloudflare-production \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
+
+# master だけを許可する
+gh api --method POST \
+  repos/perldoc-jp/perldoc.jp/environments/cloudflare-production/deployment-branch-policies \
+  -f name=master -f type=branch
+
+# トークンを environment secret に置く (値の入力を求められる)
+gh secret set CLOUDFLARE_API_TOKEN --env cloudflare-production
+```
+
+environment は workflow から参照されただけでも自動作成されるが、その場合は
+branch policy の無い素通しになり、secret が無ければ同名の repository secret に
+フォールバックする。deploy-worker.yml が動く前にここまでを済ませておくこと。
+
+WIF の attribute-condition と cloudflare-production の branch policy がどちらも
+master に固定されているため、master へ merge するまで GitHub Actions からは
+デプロイできない。cutover までは §7 (Cloud Run) と §9 (Worker) の手順で
 手元からビルドとデプロイを行う。
 
 ### 7. 手動でのビルドとデプロイ
