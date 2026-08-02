@@ -42,8 +42,7 @@ sub main {
     # 同じ結果になるよう、年内最後のコミットを別窓で取る)
     my $updates = PJP::M::Repository->recent_data($pjp, $since, $until);
     push @$updates, @{ PJP::M::Repository->recent_data($pjp, $until) };
-    @$updates = sort { $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} } @$updates;
-    create_file($updates, $year);
+    create_file($updates, $year, PJP::M::Repository->current_paths($pjp));
     update_pod_update_time($pjp, $updates);
 }
 
@@ -68,17 +67,27 @@ sub update_pod_update_time {
 }
 
 sub create_file {
-    my ($updates, $target_year) = @_;
+    my ($updates, $target_year, $current_paths) = @_;
     # 初回ビルド時のみ data/years.pl が存在しない。存在するのに読めない場合は
     # 過去年のデータを黙って失うことになるので config_do に croak させる。
     my $year = -e 'data/years.pl' ? scalar config_do('data/years.pl') : undef;
     if ($year) {
-        # path のタイブレークで同時刻エントリの順序を決定的にする
-        # (keys の列挙順に依存させない)
-        push @$updates, sort { $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} }map { @{$year->{$_}->{modules}} } grep {$_ < $target_year} keys %$year;
+        # 対象年より前は git から再導出しないので seed をそのまま再注入する
+        push @$updates, map { @{$year->{$_}->{modules}} } grep {$_ < $target_year} keys %$year;
+        # 対象年以降は git から再導出するが、recent_data が列挙するのは現在の
+        # checkout に実在するファイルだけなので、削除・rename された翻訳は
+        # 再導出では拾えない。seed を残さないとその年の統計から恒久的に落ち、
+        # しかも欠損したまま deploy.yml が master へ書き戻してしまう
+        push @$updates, grep { not $current_paths->{$_->{path}} }
+                        map  { @{$year->{$_}->{modules}} } grep {$_ >= $target_year} keys %$year;
     } else {
         $year = {};
     }
+    # 全体を一度に並べ替える。「最初に現れた年に計上する」規則は下の reverse に
+    # 依存しているので、ブロックを継ぎ足した順序に任せると後から push した分が
+    # 先頭に来て古い年の実績を横取りする。path のタイブレークは同時刻エントリの
+    # 順序を keys の列挙順に依存させないため
+    @$updates = sort { $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} } @$updates;
     my %first;
     my %module;
 
