@@ -10,7 +10,8 @@ package PJP::M::YearData;
 #
 # $events      : PJP::M::Repository->commit_events の結果。削除・rename で
 #                現ツリーから消えた翻訳のイベントも含む
-# $seed        : 既存の data/years.pl を読んだもの。初回ビルドでは undef
+# $seed        : 既存の data/years.pl を読んだもの。初回ビルドでは undef。
+#                対象年より前の年だけが取り込まれ、対象年以降のキーは無視される
 # $target_year : 再導出の対象年 (= 前年)。これ以降が git 由来で組み直される
 sub build {
     my ($class, $events, $seed, $target_year) = @_;
@@ -28,12 +29,23 @@ sub build {
     }
     my @updates = grep { not $_->{deleted} } map { values %$_ } values %latest;
 
-    my $year = $seed // {};
+    # seed からは対象年より前の年だけを取り込む。対象年以降は毎回イベントから
+    # 再構築する (イベントが削除だけになった年は年ブロックごと消えるべきで、
+    # seed 側のブロックを残すと反映されなかった削除が自動コミットで seed に
+    # 書き戻され、以後のビルドでも残り続ける)。2011 年より前の統計は、複数の
+    # 旧リポジトリを当時のシステムで観測した結果を凍結したもので、現在の
+    # git 履歴からは再現できない。
+    # 年ブロックは 1 段コピーする。build はブロック直下の modules /
+    # commit_count を置き換えるため、seed の hashref を共有すると呼び出し元の
+    # seed が壊れる (module の hashref と commit_count_all は読み取りしか
+    # しないので共有でよい)。modules は「最初に現れた年に計上する」重複排除に
+    # 参加させるため @updates に再注入する
+    my $year = {};
     if ($seed) {
-        # 対象年より前は git から再導出しないので seed をそのまま再注入する。
-        # 2011 年より前の統計は、複数の旧リポジトリを当時のシステムで観測した
-        # 結果を凍結したもので、現在の git 履歴からは再現できない
-        push @updates, map { @{$year->{$_}->{modules}} } grep { $_ < $target_year } keys %$year;
+        for my $y (grep { $_ < $target_year } keys %$seed) {
+            $year->{$y} = { %{$seed->{$y}} };
+            push @updates, @{$seed->{$y}{modules}};
+        }
     }
 
     # 全体を一度に並べ替える。「最初に現れた年に計上する」規則は下の reverse に
@@ -67,6 +79,8 @@ sub build {
 
     foreach my $y (keys %$year) {
         my %tmp;
+        # seed 由来で再構築ループに入らなかった年 (modules が空の年) は
+        # commit_count が整形済みの ARRAY のまま。そのまま通す
         next if ref $year->{$y}->{commit_count} ne 'HASH';
         $year->{$y}->{commit_count} =
             [

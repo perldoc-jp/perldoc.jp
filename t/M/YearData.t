@@ -120,6 +120,46 @@ subtest '同秒の追加と削除は配列の先頭側 (新しい方) が勝つ'
         '先頭が追加なら年に現れる';
 };
 
+subtest '対象年以降の seed は使われない (削除だけの年が seed から復活しない)' => sub {
+    # 前回ビルドの seed に 2026 のブロックが残った状態で、2026 年のイベントが
+    # 「追加 → 削除」だけになった状況 (年明けに追加された翻訳がすぐ消された等)。
+    # 年内最終が削除なので 2026 は現れてはならない。seed 側のブロックが
+    # 生き残ると、自動コミットで書き戻されて以後のビルドでも残り続ける
+    my $old   = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+    my $stale = entry(date => '2026-01-05 00:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp', author => 'bob');
+    my $seed  = {
+        2010 => seed_year([$old],   { alice => 1 }),
+        2026 => seed_year([$stale], { bob   => 1 }),
+    };
+    my @events = (
+        entry(date => '2026-01-07 00:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp',
+              author => 'remover', deleted => 1),
+        entry(date => '2026-01-05 00:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp', author => 'bob'),
+    );
+
+    my $year = PJP::M::YearData->build(\@events, $seed, 2025);
+
+    is $year->{2026}, undef, '削除しか残っていない 2026 は seed があっても現れない';
+    is paths_of($year->{2010}), ['docs/modules/Old-1.00/Old.pod'], '対象年より前の seed は保たれる';
+};
+
+subtest 'build が seed を変更しない' => sub {
+    # build の結果は seed とは別の構造として返る。seed を書き換えると、
+    # 呼び出し元が seed と結果を突き合わせる検証 (script/create_year_data.pl)
+    # が自明に通ってしまい成立しない
+    my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+    my $cur = entry(date => '2026-02-01 00:00:00', path => 'docs/modules/New-1.00/New.pod', in => 'New');
+    my $seed = {
+        2010 => seed_year([$old], { alice => 1 }),
+        2026 => seed_year([$cur], { bob   => 1 }),
+    };
+    my $before = dclone($seed);
+
+    PJP::M::YearData->build([$cur], $seed, 2025);
+
+    is $seed, $before, 'seed は呼び出し後も元のまま';
+};
+
 subtest '再導出が古い年の実績を横取りしない' => sub {
     # 同じ (in, version) が 2010 (seed) と 2025 (イベント) の両方に出る
     # (dist 内の別 pod)。「最初に現れた年に計上する」規則が seed 注入後の
