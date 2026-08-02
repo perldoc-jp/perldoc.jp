@@ -12,6 +12,15 @@ export default {
     target.search = url.search;
 
     const headers = new Headers(request.headers);
+    // Plack::Middleware::ReverseProxy が読む X-Forwarded-* は
+    // For / Host / HTTPS / Port / Proto / Server の 6 つで、いずれもクライアントが
+    // 自由に送れる。個別に上書きすると取りこぼす (例えば
+    // X-Forwarded-Port: 443@evil.example は HTTP_HOST を
+    // perldoc.jp:443@evil.example にし、Location の実ホストが evil.example になる)
+    // ため、転送前に一掃してから必要なものだけをここで確定させる
+    for (const name of [...headers.keys()]) {
+      if (/^x-forwarded-/i.test(name) || name.toLowerCase() === 'forwarded') headers.delete(name);
+    }
     // Amon2::Web::redirect は Plack::Request->base (= HTTP_HOST 由来) で Location の
     // 絶対 URL を組む。fetch 先が run.app になるため、元のホスト名を明示的に
     // 引き継がないと /func/* などの正規化リダイレクトが
@@ -19,8 +28,7 @@ export default {
     // app.psgi の Plack::Middleware::ReverseProxy がこのヘッダを HTTP_HOST に戻す
     headers.set('X-Forwarded-Host', url.hostname);
     // ReverseProxy は X-Forwarded-Proto eq 'https' の完全一致でしか
-    // psgi.url_scheme を https にしない。クライアント由来の値を転送に残さず、
-    // X-Forwarded-Host と同様にここで確定させる
+    // psgi.url_scheme を https にしない
     headers.set('X-Forwarded-Proto', 'https');
 
     // アプリに POST ルートは無いのでボディは転送しない。

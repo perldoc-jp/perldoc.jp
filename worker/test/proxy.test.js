@@ -48,6 +48,37 @@ describe('転送先 origin の固定', () => {
   });
 });
 
+// ReverseProxy が読む X-Forwarded-* は For / Host / HTTPS / Port / Proto / Server の
+// 6 つで、いずれもクライアントが自由に送れる。特に Port は HTTP_HOST に連結されるため
+// `443@evil.example` を送ると Location の実ホストが evil.example になる
+describe('クライアント由来の X-Forwarded-* の一掃', () => {
+  const HOSTILE = {
+    'X-Forwarded-For': '127.0.0.1',
+    'X-Forwarded-HTTPS': 'OFF',
+    'X-Forwarded-Port': '443@evil.example',
+    'X-Forwarded-Server': 'evil.example:443',
+    'Forwarded': 'host=evil.example;proto=http',
+  };
+
+  it('転送しない', async () => {
+    await proxy('https://perldoc.jp/func/chomp', { headers: HOSTILE });
+    const h = calls[0].init.headers;
+    for (const name of Object.keys(HOSTILE)) {
+      assert.equal(h.get(name), null, `${name} が転送されない`);
+    }
+  });
+
+  it('一掃しても通常のリクエストヘッダは残す', async () => {
+    await proxy('https://perldoc.jp/', {
+      headers: { 'Accept-Language': 'ja', 'User-Agent': 'test-agent', 'Referer': 'https://example.com/' },
+    });
+    const h = calls[0].init.headers;
+    assert.equal(h.get('Accept-Language'), 'ja');
+    assert.equal(h.get('User-Agent'), 'test-agent');
+    assert.equal(h.get('Referer'), 'https://example.com/');
+  });
+});
+
 describe('X-Forwarded-Host', () => {
   it('リクエストのホスト名を入れる', async () => {
     await proxy('https://perldoc.jp/');

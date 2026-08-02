@@ -34,6 +34,15 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   効かない。直アクセス側の実質的な上限装置は max-instances (=3) で、
   コスト暴走はしない前提の設計になっている (完全に塞ぐには LB + ingress
   制限が必要で、本構成のコスト方針とは釣り合わない)。
+- 同じ理由で、**アプリは `X-Forwarded-*` を誰からでも信用する状態にある**。
+  app.psgi は `Plack::Middleware::ReverseProxy` を無条件で有効にしているため、
+  run.app へ直接 `X-Forwarded-Host: evil.example` を送れば Location をその
+  ホストに向けられる。Worker 側でクライアント由来の `X-Forwarded-*` を
+  一掃しているので perldoc.jp 経由では起こらないが、run.app 経由の経路は
+  残る。攻撃者が汚染できるのは自分のリクエストへの応答だけ (ブラウザは
+  ナビゲーションでこれらのヘッダを送れない) で、run.app のホスト名には
+  phishing 価値も無いため現状は許容している。塞ぐなら Worker が付ける
+  共有ヘッダを条件に `enable_if` でミドルウェアを限定する。
 
 ## 初期セットアップ (一度だけ)
 
@@ -307,6 +316,10 @@ curl -fsS "$URL/" | grep 'perldoc.jp' > /dev/null
 curl -fsS -o /dev/null "$URL/docs/perl/perl.pod"
 curl -fsS "$URL/translators" | grep '年</h2>' > /dev/null
 curl -fsS "$URL/static/docs.json" | grep 'Acme::Bleach' > /dev/null
+curl -fsS -o /dev/null "$URL/favicon.ico"
+# runtime の allowlist COPY の列挙漏れ検出 (toc.txt / toc-var.txt)
+curl -fsS -o /dev/null "$URL/index/core"
+curl -fsS -o /dev/null "$URL/index/variable"
 
 # ランタイム SA はロールを持たないので、アプリケーションログが
 # Cloud Logging に届いていることをここで確かめておく
@@ -363,6 +376,12 @@ perldoc.jp へのリクエストは Cloudflare の Worker が受け、`<service>
 - perldoc.jp 側の証明書は Cloudflare の Universal SSL が担う (`*.perldoc.jp` を含む)
 - Cloud Run 側のドメイン所有権確認 (`gcloud domains verify`) は不要
 
+Worker 以外の設定は Cloudflare のダッシュボードで行う。Rules 系 (Redirect Rules /
+Cache Rules) の条件は、ビルダーを使わず **Edit expression** に式を直接貼ること。
+ビルダーの `And` / `Or` ボタンは「その演算子で条件を 1 行追加する」ボタンであり、
+既存の条件間の演算子を切り替えるものではない (押すと空の条件行が増えるだけ)。
+式を貼ったあとは Expression Preview が意図どおりか必ず読むこと。
+
 #### Worker
 
 実装は `worker/src/index.js`、設定は `worker/wrangler.toml`。master への push で
@@ -383,7 +402,8 @@ gcloud run services describe perldoc-jp \
 ```
 
 手元からデプロイする場合 (cutover 時など)。wrangler のバージョンは
-deploy-worker.yml と揃えること:
+deploy-worker.yml と揃えること (メジャー更新で `--var` や環境の扱いが変わるため、
+CI と手元で別の版を使うとデプロイ結果が一致しなくなる):
 
 ```sh
 cd worker
@@ -396,16 +416,28 @@ npx wrangler@4.112.0 deploy --var "ORIGIN:$(gcloud run services describe perldoc
 
 - `perldoc.jp` (apex) は Worker の **Custom Domain** として登録する。DNS レコードと
   証明書は Cloudflare が自動で作る。Workers の route にプレースホルダの
-  `AAAA 100::` を置く方式は Cloudflare が非推奨としている
-- `www.perldoc.jp` と `new.perldoc.jp` は apex への proxied な CNAME を置く。
-  リクエストは下の Redirect Rule がエッジで終端するのでオリジンには届かない
+  `AAAA 100::` を置く方式は Cloudflare が非推奨としている。apex は wrangler.toml の
+  routes には書かずダッシュボードで登録する。`wrangler deploy` が DNS の切り替えを
+  伴うと事故になるため (staging は壊れても影響がないので `[env.staging]` の routes で
+  宣言的に作っている)
+- `www.perldoc.jp` と `new.perldoc.jp` は **proxied (オレンジ雲)** にする。
+  リクエストは下の Redirect Rule がエッジで終端するのでオリジンには届かず、
+  レコードの値 (A / CNAME いずれでも) は使われない。グレー雲だと Cloudflare の
+  エッジを通らないため Redirect Rule が発火せず、証明書も無いので HTTPS で
+  そもそも接続できない。なお値が無視されるのは Redirect Rule が有効な間だけなので、
+  ルールを外すときは向き先が生きているか確かめること
 
 #### Redirect Rules (www / new → apex)
 
+- 「If incoming requests match」で **Custom filter expression** を選ぶ
+  (既定は Wildcard pattern)
 - 式: `http.host in {"www.perldoc.jp" "new.perldoc.jp"}`
-- 種類: Dynamic、URL: `concat("https://perldoc.jp", http.request.uri)`
-- ステータス: 301
-- 「クエリ文字列を保持」は**オフ**。`http.request.uri` がクエリを含むため、
+- 「Then」の **Type を Dynamic に変える** (既定は Static)。Static はリダイレクト先を
+  固定 URL でしか書けずパスを引き継げない。Dynamic にすると URL 欄が Expression 欄に
+  変わる
+- Expression: `concat("https://perldoc.jp", http.request.uri)`
+- Status code: 301
+- 「Preserve query string」は**オフ**。`http.request.uri` がクエリを含むため、
   オンにすると二重に付く (`http.request.uri.path` はクエリを含まない)
 
 Worker の Custom Domain は apex だけなので、www/new は Worker を起動せず
@@ -414,34 +446,69 @@ Redirect Rules だけで処理される。
 #### Cache Rules
 
 `/static/*` は Cloud Run 上のアプリ (`Plack::Middleware::Static`) が配信する。
-オリジンは `Cache-Control` も `ETag` も返さない (`Last-Modified` のみ) ため、
-TTL は Cache Rules で明示する。Cloudflare のドキュメント上、Worker の `fetch()` に
-よる subrequest にも Cache Rules は適用される (優先順位は Worker の `cf` 設定 >
-Cache Rules > Page Rules)。式をパスだけで書いておけばオリジンのホスト名は影響しない。
-ルールを入れたら `cf-cache-status` が `DYNAMIC` から変わることを必ず確認する。
+TTL は app.psgi が付ける `Cache-Control` を唯一の情報源とする
+(`/static/docs.json` と `/static/rss/` は 2 時間、それ以外の `/static/*` と
+`/favicon.ico` は 4 時間)。
 
-同じ設定に複数のルールがマッチすると順序依存になるため、2 本を排他な式で置く:
+`css` / `js` / `png` / `ico` は Cloudflare の既定キャッシュ対象拡張子なので、
+`Cache-Control` がそのまま効きルールは要らない。一方 `.json` と `.rss` は対象外で、
+ルールが無いと `/static/docs.json` と `/static/rss/recent.rss` は
+`cf-cache-status: DYNAMIC` のまま毎回オリジンに届く。この 2 つをキャッシュ対象に
+するルールを 1 本だけ置く:
 
-- 長期: `starts_with(http.request.uri.path, "/static/") and not starts_with(http.request.uri.path, "/static/rss/") and http.request.uri.path ne "/static/docs.json"`
-  → Eligible for cache / Edge TTL 1ヶ月
-- 短期: `http.request.uri.path eq "/static/docs.json" or starts_with(http.request.uri.path, "/static/rss/")`
-  → Eligible for cache / Edge TTL 1時間
+- 式: `http.request.uri.path eq "/static/docs.json" or starts_with(http.request.uri.path, "/static/rss/")`
+- Cache eligibility: **Eligible for cache**
+- Edge TTL: **Use cache-control header if present** (オリジンの 2 時間が使われる)
 
-`css` / `js` / `png` / `ico` は Cloudflare の既定キャッシュ対象拡張子だが、
-`.json` と `.rss` は対象外なので短期ルール側は Eligible for cache の明示が必須
-(ルールが無いと `/static/docs.json` と `/static/rss/recent.rss` は `cf-cache-status:
-DYNAMIC` のままオリジンに毎回届く)。オリジンが `Cache-Control` を返さないため
-ブラウザ向けには Cloudflare の既定 (Browser Cache TTL = 4 時間) が入るので、
-長期ルール側は Browser TTL も合わせて延ばす。
-キャッシュキーは `cf.cacheKey` が Enterprise 限定のため run.app の URL になり、
-perldoc.jp のゾーンからの URL 単位パージは効かない前提で TTL を短くしている。
+**Cache eligibility と Edge TTL は両方を設定する。** どちらかが欠けていても
+`cf-cache-status` は `DYNAMIC` のままで、式がマッチしていない場合と区別が付かない。
+`DYNAMIC` が続くときに疑う順は (1) 式がマッチしていない (2) Cache eligibility が
+未設定 (3) Edge TTL が未設定。式は Expression Preview で確認できるので (1) から潰す。
 
-HTML は Cloudflare の既定でキャッシュされないためルールは不要。
+Edge TTL に `Use cache-control header if present` を選べるのは、app.psgi が
+`Cache-Control` を返すからこそ。オリジンがまだ返していない状態
+(Cache-Control を入れる前のイメージが動いている間) にこのモードにすると TTL が
+決まらないので、その間は `Ignore cache-control header and use this TTL` に
+2 時間 (Free プランで指定できる最小値) を入れておく。
+
+`/static/*` 全体を対象にするルールは置かない。既定でキャッシュされる拡張子まで
+ルールに含めると、TTL をオリジンの `Cache-Control` とルールの両方に持つことになる。
+
+エッジ TTL をオリジンより長くしないのは、`cf.cacheKey` が Enterprise 限定で
+キャッシュキーが run.app の URL になり、perldoc.jp のゾーンからの URL 単位パージが
+効かないため。ファイル名にダイジェストも入らないので、長い TTL は
+配信物を差し替えられないまま抱えることになる。
+
+Worker の `fetch()` による subrequest にも Cache Rules は適用される (優先順位は
+Worker の `cf` 設定 > Cache Rules > Page Rules)。式をパスだけで書いておけばオリジンの
+ホスト名は影響しない。ルールを入れたら `cf-cache-status` が `DYNAMIC` から
+`MISS` → `HIT` に変わることを必ず確認する。
+
+関連するゾーン設定 (Caching → Configuration):
+
+- `Browser Cache TTL`: **Respect Existing Headers**。固定値だと app.psgi の
+  `Cache-Control` を上書きする (既定は 4 時間)
+- `Caching Level`: Standard
+- `Development Mode`: OFF (ON の間はキャッシュされない)
+- Page Rules は使わない (Cache Rules と設定が重なる)
+
+HTML は Cloudflare の既定でキャッシュされず、app.psgi も `Cache-Control` を付けない。
 
 #### SSL/TLS
 
-- SSL/TLS モード: **Full (strict)**
-- `Always Use HTTPS`: 有効
+- `Always Use HTTPS`: **有効**。HTTP で来たリクエストをエッジで HTTPS へ 301 する
+- `Minimum TLS Version`: **1.2**
+- perldoc.jp 側の証明書は Universal SSL (`*.perldoc.jp` と apex) が担う
+- **SSL/TLS の暗号化モード (Flexible / Full / Full strict) は本構成では効かない**。
+  Worker の `fetch()` は Worker ランタイムからオリジンへの独立した HTTPS リクエストで、
+  ゾーンの暗号化モードに従わない。run.app の証明書は Google が管理するため
+  検証も常に成立する。逆に cutover 前にモードを上げると、:443 を待受していない
+  旧オリジンへの接続が壊れるので触らないこと
+- 暗号化モードの `Automatic mode` (Cloudflare が定期スキャンでモードを決める) が
+  有効だと、スキャンのたびにモードが変わり得る。上記のとおり本構成では効かない
+  設定なので実害は無いが、意図しない変更が混ざるのを避けたいなら手動に固定する
+- `HSTS` は未設定。有効にすると HTTP でのアクセス手段を長期間放棄することになるため、
+  `Always Use HTTPS` が安定してから別途判断する
 
 #### 動作確認 (staging.perldoc.jp)
 
@@ -484,7 +551,13 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    # ここに run.app が出たら Worker 側の不備 (/func/chomp 自体は 200 なので使えない)
    curl -sS -o /dev/null -D - "$BASE/chomp" | grep -i '^location:'
 
-   # Cache Rules。2 回叩いて cf-cache-status が MISS → HIT になること
+   # オリジンの Cache-Control (docs.json は 2 時間、css は 4 時間)
+   curl -sS -o /dev/null -D - "$BASE/static/docs.json"     | grep -i '^cache-control:'
+   curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cache-control:'
+
+   # 2 回叩いて cf-cache-status が MISS → HIT になること (docs.json は要 Cache Rules)
+   curl -sS -o /dev/null -D - "$BASE/static/docs.json" | grep -i '^cf-cache-status:'
+   curl -sS -o /dev/null -D - "$BASE/static/docs.json" | grep -i '^cf-cache-status:'
    curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cf-cache-status:'
    curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cf-cache-status:'
 
@@ -494,6 +567,14 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    # staging がクロール除けになっていること
    curl -sS -o /dev/null -D - "$BASE/" | grep -i '^x-robots-tag:'
    ```
+
+   症状から切り分ける:
+   - `/chomp` の `Location` に run.app が出る → Worker が `X-Forwarded-Host` を
+     付けていない
+   - `/static/docs.json` が `DYNAMIC` のまま → Cache Rules 側 (式 / Cache eligibility /
+     Edge TTL のいずれか)
+   - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
+     古い (Worker や Cloudflare の設定ではない)
 5. cutover 後に片付ける (残すと Workers の枠を無駄に使う)。Custom Domain が
    Cloudflare 側に残っていたら合わせて外す:
    ```sh
@@ -506,7 +587,8 @@ cutover 時に確かめる。
 #### 切り替え手順
 
 1. Cloud Run にデプロイし、`status.url` を確認する
-2. 「動作確認」のとおり staging で構成を検証する
+2. 「動作確認」のとおり staging で構成を検証する。Cache Rules・SSL/TLS・Browser Cache
+   TTL はゾーン単位の設定なので、ここで入れたものが cutover 後の本番にもそのまま効く
 3. 本番の Worker をデプロイする (`--env` なし):
    ```sh
    cd worker
@@ -514,11 +596,17 @@ cutover 時に確かめる。
    ```
 4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
    登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる
-5. www/new の CNAME と Redirect Rule を入れる
+5. Redirect Rule を入れてから、www/new を **proxied (オレンジ雲)** に切り替える。
+   グレー雲のままではリクエストが Cloudflare のエッジを通らず Redirect Rule が
+   発火しない。順序を逆にすると一時的にリクエストが旧オリジンへ流れる
 6. 確認: apex が 200、`/chomp` の `Location` が perldoc.jp を指すこと、
    `www.perldoc.jp` が 301 でクエリを保持すること、`/static/docs.json` の
    `cf-cache-status`。「動作確認」の curl を `BASE=https://perldoc.jp` で回すのが早い
-7. staging の Worker を消す
+7. Cache Rules を最終形にする。この時点でオリジンが `Cache-Control` を返しているので、
+   短期ルールの Edge TTL を `Ignore cache-control header and use this TTL` から
+   **`Use cache-control header if present`** に切り替える。`/static/*` 全体を対象に
+   するルールが残っていれば削除する (TTL の情報源を app.psgi 側 1 箇所に寄せる)
+8. staging の Worker を消す
 
 ロールバックは Custom Domain を外して元の apex レコードに戻す。
 
@@ -573,8 +661,8 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
 - <https://chrome.google.com/webstore/detail/iedgkpbokcjamkpoglfbefmdmclkljhc>
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
-デプロイ後に古い docs.json が残る時間は Cloudflare の Edge TTL で決まる。§9 の
-Cache Rules はこれを 1 時間にしている (旧構成の更新間隔は 6 時間毎だった)。
+デプロイ後に古い docs.json が残る時間は app.psgi が付ける `Cache-Control` で決まる
+(2 時間。旧構成の更新間隔は 6 時間毎だった)。エッジもこれを尊重する (§9)。
 
 ## 運用
 
