@@ -29,8 +29,7 @@ sub with_pod_rows {
                 path        varchar(255) not null PRIMARY KEY,
                 distvname   varchar(255) not null,
                 repository  varchar(255) not null,
-                html        text,
-                update_time integer
+                html        text
             )
         });
         my $sth = $dbh->prepare('INSERT INTO pod (package, distvname, path, repository) VALUES (?, ?, ?, ?)');

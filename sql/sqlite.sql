@@ -22,8 +22,7 @@ create table pod (
         path        varchar(255) not null PRIMARY KEY,
         distvname   varchar(255) not null,
         repository  varchar(255) not null,
-        html        text,
-        update_time integer
+        html        text
 );
 -- SELECT 対象の列をすべてキーに含めた covering index にしている。
 -- メタデータ系クエリ (一覧・バージョン解決) が巨大な html 列を持つ
