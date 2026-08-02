@@ -6,7 +6,6 @@ use File::Temp qw/tempdir/;
 use File::Path qw/make_path/;
 use File::Basename qw/dirname/;
 use File::Find::Rule;
-use Time::Piece;
 use PJP::M::Repository;
 
 # assets_dir / mode_name だけを持つ最小のコンテキスト
@@ -63,15 +62,14 @@ sub new_repo {
 
     # コミット日時は GIT_*_DATE で固定する。local なので他のテストに漏れない
     sub commit_at {
-        my ($self, $date, $message) = @_;
+        my ($self, $date, $message, %opts) = @_;
         local $ENV{GIT_AUTHOR_DATE}    = $date;
         local $ENV{GIT_COMMITTER_DATE} = $date;
+        local $ENV{GIT_AUTHOR_NAME}    = $opts{author} if $opts{author};
         $self->git('add', '-A');
         $self->git('commit', '-q', '-m', $message);
     }
 }
-
-sub jst { Time::Piece->strptime($_[0], '%Y-%m-%d %H:%M:%S') }
 
 subtest 'current_paths が現ツリーの path を列挙する' => sub {
     my ($c, $r) = new_repo();
@@ -85,52 +83,67 @@ subtest 'current_paths が現ツリーの path を列挙する' => sub {
     ], '2 ファイルとも path 形式で列挙される';
 };
 
-subtest 'recent_data の path が current_paths と一致する' => sub {
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo and Bar');
-
-    my $updates = PJP::M::Repository->recent_data($c, jst('2025-01-01 00:00:00'));
-    my $paths   = PJP::M::Repository->current_paths($c);
-    ok scalar(@$updates), 'エントリが取れる';
-    for my $u (@$updates) {
-        ok $paths->{$u->{path}}, "recent_data の path が current_paths にある: $u->{path}";
-    }
-};
-
-subtest '削除された翻訳は current_paths からも再導出からも消える' => sub {
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo and Bar');
-
-    # Bar を翌年に削除する。git 履歴には残るが checkout からは消えるので
-    # recent_data は列挙しない = 前年の統計から落ちる入力になる
-    $r->unlink_file('docs/modules/Bar-1.00/Bar.pod');
-    $r->commit_at('2026-03-01T12:00:00+0900', 'remove Bar');
-
-    my $paths = PJP::M::Repository->current_paths($c);
-    ok !$paths->{'docs/modules/Bar-1.00/Bar.pod'}, '削除された path は含まれない';
-    ok $paths->{'docs/modules/Foo-1.00/Foo.pod'},  '残っている path は含まれる';
-
-    my $updates = PJP::M::Repository->recent_data(
-        $c, jst('2025-01-01 00:00:00'), jst('2026-01-01 00:00:00'));
-    is [map { $_->{path} } @$updates], ['docs/modules/Foo-1.00/Foo.pod'],
-        '2025 年窓の再導出からは削除済みのものが落ちる (seed 保持が必要な理由)';
-};
-
-subtest 'rename された翻訳も旧 path は current_paths から消える' => sub {
+subtest 'commit_events が全コミットを日付の降順で列挙する' => sub {
+    local $ENV{TZ} = 'Asia/Tokyo';
     my ($c, $r) = new_repo();
     $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
     $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
+    $r->commit_at('2025-07-01T12:00:00+0900', 'update Foo');
 
-    $r->rename_dir('docs/modules/Foo-1.00', 'docs/modules/Foo-2.00');
-    $r->commit_at('2026-04-01T12:00:00+0900', 'rename Foo');
+    my $events = PJP::M::Repository->commit_events($c);
+    is [map { [ @$_{qw/date path/} ] } @$events], [
+        ['2025-07-01 12:00:00', 'docs/modules/Foo-1.00/Foo.pod'],
+        ['2025-06-01 12:00:00', 'docs/modules/Foo-1.00/Foo.pod'],
+    ], '同じファイルの複数コミットがすべてイベントになる';
 
     my $paths = PJP::M::Repository->current_paths($c);
-    ok !$paths->{'docs/modules/Foo-1.00/Foo.pod'}, '旧 path は含まれない';
-    ok $paths->{'docs/modules/Foo-2.00/Foo.pod'},  '新 path が含まれる';
+    ok $paths->{$_->{path}}, "path 形式が current_paths と一致する: $_->{path}"
+        for @$events;
+};
+
+subtest '削除・rename された翻訳のイベントも含まれる' => sub {
+    local $ENV{TZ} = 'Asia/Tokyo';
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo and Bar');
+
+    # Bar を翌年に削除する。checkout からは消えるが、2025 年の翻訳イベントは
+    # git 履歴から引き続き導出できなければならない (年次統計の欠落防止)
+    $r->unlink_file('docs/modules/Bar-1.00/Bar.pod');
+    $r->commit_at('2026-03-01T12:00:00+0900', 'remove Bar');
+
+    my $events = PJP::M::Repository->commit_events($c);
+    my ($translated) = grep { $_->{path} eq 'docs/modules/Bar-1.00/Bar.pod' and not $_->{deleted} } @$events;
+    is $translated->{date}, '2025-06-01 12:00:00', '削除前の翻訳イベントが残る';
+
+    my ($removed) = grep { $_->{deleted} } @$events;
+    is [ @$removed{qw/date path/} ], ['2026-03-01 12:00:00', 'docs/modules/Bar-1.00/Bar.pod'],
+        '削除は deleted フラグ付きのイベントになる';
+
+    ok !PJP::M::Repository->current_paths($c)->{'docs/modules/Bar-1.00/Bar.pod'},
+        '現ツリーの列挙からは消えている';
+};
+
+subtest 'subtree merge 前の path が現在の構造に正規化される' => sub {
+    local $ENV{TZ} = 'Asia/Tokyo';
+    # 2023 年のリポジトリ再編より前のコミットは docs/ prefix を持たない
+    # (perl コア文書は perl/、旧 perldoc.jp 由来は core/)
+    my ($c, $r) = new_repo();
+    $r->write_file('perl/5.8.8/perlfunc.pod', "=head1 perlfunc\n");
+    $r->commit_at('2008-06-01T12:00:00+0900', 'translate perlfunc');
+    $r->write_file('core/5.6.1/perlvar.pod', "=head1 perlvar\n");
+    $r->commit_at('2004-06-01T12:00:00+0900', 'translate perlvar');
+    $r->write_file('wiki/translation-tips.md', "# tips\n");
+    $r->commit_at('2020-06-01T12:00:00+0900', 'add wiki page');
+
+    my $events = PJP::M::Repository->commit_events($c);
+    is [map { $_->{path} } @$events], [
+        'docs/perl/5.8.8/perlfunc.pod',
+        'docs/perl/5.6.1/perlvar.pod',
+    ], 'perl/ と core/ は docs/perl/ に写像され、翻訳文書でない path は落ちる';
+    is $events->[0]{in}, 'perl', '正規化後の path から name/in が導出される';
 };
 
 subtest '--date=iso-local が committer のオフセットを TZ に揃える' => sub {
@@ -141,33 +154,20 @@ subtest '--date=iso-local が committer のオフセットを TZ に揃える' =
     $r->write_file('docs/modules/Baz-1.00/Baz.pod', "=head1 Baz\n");
     $r->commit_at('2026-06-15T00:00:00-0700', 'translate Baz from another timezone');
 
-    my $updates = PJP::M::Repository->recent_data($c, jst('2026-01-01 00:00:00'));
-    my ($baz)   = grep { $_->{path} eq 'docs/modules/Baz-1.00/Baz.pod' } @$updates;
+    my $events = PJP::M::Repository->commit_events($c);
+    my ($baz)  = grep { $_->{path} eq 'docs/modules/Baz-1.00/Baz.pod' } @$events;
     ok $baz, 'Baz のエントリが取れる';
     is $baz->{date}, '2026-06-15 16:00:00', 'JST に変換された壁時計で記録される';
 };
 
-subtest '年境界のコミットが 2 つの窓に二重に入らない' => sub {
-    # git の --since / --until は両端を含むので、create_year_data.pl が使う
-    # 2 窓を [since, until) と [until, ) の半開区間にしないと、元日 00:00:00
-    # ちょうどのコミットが両方に出て commit_count_all が二重加算される
+subtest 'author 名がイベントに入る' => sub {
     local $ENV{TZ} = 'Asia/Tokyo';
     my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Boundary-1.00/Boundary.pod', "=head1 Boundary\n");
-    $r->commit_at('2027-01-01T00:00:00+0900', 'commit exactly at the year boundary');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo', author => 'Some Translator');
 
-    my $since = jst('2026-01-01 00:00:00');
-    my $until = jst('2027-01-01 00:00:00');
-    my $path  = 'docs/modules/Boundary-1.00/Boundary.pod';
-
-    my $after  = PJP::M::Repository->recent_data($c, $until);
-    my $closed = PJP::M::Repository->recent_data($c, $since, $until);
-    is scalar(grep { $_->{path} eq $path } @$closed, @$after), 2,
-        '両端を含む窓では境界のコミットが 2 回現れる (これが二重加算の入力)';
-
-    my $half = PJP::M::Repository->recent_data($c, $since, $until - 1);
-    is scalar(grep { $_->{path} eq $path } @$half, @$after), 1,
-        '半開区間なら 1 回だけ現れる';
+    my $events = PJP::M::Repository->commit_events($c);
+    is $events->[0]{author}, 'Some Translator', 'コミットの author が観測される';
 };
 
 done_testing;

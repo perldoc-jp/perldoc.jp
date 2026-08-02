@@ -5,7 +5,6 @@ use warnings;
 
 use utf8;
 use Data::Dumper;
-use Time::Piece;
 use lib qw(./lib);
 use PJP;
 use Config::PL;
@@ -22,59 +21,30 @@ local $Data::Dumper::Sortkeys = 1;
 # (create_index_data.pl) と同じく純 ASCII で出力する
 local $Data::Dumper::Useqq    = 1;
 
-my %IGNORE_FILES = (
-    'modules/CGI-FastTemplate-1.09/README' => 1,
-    'modules/translation_table.md' => 1,
-    'modules/translation-tutorial.md' => 1,
-    );
-
 main();
 
 sub main {
-    my $pjp  = PJP->bootstrap;
-    my $year = $ARGV[0] or die "year is needed\n";
-    my $since = Time::Piece->strptime("$year-01-01 00:00:00",         '%Y-%m-%d %H:%M:%S');
-    my $until = Time::Piece->strptime(($year + 1) . "-01-01 00:00:00", '%Y-%m-%d %H:%M:%S');
-    # ターゲット年は年末 (until) で打ち切って「その年の最終状態」を導出する。
-    # 打ち切らずに 1 回の git log -1 でまとめて取ると、翌年に再修正された
-    # ファイルは最新コミット (翌年) の日付だけが返り、ターゲット年の記録から
-    # 消えてしまう (VPS が毎日の実行で年末時点の状態を凍結していたのと
-    # 同じ結果になるよう、年内最後のコミットを別窓で取る)。
-    # git の --since / --until は両端を含むので、2 窓を [since, until) と
-    # [until, ) の半開区間にしないと元日 00:00:00 ちょうどのコミットが
-    # 両方に入り、commit_count_all が二重に加算される
-    my $updates = PJP::M::Repository->recent_data($pjp, $since, $until - 1);
-    push @$updates, @{ PJP::M::Repository->recent_data($pjp, $until) };
-    create_file($updates, $year, PJP::M::Repository->current_paths($pjp));
-    update_pod_update_time($pjp, $updates);
-}
+    my $pjp    = PJP->bootstrap;
+    my $events = PJP::M::Repository->commit_events($pjp);
+    # イベントが 1 件も無いのは translation checkout の異常。空の統計を
+    # 黙って作らず、ビルドを止めて気づけるようにする
+    die "no translation events found" unless @$events;
 
-sub update_pod_update_time {
-    my ($pjp, $updates) = @_;
-    foreach my $update (@$updates) {
-	next if $update->{path} =~ m{\.zip$} or $update->{path} =~ m{\.pot?$} or $update->{path} =~m{pod\.org$};
-
-	$update->{path} =~s{^docs/}{};
-	$update->{path} =~s{^modules/docs/}{};
-	$update->{path} =~s{^core/}{perl/};
-	$update->{path} =~s{^modules/(\w+)\.pm(-[\d.]+)}{modules/$1$2};
-
-	if (my $data = PJP::M::PodFile->retrieve($update->{path})) {
-	    $data->{update_time} = Time::Piece->strptime($update->{date}, '%Y-%m-%d %H:%M:%S')->epoch;
-	    $pjp->dbh_master->replace(pod => $data);
-	} else {
-	    next if $IGNORE_FILES{$update->{path}};
-	    warn "the path cannot be found in DB: " . $update->{path};
-	}
-    }
+    # 対象年は明示指定がなければ最新の翻訳イベントの前年。壁時計から導出
+    # しないことで、同じ translation からのビルドは同じ生成物になる。
+    # 当年ターゲットだと年をまたいだ瞬間に前年分が data/years.pl のシード
+    # (最終コミット時点) で凍結され、シード更新から年末までの統計が
+    # サイレントに欠落するため、前年以降を毎ビルド再導出する
+    my $target_year = $ARGV[0] // ($events->[0]{date} =~ m{^(\d+)})[0] - 1;
+    create_file($events, $target_year);
 }
 
 sub create_file {
-    my ($updates, $target_year, $current_paths) = @_;
+    my ($events, $target_year) = @_;
     # 初回ビルド時のみ data/years.pl が存在しない。存在するのに読めない場合は
     # 過去年のデータを黙って失うことになるので config_do に croak させる。
     my $seed = -e 'data/years.pl' ? scalar config_do('data/years.pl') : undef;
-    my $year = PJP::M::YearData->build($updates, $seed, $target_year, $current_paths);
+    my $year = PJP::M::YearData->build($events, $seed, $target_year);
 
     mkdir './data' or die $! if not -d './data';
 
@@ -85,4 +55,3 @@ sub create_file {
     rename "data/years.pl.new", "data/years.pl"
         or die "Cannot rename data/years.pl.new to data/years.pl: $!";
 }
-
