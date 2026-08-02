@@ -41,27 +41,29 @@ sub retrieve {
         );
 }
 
+# distvname を比較可能な version 値にする。版の比較はこの関数に一本化する
+# (other_versions / get_latest / script/create_docs_json.pl が同じ選択をする)。
+# バージョンを持たない distvname (articles の README や ppc 文書等) は croak
+# せず最古扱いにする。croak だと無版の文書が混在する package (github.com) で
+# 版選択そのものができなくなる
 sub _version {
     my ($v) = @_;
     $v =~ s{^.+?-(?=\d)}{};
     $v =~ s{\-RC\d+$}{}i;
     $v =~ s{^.+?-(v[\d\.]+)$}{$1}i;
-    my $version = eval { version->new($v) };
-    if ($@) {
-      Carp::croak $@ . "(args: $v)";
-    }
-    return $version;
+    return eval { version->new($v) } // version->new(0);
 }
 
 sub other_versions {
         my ($class, $package) = @_;
         my $c = c();
+        # 同値の版は path (PRIMARY KEY) でタイブレークし、並びを行順に依存させない
         if ($package =~ m{^perl.*?delta$}) {
-            sort { _version($b->{distvname}) <=> _version($a->{distvname}) }
+            sort { _version($b->{distvname}) <=> _version($a->{distvname}) || $b->{path} cmp $a->{path} }
               grep {$_->{package} =~ m{^perl.*?delta$}}
                 @{$c->dbh->selectall_arrayref(q{SELECT distvname, path, package FROM pod WHERE package like 'perl%delta'}, {Slice => {}})};
         } else {
-            sort { _version($b->{distvname}) <=> _version($a->{distvname}) }
+            sort { _version($b->{distvname}) <=> _version($a->{distvname}) || $b->{path} cmp $a->{path} }
               @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
         }
 }
@@ -81,9 +83,13 @@ sub get_latest {
 	  ($where_operator, $search_package) = ('=', $package);
 	}
 
+    # 版の比較は _version に一本化する。version->parse の直書きは
+    # HTTP-Message-6.03 のような distvname が軒並み parse 失敗で 0 になり、
+    # 選択が DB の行順 (= スキーマやインデックスの走査順) に依存してしまう。
+    # 同値は distvname / package の降順で締めて、結果を常に決定的にする
         my %sort_tmp;
     my @versions =
-      sort  { ($sort_tmp{$b->[0]} ||= (eval { version->parse($b->[0]) } || 0)) <=> ($sort_tmp{$a->[0]} ||= (eval {version->parse($a->[0])} || 0)) } @{
+      sort  { ($sort_tmp{$b->[0]} //= _version($b->[0])) <=> ($sort_tmp{$a->[0]} //= _version($a->[0])) || $b->[0] cmp $a->[0] || $b->[1] cmp $a->[1] } @{
         $c->dbh->selectall_arrayref( qq{SELECT distvname,package FROM pod WHERE $search_column $where_operator ?},
             {}, $search_package )
       };
