@@ -193,10 +193,7 @@ sub generate_one_file {
                 sub {
                     my $html = PJP::M::Pod->pod2html($file);
                     if ($file =~ m{/perlfunc\.pod$}) {
-                        foreach my $regexp (@PJP::M::BuiltinFunction::REGEXP) {
-                            $html =~ s{<code>($regexp)</code>}{<code><a href="/func/$1" target="_blank">$1</a></code>}g;
-                        }
-                        $html =~ s{<code>(qq|q|tr|y|m|s|qr|qw|qx)(///?)</code>}{<code><a href="/func/$1" target="_blank">$1$2</a></code>}g;
+                        $html = PJP::M::BuiltinFunction->linkify_functions($html);
                     }
                     my $relpath = abs2rel( $file, $base );
                     my ( $package, $description ) =

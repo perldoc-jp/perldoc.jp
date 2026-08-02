@@ -13,8 +13,10 @@ use PJP::Util qw/slurp/;
 # perlop から検索するものの正規表現
 my $OPS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
 
+# パッケージ変数にしているのは、テストが local で退避してから
+# _load_functions を呼べるようにするため (my だと local できない)
 our @FUNCTIONS;
-my %FUNCTIONS;
+our %FUNCTIONS;
 our @REGEXP;
 
 # functions.txt は generate が書く生成物なので、クリーンビルドではモジュール
@@ -23,7 +25,11 @@ our @REGEXP;
 # HTML から組み込み関数へのリンクが黙って消える。generate の最後に呼び直せる
 # よう sub に括り出してある
 sub _load_functions {
-    @FUNCTIONS = -e FUNCTION_LIST_FILE ? sort split /\n/, slurp(FUNCTION_LIST_FILE) : ();
+    # 引数はテスト用。本番の呼び出し (ロード時と generate の最後) は
+    # generate が書くのと同じ FUNCTION_LIST_FILE を見る
+    my $file = shift // FUNCTION_LIST_FILE;
+
+    @FUNCTIONS = -e $file ? sort split /\n/, slurp($file) : ();
 
     %FUNCTIONS = ();
     @FUNCTIONS{@FUNCTIONS} = ();
@@ -50,6 +56,20 @@ sub _load_functions {
 }
 
 _load_functions();
+
+# perlfunc.pod の HTML に出てくる組み込み関数名を /func/* へのリンクにする。
+# @REGEXP を所有しているのはこのパッケージなので、参照する側 (PodFile) に
+# 正規表現の組み立てを持たせず、ここに置いて呼んでもらう
+sub linkify_functions {
+    my ($class, $html) = @_;
+    foreach my $regexp (@REGEXP) {
+        $html =~ s{<code>($regexp)</code>}{<code><a href="/func/$1" target="_blank">$1</a></code>}g;
+    }
+    # クォート系演算子は functions.txt には載らないので個別に拾う。
+    # $OPS_REGEXP とは対象が違う (こちらは qw を含み、区切り文字を伴う形だけを見る)
+    $html =~ s{<code>(qq|q|tr|y|m|s|qr|qw|qx)(///?)</code>}{<code><a href="/func/$1" target="_blank">$1$2</a></code>}g;
+    return $html;
+}
 
 sub exists {
     my ($class, $name) = @_;
