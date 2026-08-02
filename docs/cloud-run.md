@@ -24,6 +24,12 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 - データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
   cron (10分毎の script/update.pl) に相当する処理は Dockerfile の databuild
   ステージが担う。
+- databuild の生成物は translation とソースの純関数として決定的に導出する。
+  壁時計・ファイルの mtime・DB の行順 (インデックスの走査順で変わる) を
+  結果に混ぜない。同じ入力からのビルドが同じバイト列になることで、アプリ
+  だけの変更やベースイメージ更新で公開 JSON や feed の中身が動かない。
+  版の選択は `PJP::M::PodFile` の `_version` / `get_latest` に一本化されて
+  いて、`static/docs.json` もこれに従う (= アプリが表示する版と常に一致する)。
 - 翻訳の diff (`/docs/*/diff`) はキャッシュせず都度計算する。GNU diff の
   外部コマンド化 (`PJP::HTMLDiff`) により perlfunc.pod 級の最悪ケースでも
   数秒以内に収まる。クエリ付き GET のため Cloudflare にはキャッシュされず
