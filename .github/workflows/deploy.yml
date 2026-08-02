@@ -125,6 +125,13 @@ jobs:
           # (toc.txt / toc-var.txt はこの 2 ルートでしか読まれない)
           curl -fsS -o /dev/null http://127.0.0.1:8080/index/core
           curl -fsS -o /dev/null http://127.0.0.1:8080/index/variable
+          # perlfunc に焼き込まれた組み込み関数リンクを検出する。@REGEXP が空の
+          # まま HTML を生成すると、リテラル置換分の 9 件程度しか残らない
+          # (databuild 中の functions.txt の有無に依存し、prove では捕まらない)
+          links=$(curl -fsS http://127.0.0.1:8080/docs/perl/5.36.0/perlfunc.pod \
+            | grep -o 'href="/func/[a-z]*"' | sort -u | wc -l)
+          echo "perlfunc の /func/ リンク数: $links"
+          test "$links" -gt 100
           docker rm -f smoke
 
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず

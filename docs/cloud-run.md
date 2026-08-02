@@ -320,6 +320,10 @@ curl -fsS -o /dev/null "$URL/favicon.ico"
 # runtime の allowlist COPY の列挙漏れ検出 (toc.txt / toc-var.txt)
 curl -fsS -o /dev/null "$URL/index/core"
 curl -fsS -o /dev/null "$URL/index/variable"
+# perlfunc に組み込み関数リンクが焼き込まれているか (databuild 中の
+# functions.txt の有無に依存し、prove では捕まらない)。空の @REGEXP で
+# 生成されるとリテラル置換分の 9 件程度しか残らない
+curl -fsS "$URL/docs/perl/5.36.0/perlfunc.pod" | grep -o 'href="/func/[a-z]*"' | sort -u | wc -l
 
 # ランタイム SA はロールを持たないので、アプリケーションログが
 # Cloud Logging に届いていることをここで確かめておく
