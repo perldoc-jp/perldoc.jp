@@ -46,6 +46,18 @@ sub create_file {
     my $seed = -e 'data/years.pl' ? scalar config_do('data/years.pl') : undef;
     my $year = PJP::M::YearData->build($events, $seed, $target_year);
 
+    # 過去年が欠けたり縮んだりしたら書き出さない。data/years.pl はデプロイ
+    # 成功後に master へ自動コミットされて次回ビルドの seed になるため、
+    # ここで止めないと誤った生成物が恒久化する (2011 年より前は git 履歴から
+    # 再現できない)
+    if ($seed) {
+        for my $y (grep { $_ < $target_year } keys %$seed) {
+            die "year $y is missing from rebuilt years data" if not $year->{$y};
+            die "year $y lost modules in rebuild"
+                if @{$year->{$y}{modules}} != @{$seed->{$y}{modules}};
+        }
+    }
+
     mkdir './data' or die $! if not -d './data';
 
     open my $fh, '>', "data/years.pl.new" or die $!;
