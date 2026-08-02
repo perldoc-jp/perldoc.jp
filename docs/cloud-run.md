@@ -632,6 +632,14 @@ cutover 時に確かめる。
 繋がらず、攻撃者が自分自身をリダイレクトさせられるだけ。塞ぐなら Worker が共有
 シークレットのヘッダを付け、アプリ側で一致しないリクエストを 403 にするのが最も安い。
 
+#### workers.dev と Preview URLs
+
+`workers_dev` と `preview_urls` は既定で有効なため、明示しないと本番 Worker は
+`perldoc-jp.<subdomain>.workers.dev` と、version ごとの公開 Preview URL という
+入口も持つ。どちらも perldoc.jp ゾーンの Cache / Redirect / Rate Limiting を
+通らないため、wrangler.toml のトップレベルで両方を false にして、公開入口を
+Custom Domain (perldoc.jp / staging.perldoc.jp) だけにしている。
+
 #### Workers の枠と、Worker を挟まない構成
 
 Workers Free は 10 万リクエスト/日で、**Cloudflare のキャッシュにヒットした

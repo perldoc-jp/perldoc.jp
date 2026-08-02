@@ -2,6 +2,13 @@ name = "perldoc-jp"
 main = "src/index.js"
 compatibility_date = "2026-07-25"
 
+# 公開入口は Custom Domain (perldoc.jp / staging.perldoc.jp) だけにする。
+# workers_dev は既定で true のため、放置すると本番 Worker がゾーンの
+# Cache / Redirect / Rate Limiting を通らない workers.dev 上の入口を持って
+# しまう (preview_urls の既定は workers_dev の値を継承)。env にも継承される
+workers_dev = false
+preview_urls = false
+
 # ORIGIN (Cloud Run のサービス URL) はここには置かず、デプロイ時に
 # --var で注入する。手元で wrangler dev するときは worker/.dev.vars に
 # ORIGIN=https://... を書く
