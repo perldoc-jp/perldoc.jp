@@ -401,14 +401,20 @@ gcloud run services describe perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)'
 ```
 
-手元からデプロイする場合 (cutover 時など)。wrangler のバージョンは
-deploy-worker.yml と揃えること (メジャー更新で `--var` や環境の扱いが変わるため、
-CI と手元で別の版を使うとデプロイ結果が一致しなくなる):
+手元からデプロイする場合 (cutover 時など)。wrangler は `worker/package.json` の
+exact な devDependency で、`worker/package-lock.json` が依存グラフ全体を固定する。
+バージョンを変えるときは lockfile も一緒に更新すること。
+
+**インストールはトークンを渡さない状態で行う** (`npm ci` を実行してから
+`CLOUDFLARE_API_TOKEN` を export する)。依存の install フックはインストール時の
+環境変数を読めるため、トークンを置いたまま入れると依存の乗っ取りがそのまま
+トークンの奪取になる:
 
 ```sh
 cd worker
+npm ci
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-npx wrangler@4.112.0 deploy --var "ORIGIN:$(gcloud run services describe perldoc-jp \
+npm exec --offline --no -- wrangler deploy --var "ORIGIN:$(gcloud run services describe perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')"
 ```
 
@@ -528,8 +534,9 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    出るのを防げる:
    ```sh
    cd worker
+   npm ci   # トークンを export する前に入れる (§9 の手元デプロイ参照)
    export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-   npx wrangler@4.112.0 deploy --env staging --var "ORIGIN:$ORIGIN" --var NOINDEX:1
+   npm exec --offline --no -- wrangler deploy --env staging --var "ORIGIN:$ORIGIN" --var NOINDEX:1
    ```
 3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
 4. 確認する:
@@ -578,7 +585,7 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
 5. cutover 後に片付ける (残すと Workers の枠を無駄に使う)。Custom Domain が
    Cloudflare 側に残っていたら合わせて外す:
    ```sh
-   npx wrangler@4.112.0 delete --env staging
+   npm exec --offline --no -- wrangler delete --env staging
    ```
 
 www/new の Redirect Rule は本番のホスト名にしか書けないため、この段階では確認できない。
@@ -592,7 +599,7 @@ cutover 時に確かめる。
 3. 本番の Worker をデプロイする (`--env` なし):
    ```sh
    cd worker
-   npx wrangler@4.112.0 deploy --var "ORIGIN:$ORIGIN"
+   npm exec --offline --no -- wrangler deploy --var "ORIGIN:$ORIGIN"
    ```
 4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
    登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる

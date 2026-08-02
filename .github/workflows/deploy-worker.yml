@@ -34,8 +34,20 @@ jobs:
         working-directory: worker
         run: node --test
 
-      # cloudflare/wrangler-action は使わず npx でバージョンを固定して呼ぶ。
-      # ピン留めが必要な外部 action を増やさないため
+      # cloudflare/wrangler-action は使わず npm で入れて呼ぶ。ピン留めが必要な
+      # 外部 action を増やさないため。
+      #
+      # インストールは Cloudflare API トークンを持たない step で行う。
+      # npx --yes wrangler@<ver> の形はトップレベルしか固定できず、依存グラフの
+      # 奥 (wrangler → miniflare → sharp → detect-libc / semver) には semver
+      # range が残る。sharp は install フックでその range 越しのコードを実行する
+      # ため、トークンを env に置いたまま install すると、依存の乗っ取りが
+      # そのままトークンの奪取になる。この workflow が外部 action を
+      # コミット SHA に固定しているのと同じ理由。
+      - name: Install wrangler
+        working-directory: worker
+        run: npm ci
+
       - name: Deploy
         working-directory: worker
         env:
@@ -47,4 +59,6 @@ jobs:
           # 空の ORIGIN でデプロイすると Worker が全リクエストで例外を投げるので、
           # 変数の設定漏れはここで落とす
           test -n "$CLOUD_RUN_URL"
-          npx --yes wrangler@4.112.0 deploy --var "ORIGIN:$CLOUD_RUN_URL"
+          # --offline で、この step がレジストリに触れない (= 追加の
+          # インストールが走らない) ことを保証する
+          npm exec --offline --no -- wrangler deploy --var "ORIGIN:$CLOUD_RUN_URL"
