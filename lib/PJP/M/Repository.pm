@@ -100,7 +100,17 @@ sub commit_events {
                           ($status eq 'D' ? (deleted => 1) : ()),
                          };
       }
-      close $git_fh;
+      # close はパイプの wait を兼ね、子プロセスの終了状態が $? に入る。
+      # git log が途中で死んでも読み取りループは EOF と区別できないため、
+      # ここで検査しないと不完全なイベント列が data/years.pl / recent feed に
+      # なり、自動コミットで master に恒久化する。子の異常終了だけが原因なら
+      # close は $! を 0 にする (perldoc -f close)。list 形式の pipe open は
+      # exec 失敗を open 時点で検出できず、それもここで顕在化する
+      unless (close $git_fh) {
+          die "Cannot read git log output from $assets_dir$repos: $!" if $!;
+          die "git log failed in $assets_dir$repos: "
+              . ($? & 127 ? 'killed by signal ' . ($? & 127) : 'exit status ' . ($? >> 8));
+      }
   }
   # 日付の降順。同時刻は path・author で締めて git の出力順に依存させない
   @events = sort {
