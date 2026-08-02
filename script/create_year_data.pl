@@ -39,8 +39,11 @@ sub main {
     # 打ち切らずに 1 回の git log -1 でまとめて取ると、翌年に再修正された
     # ファイルは最新コミット (翌年) の日付だけが返り、ターゲット年の記録から
     # 消えてしまう (VPS が毎日の実行で年末時点の状態を凍結していたのと
-    # 同じ結果になるよう、年内最後のコミットを別窓で取る)
-    my $updates = PJP::M::Repository->recent_data($pjp, $since, $until);
+    # 同じ結果になるよう、年内最後のコミットを別窓で取る)。
+    # git の --since / --until は両端を含むので、2 窓を [since, until) と
+    # [until, ) の半開区間にしないと元日 00:00:00 ちょうどのコミットが
+    # 両方に入り、commit_count_all が二重に加算される
+    my $updates = PJP::M::Repository->recent_data($pjp, $since, $until - 1);
     push @$updates, @{ PJP::M::Repository->recent_data($pjp, $until) };
     create_file($updates, $year, PJP::M::Repository->current_paths($pjp));
     update_pod_update_time($pjp, $updates);

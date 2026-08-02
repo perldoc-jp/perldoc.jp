@@ -84,6 +84,44 @@ subtest '削除された翻訳は current_paths から消える' => sub {
         '2025 年窓の再導出からは削除済みのものが落ちる (seed 保持が必要な理由)';
 };
 
+subtest '--date=iso-local が committer のオフセットを TZ に揃える' => sub {
+    # 負のオフセットのコミットを足す。--date=iso のままだと壁時計が
+    # 00:00:00 のまま出て、JST の 16:00:00 と 16 時間ずれる
+    make_path("$repo/docs/modules/Baz-1.00");
+    write_file("$repo/docs/modules/Baz-1.00/Baz.pod", "=head1 Baz\n");
+    commit_at('2026-06-15T00:00:00-0700', 'translate Baz from another timezone');
+
+    local $ENV{TZ} = 'Asia/Tokyo';
+    my $since   = Time::Piece->strptime('2026-01-01 00:00:00', '%Y-%m-%d %H:%M:%S');
+    my $updates = PJP::M::Repository->recent_data($c, $since);
+    my ($baz)   = grep { $_->{path} eq 'docs/modules/Baz-1.00/Baz.pod' } @$updates;
+    ok $baz, 'Baz のエントリが取れる';
+    is $baz->{date}, '2026-06-15 16:00:00', 'JST に変換された壁時計で記録される';
+};
+
+subtest '年境界のコミットが 2 つの窓に二重に入らない' => sub {
+    # git の --since / --until は両端を含むので、create_year_data.pl が使う
+    # 2 窓を [since, until) と [until, ) の半開区間にしないと、元日 00:00:00
+    # ちょうどのコミットが両方に出て commit_count_all が二重加算される
+    local $ENV{TZ} = 'Asia/Tokyo';
+    make_path("$repo/docs/modules/Boundary-1.00");
+    write_file("$repo/docs/modules/Boundary-1.00/Boundary.pod", "=head1 Boundary\n");
+    commit_at('2027-01-01T00:00:00+0900', 'commit exactly at the year boundary');
+
+    my $since = Time::Piece->strptime('2026-01-01 00:00:00', '%Y-%m-%d %H:%M:%S');
+    my $until = Time::Piece->strptime('2027-01-01 00:00:00', '%Y-%m-%d %H:%M:%S');
+    my $path  = 'docs/modules/Boundary-1.00/Boundary.pod';
+
+    my $closed = PJP::M::Repository->recent_data($c, $since, $until);
+    my $after  = PJP::M::Repository->recent_data($c, $until);
+    is scalar(grep { $_->{path} eq $path } @$closed, @$after), 2,
+        '両端を含む窓では境界のコミットが 2 回現れる (これが二重加算の入力)';
+
+    my $half = PJP::M::Repository->recent_data($c, $since, $until - 1);
+    is scalar(grep { $_->{path} eq $path } @$half, @$after), 1,
+        '半開区間なら 1 回だけ現れる';
+};
+
 subtest 'rename された翻訳も旧 path は current_paths から消える' => sub {
     rename "$repo/docs/modules/Foo-1.00", "$repo/docs/modules/Foo-2.00" or die $!;
     commit_at('2026-04-01T12:00:00+0900', 'rename Foo');

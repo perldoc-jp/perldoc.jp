@@ -55,8 +55,12 @@ sub recent_data {
       my ($repos, $file) = ($f->{repos}, $f->{file});
       # ファイル名は translation リポジトリ由来の外部入力なので、シェルを
       # 経由せず list 形式で exec する。'--' でオプション解釈も遮断する
+      # --date=iso はコミットに記録された committer 自身のオフセットで出すため、
+      # 下でオフセットを捨てるとタイムゾーンの違う値が同じ壁時計として混ざる
+      # (-0700 のコミットは JST より 16 時間前倒しで記録される)。--date=iso-local
+      # なら TZ (Asia/Tokyo) に変換した値が出るので、以降を JST として扱える
       open my $git_fh, '-|', 'git', '-C', "$assets_dir$repos",
-          'log', '-1', '--date=iso', '--pretty=%cd -- %an', "--since=$date",
+          'log', '-1', '--date=iso-local', '--pretty=%cd -- %an', "--since=$date",
           ($until ? ("--until=$until") : ()), '--', $file
           or die "Cannot run git: $!";
       my $git = do { local $/; <$git_fh> };
@@ -69,8 +73,8 @@ sub recent_data {
       # decode_utf8 の既定動作で置換文字に倒し、単一コミットの文字化けで
       # databuild 全体が die しないようにする
       $git = Encode::decode_utf8($git);
-      # --date=iso はコミットに記録された committer 自身のオフセットを
-      # そのまま出すため、負のオフセット (-0700 など) も受け付ける
+      # --date=iso-local は TZ に応じたオフセットを出す。TZ=Asia/Tokyo なら
+      # 常に +0900 だが、TZ 未設定の手元実行では負のオフセットにもなりうる
       my ($date, $time, $author) = $git =~m{^(\d{4}-\d{2}-\d{2})( \d{2}:\d{2}:\d{2}) [-+]\d{4} -- (.+)$} or die $git;
       if (not $uniq{$date . $time}{$file}++) {
           my ($name, $in) = _file2name($f->{rel});
