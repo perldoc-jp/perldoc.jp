@@ -28,8 +28,14 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   壁時計・ファイルの mtime・DB の行順 (インデックスの走査順で変わる) を
   結果に混ぜない。同じ入力からのビルドが同じバイト列になることで、アプリ
   だけの変更やベースイメージ更新で公開 JSON や feed の中身が動かない。
-  版の選択は `PJP::M::PodFile` の `_version` / `get_latest` に一本化されて
-  いて、`static/docs.json` もこれに従う (= アプリが表示する版と常に一致する)。
+  版の選択は `PJP::M::PodFile` の `_compare_version` / `get_latest` に一本化
+  されていて、`static/docs.json` もこれに従う (= アプリが表示する版と常に
+  一致する)。feed と年次統計の入力になる翻訳イベントは
+  `PJP::M::Repository->commit_events` が git log の全走査 1 回で列挙する。
+  現存ファイルごとの `git log -- <path>` を使わないのは、削除・rename された
+  翻訳が見えないことに加え、translation が 2023 年に複数リポジトリを
+  subtree merge で寄せ集めた経緯により、merge をまたぐ path の履歴が merge
+  コミットに簡約されて翻訳者でなく merge 実行者が観測されてしまうため。
 - 翻訳の diff (`/docs/*/diff`) はキャッシュせず都度計算する。GNU diff の
   外部コマンド化 (`PJP::HTMLDiff`) により perlfunc.pod 級の最悪ケースでも
   数秒以内に収まる。クエリ付き GET のため Cloudflare にはキャッシュされず
@@ -242,7 +248,7 @@ merge するまで GitHub Actions からはデプロイできない。cutover �
 master へ merge する前の cutover はこの手順で行う。使うのは操作者自身の gcloud
 認証情報で、デプロイ用 SA (§5) は経由しない。
 
-事前に `data/years.pl` が過去年 (2013〜) を含む現物になっていることを確認する。
+事前に `data/years.pl` が過去年 (2002〜) を含む現物になっていることを確認する。
 `.dockerignore` に含まれないため作業ツリーの内容がそのままイメージに焼き込まれ、
 databuild はそこへ前年+当年を累積マージする (「運用」の最後の項目を参照)。
 
@@ -277,21 +283,11 @@ docker buildx build \
 - push したイメージを Cloud Run が受け付けない場合は `--provenance=false` を足す
   (buildx が既定で付ける attestation により manifest が image index になるため)。
 
-本番同等の FS 制約で起動確認してからデプロイする (deploy.yml の smoke test と同じ):
+本番同等の FS 制約で起動確認してからデプロイする (deploy.yml / test.yml の
+smoke test と同じスクリプト):
 
 ```sh
-docker run -d --name smoke --read-only --tmpfs /tmp \
-  -e PORT=8080 -p 8080:8080 "$IMAGE:$TAG"
-for _ in $(seq 1 30); do
-  curl -fsS -o /dev/null http://127.0.0.1:8080/ && break
-  sleep 2
-done
-curl -fsS http://127.0.0.1:8080/ | grep 'perldoc.jp' > /dev/null
-curl -fsS -o /dev/null http://127.0.0.1:8080/docs/perl/perl.pod
-curl -fsS http://127.0.0.1:8080/translators | grep '年</h2>' > /dev/null
-curl -fsS http://127.0.0.1:8080/static/docs.json | grep 'Acme::Bleach' > /dev/null
-curl -fsS -o /dev/null http://127.0.0.1:8080/favicon.ico
-docker rm -f smoke
+./script/smoke-test.sh "$IMAGE:$TAG"
 ```
 
 デプロイする。フラグは §4 および deploy.yml と同一で、`--image` だけが変わる:
@@ -669,7 +665,7 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 |---|---|---|
 | `update_deployment.sh` (= `script/update.pl`) | 1日4回 (3〜6時台) | Dockerfile の databuild ステージ。translation への push で即時、加えて日次 schedule |
 | `script/create_recent.pl` | 毎時 | 同上 (databuild) |
-| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。ターゲットは前年に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
+| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
 | `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_docs_json.pl` に置き換え |
 | `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため、都度計算で足りる |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
@@ -707,18 +703,20 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
   Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
-- **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_year_data.pl <前年>`
-  で前年+当年を毎ビルド translation の git 履歴から再導出し、デプロイ成功後に
+- **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_year_data.pl`
+  で前年+当年 (対象年は translation の最新イベントから導出) を毎ビルド
+  translation の git 履歴から再導出し、デプロイ成功後に
   `commit-years-data` ジョブが再導出結果を master へ自動コミットする
   (変更がある場合のみ。実装は `.github/workflows/commit-years-data.yml`)。再導出されるのは前年+当年だけなので、この書き戻しが
   無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
   自動コミットが止まっていた場合も、対象年の翌年中に一度
   `perl script/create_year_data.pl <対象年>` の結果をコミットすれば回復する。
-  継続的な書き戻しは、翻訳ファイルの削除で再導出できなくなるエントリを
-  削除前に確定させる保険も兼ねる
+  対象年を過去に指定すればその年以降を git 履歴からまとめて再導出できる
+  (削除・rename された翻訳のイベントも `commit_events` が履歴から列挙する)
 - **`data/years.pl` の完全性 (cutover の必須前提)**: `create_year_data.pl` は
-  既存の `data/years.pl` に当年分を累積マージする方式なので、空の状態から
-  ビルドすると当年分の翻訳者統計しか含まれない。過去年 (2013〜) を含む
-  現物を **VPS から回収して git 管理下にコミットしてから** 本番切替すること。
+  既存の `data/years.pl` に対象年以降を累積マージする方式で、対象年より前は
+  seed の内容がそのまま残る。2011 年より前の統計は複数の旧リポジトリを当時の
+  システムで観測した結果の凍結で、現在の git 履歴からは再現できないため、
+  過去年を含む現物が **git 管理下にコミットされていること** が前提になる。
   ローカルビルドで `/translators` が 200 を返しても、それはページが
   描画されたことを示すだけで年次データの完全性は保証しない。
