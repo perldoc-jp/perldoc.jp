@@ -80,6 +80,26 @@ subtest 'GET /favicon.ico' => sub {
     ok $mech->header_like('Content-Type', qr{^image/}), 'Content-Type is an image';
 };
 
+subtest '静的ファイルの Cache-Control' => sub {
+    # ファイル名にダイジェストが入らないので恒久キャッシュにはしない。
+    # docs.json と rss はビルドごとに変わるため短い側に置く
+    my %expected = (
+        '/static/css/style.css'  => 'public, max-age=14400',
+        '/favicon.ico'           => 'public, max-age=14400',
+        '/static/docs.json'      => 'public, max-age=7200',
+        '/static/rss/recent.rss' => 'public, max-age=7200',
+    );
+    for my $path (sort keys %expected) {
+        $mech->get($path);
+        is $mech->status, 200, "$path is 200";
+        is $mech->response->header('Cache-Control'), $expected{$path}, "$path has expected Cache-Control";
+    }
+
+    # HTML はエッジにもブラウザにもキャッシュさせない
+    $mech->get('/');
+    is $mech->response->header('Cache-Control'), undef, 'HTML has no Cache-Control';
+};
+
 subtest 'GET /index/core' => sub {
     $mech->get('/index/core');
     is $mech->status, 200, 'status is 200';
