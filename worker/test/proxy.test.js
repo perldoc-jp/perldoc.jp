@@ -1,24 +1,25 @@
 import assert from 'node:assert/strict';
-import { after, beforeEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 
 import worker from '../src/index.js';
 
 const ORIGIN = 'https://perldoc-jp-xxxxxxxxxx.asia-northeast1.run.app';
 
-const realFetch = globalThis.fetch;
-after(() => {
-  globalThis.fetch = realFetch;
-});
-
-// fetch を差し替えて、Worker が実際に叩こうとした URL とヘッダを捕まえる
+// fetch を差し替えて、Worker が実際に叩こうとした URL とヘッダを捕まえる。
+// グローバルを触るので、テストごとに必ず元へ戻す
 let calls = [];
+let realFetch;
 beforeEach(() => {
   calls = [];
+  realFetch = globalThis.fetch;
   globalThis.fetch = (input, init) => {
     const href = input instanceof Request ? input.url : String(input);
     calls.push({ url: new URL(href), init });
     return Promise.resolve(new Response('ok', { status: 200 }));
   };
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
 });
 
 const proxy = (rawUrl, opts = {}) =>
