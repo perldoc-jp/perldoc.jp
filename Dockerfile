@@ -60,7 +60,8 @@ FROM deps AS databuild
 ENV PLACK_ENV=build
 
 # 生成スクリプトの時刻の扱いを旧 VPS (JST) と揃える。UTC のままだと
-# - create_recent.pl の RSS が localtime に固定の +0900 表記を付けるため 9 時間ズレる
+# - create_recent.pl の RSS が git log --date=iso-local 由来の日時 (TZ 依存) に
+#   固定の +0900 表記を付けるため 9 時間ズレる
 # - PJP::M::Repository の git log --since (TZ なし文字列) が UTC で解釈され、
 #   JST 元旦 00:00〜09:00 のコミットが年次統計から恒久的に漏れる
 # - 下の date +%Y が JST の年と食い違う時間帯が生じる
