@@ -41,29 +41,49 @@ sub retrieve {
         );
 }
 
-# distvname を比較可能な version 値にする。版の比較はこの関数に一本化する
-# (other_versions / get_latest / script/create_docs_json.pl が同じ選択をする)。
-# バージョンを持たない distvname (articles の README や ppc 文書等) は croak
-# せず最古扱いにする。croak だと無版の文書が混在する package (github.com) で
-# 版選択そのものができなくなる
+# distvname を比較可能な version 値にする。バージョンを持たない distvname
+# (articles の README や ppc 文書等) は croak せず最古扱いにする。croak だと
+# 無版の文書が混在する package (github.com) で版選択そのものができなくなる
 sub _version {
     my ($v) = @_;
     $v =~ s{^.+?-(?=\d)}{};
-    $v =~ s{\-RC\d+$}{}i;
+    $v =~ s{\-(?:RC\d+|TRIAL)$}{}i;
     $v =~ s{^.+?-(v[\d\.]+)$}{$1}i;
     return eval { version->new($v) } // version->new(0);
+}
+
+# final release かどうか。-RC1 等を剥がした _version は final と同値になる
+# ため、単体では最新版の選択に使えない
+sub _is_stable {
+    my ($v) = @_;
+    return 0 if $v =~ m{\-(?:RC\d+|TRIAL)$}i;
+    # 6.55_02 のような underscore 版は CPAN の developer release
+    return 0 if _version($v)->is_alpha;
+    return 1;
+}
+
+# distvname 同士の版比較 ($x の方が新しければ正)。版の比較はこの関数に
+# 一本化する (other_versions / get_latest / script/create_docs_json.pl が
+# 同じ選択をする)。同じ数値版では final release がプレリリースより新しい側に
+# 来る (Foo-1.2-RC1 より Foo-1.2 が新しい)
+sub _compare_version {
+    my ($x, $y) = @_;
+    state (%version, %stable);
+    return ($version{$x} //= _version($x)) <=> ($version{$y} //= _version($y))
+        || ($stable{$x} //= _is_stable($x)) <=> ($stable{$y} //= _is_stable($y));
 }
 
 sub other_versions {
         my ($class, $package) = @_;
         my $c = c();
         # 同値の版は path (PRIMARY KEY) でタイブレークし、並びを行順に依存させない
+        # (昇順なのは get_latest の主文書の選択規則と同じ向きに揃えるため)
         if ($package =~ m{^perl.*?delta$}) {
-            sort { _version($b->{distvname}) <=> _version($a->{distvname}) || $b->{path} cmp $a->{path} }
+            sort { _compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
               grep {$_->{package} =~ m{^perl.*?delta$}}
                 @{$c->dbh->selectall_arrayref(q{SELECT distvname, path, package FROM pod WHERE package like 'perl%delta'}, {Slice => {}})};
         } else {
-            sort { _version($b->{distvname}) <=> _version($a->{distvname}) || $b->{path} cmp $a->{path} }
+            sort { _compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
               @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
         }
 }
@@ -83,25 +103,28 @@ sub get_latest {
 	  ($where_operator, $search_package) = ('=', $package);
 	}
 
-    # 版の比較は _version に一本化する。version->parse の直書きは
+    # 版の比較は _compare_version に一本化する。version->parse の直書きは
     # HTTP-Message-6.03 のような distvname が軒並み parse 失敗で 0 になり、
     # 選択が DB の行順 (= スキーマやインデックスの走査順) に依存してしまう。
-    # 同値は distvname / package の降順で締めて、結果を常に決定的にする
-        my %sort_tmp;
-    my @versions =
-      sort  { ($sort_tmp{$b->[0]} //= _version($b->[0])) <=> ($sort_tmp{$a->[0]} //= _version($a->[0])) || $b->[0] cmp $a->[0] || $b->[1] cmp $a->[1] } @{
-        $c->dbh->selectall_arrayref( qq{SELECT distvname,package FROM pod WHERE $search_column $where_operator ?},
-            {}, $search_package )
+    # 同値の版は distvname / package の降順で締め、同一 (package, distvname) に
+    # 複数の path がある実データ (NAME が重複した dist 内の pod や articles の
+    # README 等) は path 昇順の先頭を主文書として選ぶ。path (PRIMARY KEY) まで
+    # 比較すれば全順序なので、結果は常に決定的になる
+    my ($latest) =
+      sort  {
+               _compare_version($b->{distvname}, $a->{distvname})
+            || $b->{distvname} cmp $a->{distvname}
+            || $b->{package} cmp $a->{package}
+            || $a->{path} cmp $b->{path}
+      } @{
+        $c->dbh->selectall_arrayref( qq{SELECT path, distvname, package FROM pod WHERE $search_column $where_operator ?},
+            {Slice => {}}, $search_package )
       };
-        unless (@versions) {
+        unless ($latest) {
                 debugf("Any versions not found in database: %s", $search_package);
                 return undef;
         }
-
-        my($path) = $c->dbh->selectrow_array(
-                q{SELECT path FROM pod WHERE package=? AND distvname=?}, {}, $versions[0]->[1], $versions[0]->[0]
-        );
-        return $path;
+        return $latest->{path};
 }
 
 sub get_latest_pod {

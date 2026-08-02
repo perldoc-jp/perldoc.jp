@@ -90,6 +90,42 @@ subtest '版を持たない distvname が混ざっても決定的に選べる' =
     };
 };
 
+subtest 'final release が RC / TRIAL より優先される' => sub {
+    # -RC1 を剥がした版は final と同値になるため、distvname の文字列降順だけ
+    # では RC 側が勝ってしまう組
+    with_pod_rows [
+        ['Foo', 'Foo-1.2',       'modules/Foo-1.2/Foo.pod'],
+        ['Foo', 'Foo-1.2-RC1',   'modules/Foo-1.2-RC1/Foo.pod'],
+        ['Foo', 'Foo-1.2-TRIAL', 'modules/Foo-1.2-TRIAL/Foo.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest('Foo'), 'modules/Foo-1.2/Foo.pod',
+            '同じ数値版なら final が最新になる';
+        is [map { $_->{distvname} } PJP::M::PodFile->other_versions('Foo')]->[0],
+            'Foo-1.2', 'other_versions の先頭も final';
+    };
+    with_pod_rows [
+        ['Foo', 'Foo-1.2-RC1', 'modules/Foo-1.2-RC1/Foo.pod'],
+        ['Foo', 'Foo-1.3-RC1', 'modules/Foo-1.3-RC1/Foo.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest('Foo'), 'modules/Foo-1.3-RC1/Foo.pod',
+            'プレリリースしか無ければ新しいプレリリースが選ばれる';
+    };
+};
+
+subtest '同一 (package, distvname) の複数 path は昇順の先頭が主文書' => sub {
+    # 実データ: POE-0.26 の POE/Loop/*.pod は原文の NAME がすべて
+    # POE::Loop::Event のままで、5 つの path が同じ (package, distvname) を持つ
+    with_pod_rows [
+        ['POE::Loop::Event', 'POE-0.26', 'modules/POE-0.26/POE/Loop/Event.pod'],
+        ['POE::Loop::Event', 'POE-0.26', 'modules/POE-0.26/POE/Loop/Gtk.pod'],
+        ['POE::Loop::Event', 'POE-0.26', 'modules/POE-0.26/POE/Loop/Select.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest('POE::Loop::Event'),
+            'modules/POE-0.26/POE/Loop/Event.pod',
+            'path 昇順の先頭が返り、挿入順に依存しない';
+    };
+};
+
 subtest 'perldelta は最新の perl の delta に解決される' => sub {
     with_pod_rows [
         ['perl581delta',  '5.10.0', 'perl/5.10.0/perl581delta.pod'],
@@ -118,8 +154,19 @@ subtest '_version: distvname の正規化' => sub {
     ok $v->('libwww-perl-5.836') == version->new('5.836'), '複数ハイフンの dist 名も剥がす';
     ok $v->('Foo-Bar-v1.2.3') == version->new('v1.2.3'), 'v プレフィクス付きの版';
     ok $v->('Foo-1.2-RC1') == version->new('1.2'), 'RC サフィックスを剥がす';
+    ok $v->('Foo-1.2-TRIAL') == version->new('1.2'), 'TRIAL サフィックスを剥がす';
     ok $v->('README') == version->new(0), '無版は最古 (0) 扱いで croak しない';
     ok $v->('BerkeleyDB-Lite-1_10') == version->new(0), 'parse できない表記も 0 扱い';
+};
+
+subtest '_is_stable: プレリリース判定' => sub {
+    my $s = \&PJP::M::PodFile::_is_stable;
+    ok $s->('HTTP-Message-6.03'), 'final release';
+    ok !$s->('Foo-1.2-RC1'), 'RC';
+    ok !$s->('Foo-1.2-TRIAL'), 'TRIAL';
+    ok !$s->('ExtUtils-MakeMaker-6.55_02'), 'underscore 版は developer release';
+    ok $s->('5.42.0'), 'perl コアの distvname';
+    ok $s->('README'), '無版は stable 扱い (版比較には version 0 が先に効く)';
 };
 
 done_testing;
