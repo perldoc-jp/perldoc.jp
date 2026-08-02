@@ -73,6 +73,27 @@ sub _compare_version {
         || ($stable{$x} //= _is_stable($x)) <=> ($stable{$y} //= _is_stable($y));
 }
 
+# 候補行の集合から最新の 1 行を選ぶ (無ければ undef)。行は path / distvname /
+# package を持つこと。「最新」の選択はここに一本化する (get_latest /
+# get_latest_pod / Dispatcher の package 再解釈が同じ規則を通る)。SQL の
+# ORDER BY distvname は文字列順で、perl コアの 5.6.1 が 5.42.0 に、
+# libwww-perl-5.836 が HTTP-Message-6.03 に勝ってしまうため、最新の選択には
+# 使えない。同値の版は distvname / package の降順で締め、同一 (package,
+# distvname) に複数の path がある実データ (NAME が重複した dist 内の pod や
+# articles の README 等) は path 昇順の先頭を主文書として選ぶ。path
+# (PRIMARY KEY) まで比較すれば全順序なので、結果は常に決定的になる
+sub pick_latest {
+    my ($class, $rows) = @_;
+    my ($latest) =
+      sort  {
+               _compare_version($b->{distvname}, $a->{distvname})
+            || $b->{distvname} cmp $a->{distvname}
+            || $b->{package} cmp $a->{package}
+            || $a->{path} cmp $b->{path}
+      } @$rows;
+    return $latest;
+}
+
 sub other_versions {
         my ($class, $package) = @_;
         my $c = c();
@@ -103,23 +124,10 @@ sub get_latest {
 	  ($where_operator, $search_package) = ('=', $package);
 	}
 
-    # 版の比較は _compare_version に一本化する。version->parse の直書きは
-    # HTTP-Message-6.03 のような distvname が軒並み parse 失敗で 0 になり、
-    # 選択が DB の行順 (= スキーマやインデックスの走査順) に依存してしまう。
-    # 同値の版は distvname / package の降順で締め、同一 (package, distvname) に
-    # 複数の path がある実データ (NAME が重複した dist 内の pod や articles の
-    # README 等) は path 昇順の先頭を主文書として選ぶ。path (PRIMARY KEY) まで
-    # 比較すれば全順序なので、結果は常に決定的になる
-    my ($latest) =
-      sort  {
-               _compare_version($b->{distvname}, $a->{distvname})
-            || $b->{distvname} cmp $a->{distvname}
-            || $b->{package} cmp $a->{package}
-            || $a->{path} cmp $b->{path}
-      } @{
+    my $latest = $class->pick_latest(
         $c->dbh->selectall_arrayref( qq{SELECT path, distvname, package FROM pod WHERE $search_column $where_operator ?},
             {Slice => {}}, $search_package )
-      };
+    );
         unless ($latest) {
                 debugf("Any versions not found in database: %s", $search_package);
                 return undef;
@@ -142,16 +150,15 @@ sub get_latest_pod {
     }
 
     my $c = c();
-    my $pod = $c->dbh->single('pod',
-                              {
-                               package => $package,
-                               path    => {'like' => '%' . $pod_path},
-                              },
-                              {
-                               order_by => ['distvname desc'],
-                              }
-                             );
-    return $pod;
+    # 同じ pod の候補は dist を跨ぐ (HTTP/Message.pod は libwww-perl 5.x と
+    # HTTP-Message 6.x の両方にある)。候補は軽いカラムだけで集めて
+    # pick_latest で選び、選ばれた 1 行だけを retrieve で引き直す
+    # (html を候補の行数ぶん読まないため)
+    my $rows = $c->dbh->selectall_arrayref(
+        q{SELECT path, distvname, package FROM pod WHERE package = ? AND path LIKE ?},
+        {Slice => {}}, $package, '%' . $pod_path);
+    my $latest = $class->pick_latest($rows) or return undef;
+    return $class->retrieve($latest->{path});
 }
 
 sub search_by_distvname {
@@ -164,6 +171,9 @@ sub search_by_packages {
         my ($class, $packages) = @_;
         my $c = c();
         my $place_holder = join ',', (('?') x @$packages);
+        # ORDER BY は package ごとのグルーピングと決定的な並びのため。
+        # distvname の文字列降順は版の新旧を表さないので、最新の 1 行を
+        # 選ぶ用途では pick_latest を通すこと
         @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description, distvname FROM pod WHERE package in ($place_holder) ORDER BY package, distvname desc}, {Slice => {}}, @$packages) };
 }
 

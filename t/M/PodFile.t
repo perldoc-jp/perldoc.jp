@@ -7,7 +7,8 @@ use PJP;
 use PJP::DBI;
 use PJP::M::PodFile;
 
-# 版選択 (_version / get_latest / other_versions) の契約を fixture で検証する。
+# 版選択 (_version / pick_latest / get_latest / get_latest_pod / other_versions)
+# の契約を fixture で検証する。
 # 要点は「選択が pod テーブルの行順に依存しない」こと。実 DB の行順は INSERT 順や
 # スキーマ (インデックスの走査順) で変わるため、ここが曖昧だと、アプリが表示する
 # 版と、get_latest に従う static/docs.json の両方がスキーマ変更で黙って古い版に
@@ -144,6 +145,57 @@ subtest '存在しない package は undef' => sub {
         ['perlapio', '5.42.0', 'perl/5.42.0/perlapio.pod'],
     ], sub {
         is +PJP::M::PodFile->get_latest('No::Such::Module'), undef, 'undef が返る';
+    };
+};
+
+subtest 'get_latest_pod: 版なし URL は数値版の最新に解決される (1 引数)' => sub {
+    # GET /docs/perl/perlapio.pod の経路。ORDER BY distvname (文字列降順) だと
+    # 5.6.1 が選ばれてしまう組
+    with_pod_rows [
+        ['perlapio', '5.6.1',  'perl/5.6.1/perlapio.pod'],
+        ['perlapio', '5.28.0', 'perl/5.28.0/perlapio.pod'],
+        ['perlapio', '5.42.0', 'perl/5.42.0/perlapio.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest_pod('perlapio.pod')->{path},
+            'perl/5.42.0/perlapio.pod',
+            '数値版の最新が選ばれる (辞書順最大の 5.6.1 ではない)';
+    };
+};
+
+subtest 'get_latest_pod: dist 名を跨いだ後継が選ばれる (2 引数)' => sub {
+    # GET /docs/modules/HTTP-Message/HTTP/Message.pod のような版なし URL で
+    # retrieve が空振りしたときのフォールバック経路
+    with_pod_rows [
+        ['HTTP::Message', 'HTTP-Message-6.03', 'modules/HTTP-Message-6.03/HTTP/Message.pod'],
+        ['HTTP::Message', 'libwww-perl-5.836', 'modules/libwww-perl-5.836/HTTP/Message.pod'],
+        ['HTTP::Message', 'libwww-perl-5.813', 'modules/libwww-perl-5.813/HTTP/Message.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest_pod('HTTP-Message', 'HTTP/Message.pod')->{path},
+            'modules/HTTP-Message-6.03/HTTP/Message.pod',
+            '6.03 > 5.836 (dist 名の辞書順に依らない)';
+    };
+};
+
+subtest 'get_latest_pod: 候補が無ければ undef' => sub {
+    with_pod_rows [
+        ['perlapio', '5.42.0', 'perl/5.42.0/perlapio.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest_pod('no-such.pod'), undef, 'undef が返る';
+    };
+};
+
+subtest 'package 再解釈の最新 dist は pick_latest で選ぶ' => sub {
+    # GET /docs/modules/{distvname} で distvname 一致が空振りし、package 名と
+    # して再解釈する経路 (Dispatcher) の合成。search_by_packages の並びは
+    # 文字列降順なので、先頭行をそのまま最新とみなしてはならない
+    with_pod_rows [
+        ['HTTP::Message', 'HTTP-Message-6.03', 'modules/HTTP-Message-6.03/HTTP/Message.pod'],
+        ['HTTP::Message', 'libwww-perl-5.836', 'modules/libwww-perl-5.836/HTTP/Message.pod'],
+    ], sub {
+        my @cands = PJP::M::PodFile->search_by_packages(['HTTP::Message']);
+        is +PJP::M::PodFile->pick_latest(\@cands)->{distvname},
+            'HTTP-Message-6.03',
+            '文字列順の先頭 (libwww-perl-5.836) ではなく数値版の最新';
     };
 };
 

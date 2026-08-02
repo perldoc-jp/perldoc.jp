@@ -224,8 +224,11 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
     if (not @rows) {
         my $package = $distvname;
         $package =~s{-}{::}g;
-        if (@rows = PJP::M::PodFile->search_by_packages([$package])) {
-            @rows = PJP::M::PodFile->search_by_distvname($rows[0]->{distvname});
+        # search_by_packages の並び (distvname の文字列降順) は版の新旧を
+        # 表さないため、この package の最新の dist は pick_latest で選ぶ
+        if (my @cands = PJP::M::PodFile->search_by_packages([$package])) {
+            my $latest = PJP::M::PodFile->pick_latest(\@cands);
+            @rows = PJP::M::PodFile->search_by_distvname($latest->{distvname});
         }
         if (not @rows) {
             warnf("Unknonwn distvname: $distvname");
