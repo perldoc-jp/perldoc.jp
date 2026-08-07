@@ -66,8 +66,8 @@ ENV TZ=Asia/Tokyo
 # translation の取得コミットを build-arg で指定する。
 # CI が HEAD の SHA を渡すことで、translation が更新されたときだけ
 # このレイヤのキャッシュが無効化される。
-# アプリのソース (COPY . .) より前に置いているので、ソースだけの変更では
-# clone が再実行されない。
+# アプリのソースより前に置いているので、ソースだけの変更では clone が
+# 再実行されない。
 ARG TRANSLATION_COMMIT=master
 
 # create_recent.pl / create_year_data.pl が git log を使うため、
@@ -75,9 +75,22 @@ ARG TRANSLATION_COMMIT=master
 RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git assets/translation && \
   git -C assets/translation checkout --quiet ${TRANSLATION_COMMIT}
 
-COPY . .
+# 生成に要るものだけを持ち込む。COPY . . にすると、データ生成が一切読まない
+# ファイル (tmpl/ の 1 行、CSS、t/ のテスト) を触っただけでこのレイヤが
+# 無効化され、update.pl の pod2html (翻訳 2500 ファイル) から VACUUM までが
+# まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (deploy.yml) で
+# 2 回起きる。
+# 変更頻度の低い順に重ねる。data/ は years.pl が create_year_data.pl の
+# seed なので入力に含める
+COPY sql ./sql
+COPY config ./config
+COPY lib ./lib
+COPY script ./script
+COPY data ./data
 
-RUN mkdir -p db && \
+# 生成物の書き出し先。static/ の中身 (css 等) は生成に要らないので入れず、
+# runtime と test が context から重ねる
+RUN mkdir -p db static/rss && \
   sqlite3 db/perldocjp.master.db < sql/sqlite.sql && \
   cp db/perldocjp.master.db db/perldocjp.db
 
@@ -112,6 +125,14 @@ RUN rm -rf assets/translation/.git db/perldocjp.master.db
 # runtime が /tests-passed を COPY して依存するため、このステージを通らずに
 # runtime イメージが完成することは構造的にない。
 FROM databuild AS test
+
+# アプリを起動して叩くために要るものを足す。data/ は context から重ねない。
+# context の data/years.pl は seed であり、databuild が再導出した現物を
+# 上書きしてしまうため (テストは配信するものを検証する)
+COPY t ./t
+COPY tmpl ./tmpl
+COPY static ./static
+COPY app.psgi toc.txt toc-var.txt ./
 
 RUN prove -lr t/ && touch /tests-passed
 
