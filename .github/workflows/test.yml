@@ -38,8 +38,14 @@ jobs:
   # した先にあり、上の test ジョブでは一切ビルドされない。master へマージして
   # 初めて Deploy で失敗すると手戻りが大きいため、PR でも runtime target を
   # ビルドして smoke test まで回す。translation は deploy.yml と同じく HEAD の
-  # SHA に固定し、キャッシュの無効化を translation の更新に連動させる
+  # SHA に固定し、キャッシュの無効化を translation の更新に連動させる。
+  #
+  # push では回さない。master への push では deploy.yml が同じ runtime を
+  # ビルドして同じ smoke test を回すため、ここで回すと同一イメージを 2 回
+  # (しかも互いに読めない別のキャッシュで) 作ることになる。gha キャッシュへの
+  # 書き込みは deploy.yml が引き継ぐ
   runtime-test:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -57,7 +63,8 @@ jobs:
 
     # キャッシュの scope を app イメージと分け、mode=max の書き込みが互いの
     # レイヤを追い出さないようにする。deploy.yml の registry cache は WIF の
-    # 認証を要するため PR (fork を含む) からは読めず、ここでは使わない
+    # 認証を要するため PR (fork を含む) からは読めず、ここでは使わない。
+    # 書き込みは deploy.yml (master push) が行うのでここは読むだけ
     - name: Build runtime image
       uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
@@ -68,7 +75,6 @@ jobs:
         build-args: |
           TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
         cache-from: type=gha,scope=runtime
-        cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max,scope=runtime' || '' }}
 
     - name: Smoke test image
       run: ./script/smoke-test.sh perldocjp-runtime:latest

@@ -81,7 +81,14 @@ jobs:
           build-args: |
             TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+          # registry cache は次のデプロイと years-export のため、gha cache は
+          # PR の runtime-test のために書く (PR からは WIF が要る registry を
+          # 読めない)。runtime-test は push では回らないので、gha の
+          # scope=runtime を書けるのはこのジョブだけになる。schedule や
+          # repository_dispatch のビルドでも温まる
+          cache-to: |
+            type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+            type=gha,mode=max,scope=runtime
 
       # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
       # databuild の prove (PLACK_ENV=build) では検証されないため、push した
