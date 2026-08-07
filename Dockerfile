@@ -97,9 +97,6 @@ RUN perl script/create_year_data.pl
 RUN perl script/create_docs_json.pl
 RUN perl script/create_index_data.pl
 
-# create_year_data.pl が master に書いた update_time を配信用 DB に反映する
-RUN cp db/perldocjp.master.db db/perldocjp.db
-
 # ページサイズ変更を VACUUM で反映しつつ断片化を解消し、
 # ANALYZE でプランナ統計を焼き込む
 RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
