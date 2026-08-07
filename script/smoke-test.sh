@@ -57,10 +57,3 @@ curl -fsS -o /dev/null "$BASE/index/variable"
 # test ステージの prove が先に落ちる)
 curl -fsS "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod" \
   | grep "<table class='diff'>" > /dev/null
-# perlfunc に焼き込まれた組み込み関数リンクを検出する。@REGEXP が空の
-# まま HTML を生成すると、リテラル置換分の 9 件程度しか残らない
-# (databuild 中の functions.txt の有無に依存し、prove では捕まらない)
-links=$(curl -fsS "$BASE/docs/perl/5.36.0/perlfunc.pod" \
-  | grep -o 'href="/func/[a-z]*"' | sort -u | wc -l)
-echo "perlfunc の /func/ リンク数: $links"
-test "$links" -gt 100

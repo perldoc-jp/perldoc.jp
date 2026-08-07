@@ -187,6 +187,15 @@ sub search_by_packages_like {
 sub generate {
         my ($class, $c) = @_;
 
+        # perlfunc.pod の HTML には組み込み関数へのリンクを焼き込む (下の
+        # generate_one_file)。一覧が空のまま生成すると、リテラル置換分だけが
+        # 残った HTML が黙ってイメージに入る。ファイル単位の eval が生成中の
+        # die を warn に落とすため、原因はここで検査しないと終了コードに出ない。
+        # script/update.pl は PJP::M::BuiltinFunction->generate を先に実行し、
+        # その最後で functions.txt を読み直すので、この時点では埋まっている
+        die 'PJP::M::BuiltinFunction has no function list; run its generate() first'
+            unless @PJP::M::BuiltinFunction::REGEXP;
+
         my $txn = $c->dbh_master->txn_scope();
         $c->dbh_master->do(q{DELETE FROM pod});
         my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')));
