@@ -13,6 +13,7 @@ use lib qw(./lib);
 use PJP;
 use PJP::M::Index::Module;
 use PJP::M::Index::Article;
+use PJP::M::Repository;
 
 local $Data::Dumper::Terse    = 1;
 local $Data::Dumper::Indent   = 1;
@@ -36,7 +37,30 @@ write_data_pl('data/index-module.pl', { index => \@modules });
 
 my @articles = PJP::M::Index::Article->generate($pjp);
 die "PJP::M::Index::Article->generate returned no entries" unless @articles;
-write_data_pl('data/index-article.pl', { index => \@articles });
+write_data_pl('data/index-article.pl', { index => [sort_by_updated_at($pjp, \@articles)] });
+
+# その他の翻訳の一覧を「更新が新しい順」に並べる。
+#
+# 順序の入力は翻訳イベントの日付にする。ファイルの mtime は、生成が cron から
+# イメージビルドに移って translation を毎回 clone するようになった時点で
+# 「更新が新しい順」を表さなくなった (全ファイルが checkout 時刻に潰れ、
+# 同時刻どうしは readdir 順 = 環境依存)。
+#
+# distvname は articles/ 以下の相対 path なので、docs/ を足すと commit_events が
+# 返す path 形式になる。イベントの無い path (履歴が翻訳文書の構成に合わない等) は
+# 日付なしとして末尾に送り、同順は distvname で締めて全順序にする。
+sub sort_by_updated_at {
+    my ($c, $articles) = @_;
+
+    my %updated_at;
+    # commit_events は日付の降順なので、path ごとの初出が最新イベント
+    my $events = PJP::M::Repository->commit_events($c);
+    $updated_at{$_->{path}} //= $_->{date} for @$events;
+
+    return map  { $_->[1] }
+           sort { $b->[0] cmp $a->[0] || $a->[1]{distvname} cmp $b->[1]{distvname} }
+           map  { [ $updated_at{"docs/articles/$_->{distvname}"} // '', $_ ] } @$articles;
+}
 
 # 先頭の + は do がブロックと誤解釈しないための明示。
 sub write_data_pl {

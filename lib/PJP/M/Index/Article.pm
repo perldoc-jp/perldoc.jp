@@ -72,8 +72,14 @@ sub _get_files {
 sub _generate {
     my ($class, $c, $files) = @_;
 
+    # 並びは file の path 順で確定させる。表示順 (更新が新しい順) は
+    # script/create_index_data.pl が翻訳イベントの日付で付け直すので、
+    # ここでは readdir の列挙順を持ち込まないことだけを守る。
+    # mtime で並べていたのをやめたのは、fresh clone では全ファイルの mtime が
+    # checkout 時刻に潰れて「更新が新しい順」の意味を失い、同時刻どうしの並びが
+    # 環境依存の readdir 順に落ちて生成物が非決定的になるため
     my @mods;
-    foreach my $repo_file (sort {-M $a->[1] <=> -M $b->[1]} @$files) {
+    foreach my $repo_file (sort { $a->[1] cmp $b->[1] } @$files) {
         my ($repository, $file) = @$repo_file;
         my $is_pod;
         my ($row, $package, $dist, $distvname, $abstract);
