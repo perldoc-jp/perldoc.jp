@@ -279,7 +279,7 @@ subtest 'git log が途中で失敗したらビルドを止める' => sub {
     my $bin = fake_git_bin('exit 3');
     local $ENV{PATH} = "$bin:$ENV{PATH}";
     like dies { PJP::M::Repository->commit_events($c) },
-        qr/git log failed .+ exit status 3/,
+        qr/git .+ exited with status 3/,
         '部分出力の後の異常終了で die する';
 };
 
@@ -288,7 +288,7 @@ subtest 'git log がシグナルで死んでもビルドを止める' => sub {
     my $bin = fake_git_bin('kill -9 $$');
     local $ENV{PATH} = "$bin:$ENV{PATH}";
     like dies { PJP::M::Repository->commit_events($c) },
-        qr/git log failed .+ killed by signal 9/,
+        qr/git .+ was killed by signal 9/,
         'シグナル死で die する';
 };
 

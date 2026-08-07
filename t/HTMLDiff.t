@@ -2,7 +2,22 @@ use v5.38;
 use utf8;
 use Test2::V0;
 
+use File::Temp qw/tempdir/;
 use PJP::HTMLDiff;
+
+# 正常な hunk を 1 つ出力してから指定の死に方をする diff ラッパを作り、
+# その置き場所を返す。呼び出し側が PATH の先頭に差し込む
+sub fake_diff_bin {
+    my ($tail) = @_;
+    my $bin = tempdir(CLEANUP => 1);
+    open my $fh, '>', "$bin/diff" or die $!;
+    print $fh "#!/bin/sh\n";
+    print $fh "echo '2c2'\n";
+    print $fh "$tail\n";
+    close $fh;
+    chmod 0755, "$bin/diff" or die $!;
+    return $bin;
+}
 
 subtest '同一入力なら全行 match になる' => sub {
     my $html = PJP::HTMLDiff::diff_strings_vertical("a\nb\nc\n", "a\nb\nc\n");
@@ -90,6 +105,34 @@ subtest 'c hunk 内の組み直し' => sub {
         my $html = PJP::HTMLDiff::_render_vertical(['a1', 'a2', 'a3'], ['b1'], [['c', 1, 3, 1, 1]]);
         like $html, qr{<tr class='disc_a del'><td>2</td><td></td><td>a2</td></tr>}, '余った from 行は disc_a';
         like $html, qr{<tr class='disc_a del'><td>3</td><td></td><td>a3</td></tr>}, '余りは全て出る';
+    };
+};
+
+subtest '外部 diff の異常終了を差分なしとして描画しない' => sub {
+    # 途中で死んだ diff の部分的な hunk 列をそのまま描画すると、最後の hunk 以降の
+    # 相違行がすべて match 行になった「差分がほぼ無い」ページが 200 で返る。
+    # 黙って嘘を表示するより、エラーとして扱わなければならない
+
+    subtest 'シグナル死' => sub {
+        # $? >> 8 は 0 になるため、終了コードだけを見ていると成功と区別が付かない
+        my $bin = fake_diff_bin('kill -9 $$');
+        local $ENV{PATH} = "$bin:$ENV{PATH}";
+        like dies { PJP::HTMLDiff::diff_strings_vertical("a\nb\nc\n", "a\nx\nc\n") },
+            qr/killed by signal 9/, 'die する';
+    };
+
+    subtest '実行エラー (終了コード 2 以上)' => sub {
+        my $bin = fake_diff_bin('exit 2');
+        local $ENV{PATH} = "$bin:$ENV{PATH}";
+        like dies { PJP::HTMLDiff::diff_strings_vertical("a\nb\nc\n", "a\nx\nc\n") },
+            qr/exited with status 2/, 'die する';
+    };
+
+    subtest '差分あり (終了コード 1) は正常', sub {
+        # diff(1) は差分があると 1 を返す。これをエラーにすると全ての差分表示が
+        # 落ちるので、正常扱いのままであることを固定する
+        my $html = PJP::HTMLDiff::diff_strings_vertical("a\nb\n", "a\nc\n");
+        like $html, qr{<tr class='change del'}, '差分が描画される';
     };
 };
 

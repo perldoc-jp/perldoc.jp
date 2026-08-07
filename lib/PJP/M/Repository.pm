@@ -5,6 +5,7 @@ use utf8;
 package PJP::M::Repository;
 use Encode ();
 use File::Find::Rule;
+use PJP::Util qw/read_command/;
 
 sub _assets_dir {
   my $c = shift;
@@ -84,53 +85,48 @@ sub commit_events {
       # --no-renames は rename を削除+追加の 2 イベントとして出す
       # (旧 path の実績を旧 path のまま残す)。core.quotepath=false は
       # 非 ASCII のファイル名を \xHH に崩さず生バイトで出すため
-      open my $git_fh, '-|', 'git', '-C', "$assets_dir$repos", '-c', 'core.quotepath=false',
-          'log', '--no-renames', '--date=iso-local',
-          '--pretty=format:%x01%cd%x09%an', '--name-status'
-          or die "Cannot run git: $!";
       my ($date, $author);
-      while (my $line = <$git_fh>) {
-          chomp $line;
-          next unless length $line;
-          # %an もファイル名も git 由来の非 ASCII バイト列になりうる。未 decode の
-          # ままだと Data::Dumper の Useqq がバイト単位の \xHH を吐き、config_do で
-          # 読み戻した文字列が不正なバイト列のまま後段の wide 文字列と混ざって
-          # 文字化けする
-          $line = _decode($line);
-          if ($line =~ s/^\x01//) {
-              # --date=iso-local は上で固定した TZ に変換した壁時計を出す。
-              # オフセットは捨て、以降を JST として扱う
-              ($date, $author) = $line =~ m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) [-+]\d{4}\t(.+)$} or die $line;
-              next;
-          }
-          my ($status, $file) = split /\t/, $line, 2;
-          next unless $file =~ m{\.(?:pod|html|md)$};
-          my $rel = _normalize_historical_rel($file) // next;
-          # 翻訳文書の構成に合わない path (リポジトリ直下の運用文書等) は
-          # イベントにしない
-          my ($name, $in) = eval { _file2name($rel) };
-          next unless defined $in;
-          push @events, {
-                          date    => $date,
-                          author  => $author,
-                          path    => _rel2path($rel),
-                          name    => $name,
-                          in      => $in,
-                          version => _file2version($rel),
-                          ($status eq 'D' ? (deleted => 1) : ()),
-                         };
-      }
-      # close はパイプの wait を兼ね、子プロセスの終了状態が $? に入る。
-      # git log が途中で死んでも読み取りループは EOF と区別できないため、
-      # ここで検査しないと不完全なイベント列が data/years.pl / recent feed に
-      # なり、自動コミットで master に恒久化する。子の異常終了だけが原因なら
-      # close は $! を 0 にする (perldoc -f close)。list 形式の pipe open は
-      # exec 失敗を open 時点で検出できず、それもここで顕在化する
-      unless (close $git_fh) {
-          die "Cannot read git log output from $assets_dir$repos: $!" if $!;
-          die "git log failed in $assets_dir$repos: "
-              . ($? & 127 ? 'killed by signal ' . ($? & 127) : 'exit status ' . ($? >> 8));
-      }
+      # git log が途中で死んでも読み取りループは EOF と区別できない。不完全な
+      # イベント列は data/years.pl / recent feed になり自動コミットで master に
+      # 恒久化するため、終了状態の検査は read_command に委ねる
+      read_command(
+          ['git', '-C', "$assets_dir$repos", '-c', 'core.quotepath=false',
+           'log', '--no-renames', '--date=iso-local',
+           '--pretty=format:%x01%cd%x09%an', '--name-status'],
+          sub {
+              my $line = shift;
+              chomp $line;
+              return unless length $line;
+              # %an もファイル名も git 由来の非 ASCII バイト列になりうる。未 decode の
+              # ままだと Data::Dumper の Useqq がバイト単位の \xHH を吐き、config_do で
+              # 読み戻した文字列が不正なバイト列のまま後段の wide 文字列と混ざって
+              # 文字化けする
+              $line = _decode($line);
+              if ($line =~ s/^\x01//) {
+                  # --date=iso-local は上で固定した TZ に変換した壁時計を出す。
+                  # オフセットは捨て、以降を JST として扱う
+                  ($date, $author) = $line =~ m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) [-+]\d{4}\t(.+)$} or die $line;
+                  return;
+              }
+              my ($status, $file) = split /\t/, $line, 2;
+              return unless $file =~ m{\.(?:pod|html|md)$};
+              my $rel = _normalize_historical_rel($file) // return;
+              # 翻訳文書の構成に合わない path (リポジトリ直下の運用文書等) は
+              # イベントにしない
+              my ($name, $in) = eval { _file2name($rel) };
+              return unless defined $in;
+              push @events, {
+                              date    => $date,
+                              author  => $author,
+                              path    => _rel2path($rel),
+                              name    => $name,
+                              in      => $in,
+                              version => _file2version($rel),
+                              ($status eq 'D' ? (deleted => 1) : ()),
+                             };
+              return;
+          },
+      );
   }
   # 日付の降順。同時刻・同 path のイベントは git log の出力順 (子コミットが
   # 親より先 = 新しい順) だけが真のコミット順を運ぶため、パース時の添字で

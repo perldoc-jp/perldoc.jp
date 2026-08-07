@@ -20,6 +20,7 @@ use Encode ();
 use File::Temp ();
 use Algorithm::Diff ();
 use String::Diff ();
+use PJP::Util qw/read_command/;
 
 # c hunk 内の行の組み直し (sdiff) を行う hunk サイズの上限 (片側の行数)。
 # GNU diff は連続する変更を 1 つの c hunk にまとめるため、hunk 内に埋もれた
@@ -57,21 +58,24 @@ sub _gnu_diff_hunks {
     # 混ざった場合の "Binary files differ" を防ぎ、常に行単位の diff を強制。
     # パスは File::Temp 生成で安全だが、慣例に合わせ '--' で解釈を遮断する
     local $ENV{LC_ALL} = 'C';
-    open my $fh, '-|', 'diff', '-a', '--', "$from_file", "$to_file"
-        or die "Cannot run diff: $!";
 
     my @hunks;
-    while (my $line = <$fh>) {
-        chomp $line;
-        if ($line =~ /\A(\d+)(?:,(\d+))?([adc])(\d+)(?:,(\d+))?\z/) {
-            push @hunks, [$3, $1, $2 // $1, $4, $5 // $4];
-        }
-    }
-    close $fh;
-
-    # 終了コードは 0 = 差分なし, 1 = 差分あり, 2 以上 = 実行エラー
-    my $exit = $? >> 8;
-    die "diff exited with code $exit" if $exit >= 2;
+    # 終了コードは 0 = 差分なし, 1 = 差分あり, 2 以上 = 実行エラー。
+    # 途中で死んだ diff の部分出力をそのまま hunk 列にすると、以降の相違行が
+    # すべて match として描画された「差分なし」のページが 200 で返るため、
+    # 終了状態の検査は read_command に委ねる (シグナル死も検出される)
+    read_command(
+        ['diff', '-a', '--', "$from_file", "$to_file"],
+        sub {
+            my $line = shift;
+            chomp $line;
+            if ($line =~ /\A(\d+)(?:,(\d+))?([adc])(\d+)(?:,(\d+))?\z/) {
+                push @hunks, [$3, $1, $2 // $1, $4, $5 // $4];
+            }
+            return;
+        },
+        ok_exit => [0, 1],
+    );
 
     return \@hunks;
 }
