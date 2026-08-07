@@ -4,7 +4,10 @@
 # (PR での runtime ビルド検証) が共用する。
 #
 # 使い方: script/smoke-test.sh <image>
-set -eu
+#
+# pipefail が無いと `curl | grep` の終了コードが grep のものになり、マーカーが
+# 届いた後に転送が切れた場合 (curl の 18/56) を検出できない
+set -euo pipefail
 
 IMAGE=$1
 
@@ -46,6 +49,14 @@ curl -fsS -o /dev/null "$BASE/favicon.ico"
 # (toc.txt / toc-var.txt はこの 2 ルートでしか読まれない)
 curl -fsS -o /dev/null "$BASE/index/core"
 curl -fsS -o /dev/null "$BASE/index/variable"
+# 差分表示は、外部コマンドの diff を fork し /tmp に一時ファイルを書く唯一の
+# ルート。prove は diffutils が必ず入っている databuild イメージ (slim ではない)
+# で走るため、slim の runtime で diff が引けることと、read-only FS + tmpfs の
+# /tmp に書けることは、ここでしか確かめられない。
+# 版の組は t/endpoints.t と同じものを使う (translation から失われた場合は
+# test ステージの prove が先に落ちる)
+curl -fsS "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod" \
+  | grep "<table class='diff'>" > /dev/null
 # perlfunc に焼き込まれた組み込み関数リンクを検出する。@REGEXP が空の
 # まま HTML を生成すると、リテラル置換分の 9 件程度しか残らない
 # (databuild 中の functions.txt の有無に依存し、prove では捕まらない)
