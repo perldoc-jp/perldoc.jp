@@ -44,8 +44,7 @@ RUN --mount=type=cache,target=/root/.perl-cpm \
 FROM deps AS app
 
 ENV PLACK_ENV=docker
-# make ci / make setup-data が実行する生成スクリプトを databuild と
-# 同じ TZ で動かす (詳細は databuild 側のコメントを参照)
+# コンテナの時刻表示を databuild と揃える (詳細は databuild 側のコメントを参照)
 ENV TZ=Asia/Tokyo
 
 COPY . .
@@ -59,13 +58,9 @@ FROM deps AS databuild
 
 ENV PLACK_ENV=build
 
-# 生成スクリプトの時刻の扱いを旧 VPS (JST) と揃える。PJP::M::Repository の
-# git log --date=iso-local はこの TZ に変換した壁時計を出し、オフセットを
-# 捨てた日時が全生成物の入力になる。UTC のままだと
-# - create_recent.pl の RSS が UTC の壁時計に固定の +0900 表記を付けるため
-#   9 時間ズレる
-# - JST 元旦 00:00〜09:00 のコミットが前年扱いになり、年次統計の集計年と、
-#   create_year_data.pl が最新イベントから導出する対象年の両方がズレる
+# コンテナの時刻表示を旧 VPS (JST) と揃える。翻訳イベントの日付は
+# PJP::M::Repository が自分で JST に固定するため、この ENV は生成物の内容には
+# 影響しない (ログや対話的な確認のためのもの)
 ENV TZ=Asia/Tokyo
 
 # translation の取得コミットを build-arg で指定する。

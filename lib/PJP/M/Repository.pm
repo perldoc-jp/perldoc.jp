@@ -12,6 +12,22 @@ sub _assets_dir {
   return $c->config->{'assets_dir'} || die "no assets_dir setting in config/" . $mode_name . '.pl';
 }
 
+# git の日付をどう解釈するかは全生成物 (年次統計の集計年、RSS の +0900 表記) の
+# 前提なので、このモジュールが所有する。--date=iso-local は $ENV{TZ} の壁時計を
+# 出すため、呼び出し元の環境に依存させない
+use constant TIME_ZONE => 'Asia/Tokyo';
+
+# このモジュールが返す path と author は decode 済みの文字列。git の出力と
+# readdir という別々の入口の生バイトを同じ文字列空間に写すため、境界の decode は
+# commit_events / current_paths の両方がここを通す。片方だけ生バイトのままだと、
+# 非 ASCII のファイル名で「イベントには有るが現ツリーから消えた」判定が
+# 黙って外れる。不正な UTF-8 は decode_utf8 の既定動作で置換文字に倒し、
+# 単一コミットの文字化けで databuild 全体が die しないようにする
+# (両方の入口が同じ写像を通るので、置換後も突き合わせは成立する)
+sub _decode {
+  return Encode::decode_utf8($_[0]);
+}
+
 # リポジトリ内の相対 path から、data/years.pl や recent feed が使う path 形式を
 # 組み立てる。commit_events と current_paths が同じ規則を通らないと、
 # 「イベントには有るが現ツリーから消えた」判定が黙って外れるため 1 箇所に
@@ -30,7 +46,7 @@ sub current_paths {
   my %paths;
   foreach my $repos (qw/translation/) {
       foreach my $file (File::Find::Rule->file()->name(qr/\.(pod|html|md)$/)->in("$assets_dir$repos")) {
-          my $rel = $file;
+          my $rel = _decode($file);
           $rel =~ s{^.+?assets/}{};
           $rel =~ s{^\Q$repos/\E}{};
           $paths{_rel2path($rel)} = 1;
@@ -56,6 +72,12 @@ sub commit_events {
 
   my $assets_dir = _assets_dir($c);
 
+  # --date=iso-local が出す壁時計の基準。%ENV は子プロセスに渡るので git に効く。
+  # 呼び出し元の環境に委ねると、docs/cloud-run.md が案内する手元での再導出を
+  # 非 JST のマシンで実行しただけで全イベントの日付がずれ、年境界のコミットが
+  # 別の年に落ちた data/years.pl が seed として恒久化してしまう
+  local $ENV{TZ} = TIME_ZONE;
+
   my @events;
   foreach my $repos (qw/translation/) {
       # コミットの区切りは %x01 (--name-status のファイル行と衝突しない制御文字)。
@@ -70,16 +92,14 @@ sub commit_events {
       while (my $line = <$git_fh>) {
           chomp $line;
           next unless length $line;
-          # %an は git 由来の非 ASCII バイト列になりうるため、ここで decode
-          # する (未 decode のままだと Data::Dumper の Useqq がバイト単位の
-          # \xHH を吐き、config_do で読み戻した文字列が不正なバイト列のまま
-          # 後段の wide 文字列と混ざって文字化けする)。不正な UTF-8 は
-          # decode_utf8 の既定動作で置換文字に倒し、単一コミットの文字化けで
-          # databuild 全体が die しないようにする
-          $line = Encode::decode_utf8($line);
+          # %an もファイル名も git 由来の非 ASCII バイト列になりうる。未 decode の
+          # ままだと Data::Dumper の Useqq がバイト単位の \xHH を吐き、config_do で
+          # 読み戻した文字列が不正なバイト列のまま後段の wide 文字列と混ざって
+          # 文字化けする
+          $line = _decode($line);
           if ($line =~ s/^\x01//) {
-              # --date=iso-local は TZ (databuild では Asia/Tokyo) に変換した
-              # 壁時計を出す。オフセットは捨て、以降を JST として扱う
+              # --date=iso-local は上で固定した TZ に変換した壁時計を出す。
+              # オフセットは捨て、以降を JST として扱う
               ($date, $author) = $line =~ m{^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) [-+]\d{4}\t(.+)$} or die $line;
               next;
           }
