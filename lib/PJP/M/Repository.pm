@@ -148,6 +148,40 @@ sub commit_events {
   return \@events;
 }
 
+# 現ツリーに存在するのに、最新イベントが削除になっている path を検出して die する。
+#
+# git log --name-status は merge コミットの diff を出さない。master で削除された
+# path を、削除より前から分岐していたブランチの merge が復活させると
+# (modify/delete の衝突を「残す」で解決した場合など)、復活そのものはイベントに
+# ならず、その path の最新イベントは過去の削除のままになる。この状態では
+# - 年次統計 (PJP::M::YearData) が、生きている翻訳をその年から落とす
+# - recent feed が、生きている翻訳を削除者の名前と日時で載せる
+# となり、しかも data/years.pl はデプロイ成功後に master へ自動コミットされて
+# 次回ビルドの seed になるため、誤った導出がそのまま恒久化する。
+#
+# 履歴の形を見ないと正しい観測方法を決められない (git log に -m 等を足して
+# merge の diff を出す方法は、2023 年の subtree merge を含む全 merge の
+# 取り込みファイルを merge 実行者の名義で再観測してしまい、翻訳者の帰属を
+# 壊す) ため、自動で辻褄を合わせずビルドを止める。
+sub assert_no_shadowed_deletions {
+  my ($class, $c, $events) = @_;
+
+  my $current = $class->current_paths($c);
+
+  # commit_events は日付の降順なので、path ごとの初出が最新イベント
+  my %newest;
+  $newest{$_->{path}} //= $_ for @$events;
+
+  my @shadowed = sort grep { $newest{$_}{deleted} && $current->{$_} } keys %newest;
+  return unless @shadowed;
+
+  die "these paths exist in the checkout but their newest event is a deletion:\n"
+      . join('', map { "  $_ (deleted at $newest{$_}{date})\n" } @shadowed)
+      . "a merge commit probably restored them (git log --name-status does not\n"
+      . "show merge diffs), so the derived stats and feed would treat live\n"
+      . "translations as deleted. inspect the history before deriving again.\n";
+}
+
 # コミットに記録された当時の path を現在の構造に写像する。2023 年に複数の
 # 翻訳リポジトリを subtree merge で寄せ集める再編があり、それより前の
 # コミットの path には docs/ prefix が無い (旧 perldoc.jp 由来は core/)。

@@ -60,6 +60,14 @@ sub new_repo {
         rename $self->dir . "/$from", $self->dir . "/$to" or die $!;
     }
 
+    # 衝突するのが前提の merge。終了コードは見ず、出力もテストログに混ぜない
+    sub merge_conflicting {
+        my ($self, $branch) = @_;
+        my $dir = $self->dir;
+        qx{git -C \Q$dir\E merge --no-edit --no-commit \Q$branch\E 2>&1};
+        return;
+    }
+
     # コミット日時は GIT_*_DATE で固定する。local なので他のテストに漏れない
     sub commit_at {
         my ($self, $date, $message, %opts) = @_;
@@ -217,6 +225,51 @@ subtest '同秒の追加と削除は git のコミット順で返る (author 名
             [['D', $remover], ['A', $adder]],
             "削除が新しい側に来る ($adder → $remover)";
     }
+};
+
+subtest 'merge で復活した翻訳を検出してビルドを止める' => sub {
+    # master での削除より前から分岐したブランチの merge がファイルを復活させると、
+    # merge コミット自体は --name-status に何も出さないため、その path の最新
+    # イベントは過去の削除のままになる。この矛盾を放置すると、生きている翻訳が
+    # 年次統計から落ち、feed に削除者の名前で載り、それが seed に恒久化する
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo');
+
+    $r->git('checkout', '-q', '-b', 'topic');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
+    $r->commit_at('2025-02-01T12:00:00+0900', 'update Foo', author => 'translator');
+
+    $r->git('checkout', '-q', '-');
+    $r->unlink_file('docs/modules/Foo-1.00/Foo.pod');
+    $r->commit_at('2025-03-01T12:00:00+0900', 'remove Foo', author => 'remover');
+
+    # modify/delete の衝突を「残す」で解決して merge する
+    $r->merge_conflicting('topic');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
+    $r->commit_at('2025-04-01T12:00:00+0900', 'merge topic', author => 'merger');
+
+    my $events = PJP::M::Repository->commit_events($c);
+    my ($newest) = grep { $_->{path} eq 'docs/modules/Foo-1.00/Foo.pod' } @$events;
+    ok $newest->{deleted}, '最新イベントは削除のまま (merge の diff は出ない)';
+    ok PJP::M::Repository->current_paths($c)->{'docs/modules/Foo-1.00/Foo.pod'},
+        'ファイルは現ツリーに存在する';
+
+    like dies { PJP::M::Repository->assert_no_shadowed_deletions($c, $events) },
+        qr{docs/modules/Foo-1\.00/Foo\.pod}, '該当する path を挙げて die する';
+};
+
+subtest '通常の削除や現存する翻訳では止まらない' => sub {
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo and Bar');
+    $r->unlink_file('docs/modules/Bar-1.00/Bar.pod');
+    $r->commit_at('2026-03-01T12:00:00+0900', 'remove Bar');
+
+    my $events = PJP::M::Repository->commit_events($c);
+    ok lives { PJP::M::Repository->assert_no_shadowed_deletions($c, $events) },
+        '現ツリーから消えている path の削除イベントは矛盾ではない';
 };
 
 subtest 'git log が途中で失敗したらビルドを止める' => sub {

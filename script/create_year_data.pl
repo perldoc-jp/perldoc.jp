@@ -30,6 +30,11 @@ sub main {
     # 黙って作らず、ビルドを止めて気づけるようにする
     die "no translation events found" unless @$events;
 
+    # 書き出す data/years.pl はデプロイ後に master へ自動コミットされて次回の
+    # seed になる。イベント列が現ツリーと矛盾したまま導出すると誤りが恒久化
+    # するため、ここで止める (手元での再導出も必ずこの検査を通る)
+    PJP::M::Repository->assert_no_shadowed_deletions($pjp, $events);
+
     # 対象年は明示指定がなければ最新の翻訳イベントの前年。壁時計から導出
     # しないことで、同じ translation からのビルドは同じ生成物になる。
     # 当年ターゲットだと年をまたいだ瞬間に前年分が data/years.pl のシード
