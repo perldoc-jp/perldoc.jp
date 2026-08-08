@@ -79,6 +79,10 @@ sub commit_events {
   # 別の年に落ちた data/years.pl が seed として恒久化してしまう
   local $ENV{TZ} = TIME_ZONE;
 
+  # _file2name で解決できない path の扱いを「現ツリーに在るか」で分ける
+  # ための集合 (下のループ内のコメント参照)
+  my $current = $class->current_paths($c);
+
   my @events;
   foreach my $repos (qw/translation/) {
       # コミットの区切りは %x01 (--name-status のファイル行と衝突しない制御文字)。
@@ -110,11 +114,21 @@ sub commit_events {
               }
               my ($status, $file) = split /\t/, $line, 2;
               return unless $file =~ m{\.(?:pod|html|md)$};
-              my $rel = _normalize_historical_rel($file) // return;
               # 翻訳文書の構成に合わない path (リポジトリ直下の運用文書等) は
               # イベントにしない
+              my $rel = _normalize_historical_rel($file) // return;
+              # 正規化を通った path は翻訳文書ツリー (docs/, manual/) を名乗って
+              # いるので、名前が導出できないのは (a) 履歴にだけ存在する旧構成か
+              # (b) 現行の配置規則から外れた新しい置き方のどちらか。(b) を黙って
+              # 落とすと、配信はされるのに年次統計と recent feed から欠落し、
+              # data/years.pl の自動コミットで欠落が seed に恒久化するため、
+              # 現ツリーに存在する path に限りビルドを止める
               my ($name, $in) = eval { _file2name($rel) };
-              return unless defined $in;
+              if (!defined $in) {
+                  die "cannot derive a document name from a path that exists in the checkout: $rel\n"
+                      if $current->{_rel2path($rel)};
+                  return;
+              }
               push @events, {
                               date    => $date,
                               author  => $author,

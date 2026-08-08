@@ -167,6 +167,36 @@ subtest 'subtree merge 前の path が現在の構造に正規化される' => s
     is $events->[0]{in}, 'perl', '正規化後の path から name/in が導出される';
 };
 
+subtest '現存する path の名前が導出できなければビルドを止める' => sub {
+    # docs/ 配下 = 翻訳文書ツリーを名乗っているのに配置規則に合わない path。
+    # 黙って落とすと、配信はされるのに年次統計と recent feed から欠落し、
+    # data/years.pl の自動コミットで欠落が恒久化するため、現ツリーに存在する
+    # 間はビルドを止めて配置規則側の追従を促す
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/NoVersion/lib/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'add unversioned dist dir');
+
+    like dies { PJP::M::Repository->commit_events($c) },
+        qr{docs/modules/NoVersion/lib/Foo\.pod}, '該当する path を挙げて die する';
+};
+
+subtest '履歴にだけ残る未知の形状の path はイベントにしない' => sub {
+    # 過去に存在した非文書ファイルや旧構成の path は名前が導出できなくてよい。
+    # 現ツリーに無ければ配信も統計対象も無いので、ビルドは止めず黙って落とす
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/NoVersion/lib/Foo.pod', "=head1 Foo\n");
+    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'add unversioned dist dir');
+    $r->unlink_file('docs/modules/NoVersion/lib/Foo.pod');
+    $r->commit_at('2025-07-01T12:00:00+0900', 'remove unversioned dist dir');
+
+    my $events;
+    ok lives { $events = PJP::M::Repository->commit_events($c) },
+        '削除済みなら die しない';
+    is [map { $_->{path} } @$events], ['docs/modules/Bar-1.00/Bar.pod'],
+        '名前が導出できない path はイベントにならない';
+};
+
 subtest '日付の TZ は呼び出し元の環境に依存しない' => sub {
     # 負のオフセットのコミット。--date=iso のままだと壁時計が 00:00:00 のまま
     # 出て、JST の 16:00:00 と 16 時間ずれる。
