@@ -3,7 +3,7 @@ use warnings;
 use utf8;
 use 5.10.0;
 
-# 目次データは script/create_index_data.pl がビルド時に data/index-module.pl へ生成する
+# 目次データは script/create_data.pl がビルド時に data/index-module.pl へ生成する
 
 package PJP::M::Index::Module;
 use LWP::UserAgent;

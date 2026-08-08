@@ -4,7 +4,7 @@ use utf8;
 
 package PJP::M::YearData;
 
-# data/years.pl の中身を組み立てる。ファイル入出力は script/create_year_data.pl
+# data/years.pl の中身を組み立てる。ファイル入出力は script/create_data.pl
 # 側に残し、ここは (翻訳イベント列, seed, 対象年) から年ごとの統計を作る
 # 純粋な処理だけを持つ。
 #

@@ -687,9 +687,9 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 | 旧 cron ジョブ | 旧頻度 | 移行後 |
 |---|---|---|
 | `update_deployment.sh` (= `script/update.pl`) | 1日4回 (3〜6時台) | Dockerfile の databuild ステージ。translation への push で即時、加えて日次 schedule |
-| `script/create_recent.pl` | 毎時 | 同上 (databuild) |
-| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
-| `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_docs_json.pl` に置き換え |
+| `script/create_recent.pl` | 毎時 | 同上 (databuild)。`script/create_data.pl` に統合 |
+| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。`script/create_data.pl` に統合。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
+| `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_data.pl` に置き換え |
 | `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため、都度計算で足りる |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
 
@@ -726,17 +726,17 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
   Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
-- **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_year_data.pl`
+- **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_data.pl`
   で前年+当年 (対象年は translation の最新イベントから導出) を毎ビルド
   translation の git 履歴から再導出し、デプロイ成功後に
   `commit-years-data` ジョブが再導出結果を master へ自動コミットする
   (変更がある場合のみ。実装は `.github/workflows/commit-years-data.yml`)。再導出されるのは前年+当年だけなので、この書き戻しが
   無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
   自動コミットが止まっていた場合も、対象年の翌年中に一度
-  `perl script/create_year_data.pl <対象年>` の結果をコミットすれば回復する。
+  `perl script/create_data.pl <対象年>` の結果をコミットすれば回復する。
   対象年を過去に指定すればその年以降を git 履歴からまとめて再導出できる
   (削除・rename された翻訳のイベントも `commit_events` が履歴から列挙する)
-- **`data/years.pl` の完全性 (cutover の必須前提)**: `create_year_data.pl` は
+- **`data/years.pl` の完全性 (cutover の必須前提)**: `create_data.pl` は
   既存の `data/years.pl` のうち対象年より前だけを seed として取り込み、
   対象年以降は毎ビルド git 履歴から再構築する (イベントが削除だけになった年の
   ブロックは残らない)。2011 年より前の統計は複数の旧リポジトリを当時の

@@ -63,7 +63,7 @@ sub _is_stable {
 }
 
 # distvname 同士の版比較 ($x の方が新しければ正)。版の比較はこの関数に
-# 一本化する (other_versions / get_latest / script/create_docs_json.pl が
+# 一本化する (other_versions / get_latest / script/create_data.pl が
 # 同じ選択をする)。同じ数値版では final release がプレリリースより新しい側に
 # 来る (Foo-1.2-RC1 より Foo-1.2 が新しい)
 sub _compare_version {

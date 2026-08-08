@@ -29,8 +29,5 @@ ci:
 .PHONY: setup-data
 setup-data:
 	docker compose exec app perl script/update.pl
-	docker compose exec app perl script/create_recent.pl
-	docker compose exec app perl script/create_year_data.pl
-	docker compose exec app perl script/create_docs_json.pl
-	docker compose exec app perl script/create_index_data.pl
+	docker compose exec app perl script/create_data.pl
 

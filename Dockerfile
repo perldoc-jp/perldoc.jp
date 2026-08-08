@@ -70,7 +70,7 @@ ENV TZ=Asia/Tokyo
 # 再実行されない。
 ARG TRANSLATION_COMMIT=master
 
-# create_recent.pl / create_year_data.pl が git log を使うため、
+# create_data.pl が git log を使うため、
 # コミット履歴付き (blob は checkout 分のみ) で取得する
 RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git assets/translation && \
   git -C assets/translation checkout --quiet ${TRANSLATION_COMMIT}
@@ -80,13 +80,13 @@ RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git a
 # 無効化され、update.pl の pod2html (翻訳 2500 ファイル) から VACUUM までが
 # まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (deploy.yml) で
 # 2 回起きる。
-# 変更頻度の低い順に重ねる。data/ は years.pl が create_year_data.pl の
-# seed なので入力に含める
+# 変更頻度の低い順に重ねる。data/ (= 年次統計の seed である years.pl) は
+# デプロイのたびに自動コミットされる最も揮発的な入力で、しかも update.pl は
+# 読まないため、ここには置かず update.pl の後・create_data.pl の直前で重ねる
 COPY sql ./sql
 COPY config ./config
 COPY lib ./lib
 COPY script ./script
-COPY data ./data
 
 # 生成物の書き出し先。static/ の中身 (css 等) は生成に要らないので入れず、
 # runtime と test が context から重ねる
@@ -96,19 +96,20 @@ RUN mkdir -p db static/rss && \
 
 RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
 
-# update.pl も内部で master→slave をコピーするが、後続の create_year_data.pl /
-# create_docs_json.pl が読む slave の内容を update.pl の実装詳細に依存させない
-# よう、ここで明示的にコピーしておく (空の slave を読んでも各スクリプトは
-# 警告や空の生成物を出すだけでビルドは成功してしまうため)
+# update.pl も内部で master→slave をコピーするが、後続の create_data.pl が
+# 読む slave の内容を update.pl の実装詳細に依存させないよう、ここで明示的に
+# コピーしておく (空の slave を読んでも生成スクリプトは警告や空の生成物を
+# 出すだけでビルドは成功してしまうため)
 RUN cp db/perldocjp.master.db db/perldocjp.db
 
-RUN perl script/create_recent.pl
+# 年次統計の seed (data/years.pl)。デプロイのたびに自動コミットされるため、
+# update.pl より下に置いて pod2html のレイヤキャッシュを壊さないようにする
+COPY data ./data
+
 # 対象年 (translation の最新イベントの前年) は script 側で導出する。
 # 壁時計から取るとコマンド文字列が入力に依らず一定のため、年をまたいでも
 # キャッシュされたレイヤが再利用され、対象年が古いまま進まない
-RUN perl script/create_year_data.pl
-RUN perl script/create_docs_json.pl
-RUN perl script/create_index_data.pl
+RUN perl script/create_data.pl
 
 # ページサイズ変更を VACUUM で反映しつつ断片化を解消し、
 # ANALYZE でプランナ統計を焼き込む
