@@ -4,28 +4,30 @@ use utf8;
 
 package PJP::M::Repository;
 use Encode ();
+use File::Spec;
 use File::Find::Rule;
 use PJP::Util qw/read_command/;
-
-sub _assets_dir {
-  my $c = shift;
-  my $mode_name = $c->mode_name || 'development';
-  return $c->config->{'assets_dir'} || die "no assets_dir setting in config/" . $mode_name . '.pl';
-}
 
 # git の日付をどう解釈するかは全生成物 (年次統計の集計年、RSS の +0900 表記) の
 # 前提なので、このモジュールが所有する。--date=iso-local は $ENV{TZ} の壁時計を
 # 出すため、呼び出し元の環境に依存させない
 use constant TIME_ZONE => 'Asia/Tokyo';
 
+# 翻訳文書として扱うファイルの拡張子。git 由来 (commit_events) と
+# readdir 由来 (current_paths, PJP::M::Index::Article) の両方の入口が
+# 同じ述語を通らないと、片方だけに存在する形式のファイルが
+# 「イベントには有るが現ツリーから消えた」(またはその逆) に化ける
+use constant TRANSLATION_FILE_RE => qr/\.(?:pod|html|md)$/;
+
 # このモジュールが返す path と author は decode 済みの文字列。git の出力と
 # readdir という別々の入口の生バイトを同じ文字列空間に写すため、境界の decode は
-# commit_events / current_paths の両方がここを通す。片方だけ生バイトのままだと、
+# commit_events / current_paths と、path を突き合わせる他の消費者
+# (PJP::M::Index::Article) がここを通す。片方だけ生バイトのままだと、
 # 非 ASCII のファイル名で「イベントには有るが現ツリーから消えた」判定が
 # 黙って外れる。不正な UTF-8 は decode_utf8 の既定動作で置換文字に倒し、
 # 単一コミットの文字化けで databuild 全体が die しないようにする
 # (両方の入口が同じ写像を通るので、置換後も突き合わせは成立する)
-sub _decode {
+sub decode_path {
   return Encode::decode_utf8($_[0]);
 }
 
@@ -42,12 +44,11 @@ sub _rel2path {
 # 翻訳を載せないためのフィルタに使う
 sub current_paths {
   my ($class, $c) = @_;
-  my $assets_dir = _assets_dir($c);
 
   my %paths;
   foreach my $repos (qw/translation/) {
-      foreach my $file (File::Find::Rule->file()->name(qr/\.(pod|html|md)$/)->in("$assets_dir$repos")) {
-          my $rel = _decode($file);
+      foreach my $file (File::Find::Rule->file()->name(TRANSLATION_FILE_RE)->in(File::Spec->catdir($c->assets_dir, $repos))) {
+          my $rel = decode_path($file);
           $rel =~ s{^.+?assets/}{};
           $rel =~ s{^\Q$repos/\E}{};
           $paths{_rel2path($rel)} = 1;
@@ -71,8 +72,6 @@ sub current_paths {
 sub commit_events {
   my ($class, $c) = @_;
 
-  my $assets_dir = _assets_dir($c);
-
   # --date=iso-local が出す壁時計の基準。%ENV は子プロセスに渡るので git に効く。
   # 呼び出し元の環境に委ねると、docs/cloud-run.md が案内する手元での再導出を
   # 非 JST のマシンで実行しただけで全イベントの日付がずれ、年境界のコミットが
@@ -94,7 +93,7 @@ sub commit_events {
       # イベント列は data/years.pl / recent feed になり自動コミットで master に
       # 恒久化するため、終了状態の検査は read_command に委ねる
       read_command(
-          ['git', '-C', "$assets_dir$repos", '-c', 'core.quotepath=false',
+          ['git', '-C', File::Spec->catdir($c->assets_dir, $repos), '-c', 'core.quotepath=false',
            'log', '--no-renames', '--date=iso-local',
            '--pretty=format:%x01%cd%x09%an', '--name-status'],
           sub {
@@ -105,7 +104,7 @@ sub commit_events {
               # ままだと Data::Dumper の Useqq がバイト単位の \xHH を吐き、config_do で
               # 読み戻した文字列が不正なバイト列のまま後段の wide 文字列と混ざって
               # 文字化けする
-              $line = _decode($line);
+              $line = decode_path($line);
               if ($line =~ s/^\x01//) {
                   # --date=iso-local は上で固定した TZ に変換した壁時計を出す。
                   # オフセットは捨て、以降を JST として扱う
@@ -113,7 +112,7 @@ sub commit_events {
                   return;
               }
               my ($status, $file) = split /\t/, $line, 2;
-              return unless $file =~ m{\.(?:pod|html|md)$};
+              return unless $file =~ TRANSLATION_FILE_RE;
               # 翻訳文書の構成に合わない path (リポジトリ直下の運用文書等) は
               # イベントにしない
               my $rel = _normalize_historical_rel($file) // return;

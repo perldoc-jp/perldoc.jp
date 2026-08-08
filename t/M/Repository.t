@@ -8,12 +8,12 @@ use File::Basename qw/dirname/;
 use File::Find::Rule;
 use PJP::M::Repository;
 
-# assets_dir / mode_name だけを持つ最小のコンテキスト
+# PJP::M::Repository が使う PJP のインターフェイスだけを持つ最小のコンテキスト
 {
     package Test::Context;
-    sub new       { my ($class, %args) = @_; bless {%args}, $class }
-    sub config    { $_[0]->{config} }
-    sub mode_name { 'test' }
+    sub new        { my ($class, %args) = @_; bless {%args}, $class }
+    sub config     { $_[0]->{config} }
+    sub assets_dir { $_[0]->config->{assets_dir} // die "Missing configuration for assets dir" }
 }
 
 # サブテストごとに使い捨ての translation リポジトリを作る。

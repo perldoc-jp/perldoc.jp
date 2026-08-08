@@ -3,7 +3,7 @@ use warnings;
 use utf8;
 use 5.10.0;
 
-# 目次データは script/create_index_data.pl がビルド時に data/index-article.pl へ生成する
+# 目次データは script/create_data.pl がビルド時に data/index-article.pl へ生成する
 
 package PJP::M::Index::Article;
 use LWP::UserAgent;
@@ -16,6 +16,7 @@ use File::Find::Rule;
 use version;
 use autodie;
 use PJP::M::Pod;
+use PJP::M::Repository;
 use Data::Dumper;
 use Regexp::Common qw/URI/;
 use PJP::Util qw/slurp/;
@@ -61,8 +62,13 @@ sub _get_files {
         next if $e =~ /^\./;
         next if $e =~ /^CVS$/;
 
-        my (@files) = File::Find::Rule->file()
-            ->name(qr/\.(pod|html|md)$/)
+        # readdir/File::Find の生バイトのままだと、ここから導出する distvname が
+        # script/create_data.pl で decode 済みの翻訳イベント path と突き合わせ
+        # られず、非 ASCII のファイル名だけ更新日時が付かない。git 側と同じ
+        # 写像 (PJP::M::Repository::decode_path) を通す
+        my (@files) = map { PJP::M::Repository::decode_path($_) }
+            File::Find::Rule->file()
+            ->name(PJP::M::Repository::TRANSLATION_FILE_RE)
             ->in("$base/$e");
         push @all_files, @files;
     }
@@ -73,7 +79,7 @@ sub _generate {
     my ($class, $c, $files) = @_;
 
     # 並びは file の path 順で確定させる。表示順 (更新が新しい順) は
-    # script/create_index_data.pl が翻訳イベントの日付で付け直すので、
+    # script/create_data.pl が翻訳イベントの日付で付け直すので、
     # ここでは readdir の列挙順を持ち込まないことだけを守る。
     # mtime で並べていたのをやめたのは、fresh clone では全ファイルの mtime が
     # checkout 時刻に潰れて「更新が新しい順」の意味を失い、同時刻どうしの並びが
