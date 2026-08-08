@@ -26,9 +26,13 @@ use Encode qw(decode_utf8);
 get '/' => sub {
     my $c = shift;
 
-    return $c->render('index.tt', {
-                                   recent => config_do('data/recent.pl')->{recent}
-                                  });
+    # data/recent.pl はデプロイ単位で不変なので、リクエスト毎に parse せず
+    # プロセス内にメモ化する (data/years.pl と同じ扱い)
+    my $recent = $c->cache->get_or_set('recent', sub {
+        config_do('data/recent.pl')->{recent};
+    });
+
+    return $c->render('index.tt', {recent => $recent});
 };
 
 get '/about' => sub {
