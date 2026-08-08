@@ -198,7 +198,7 @@ sub _file2name {
     my $in;
     if ($name =~ s{^docs/modules/(.+?)-v?[\d\._]+(?:[-\w]+)?/(?:lib/)?}{}) {
         $in = $1;
-        $in =~s{-}{::};
+        $in =~s{-}{::}g;
     } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)\.(?:pod|html|md)$}{$2}) {
         $in = $1;
     } elsif ($name =~ s{^docs/(perl|core)/[^/]+/}{}) {
