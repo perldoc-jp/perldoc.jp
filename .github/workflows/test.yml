@@ -64,7 +64,11 @@ jobs:
     # キャッシュの scope を app イメージと分け、mode=max の書き込みが互いの
     # レイヤを追い出さないようにする。deploy.yml の registry cache は WIF の
     # 認証を要するため PR (fork を含む) からは読めず、ここでは使わない。
-    # 書き込みは deploy.yml (master push) が行うのでここは読むだけ
+    # scope=runtime は deploy.yml (master push) が書く共有キャッシュ。
+    # lib/ や script/ を触る PR は databuild レイヤがそこに無いため、
+    # runtime-pr にも書いて同じ PR への連続 push でフルビルドを繰り返さない
+    # ようにする (gha キャッシュは PR 単位に隔離されるので、読めるのは
+    # 同じ PR の前回分だけ)
     - name: Build runtime image
       uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
       with:
@@ -74,7 +78,10 @@ jobs:
         load: true
         build-args: |
           TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
-        cache-from: type=gha,scope=runtime
+        cache-from: |
+          type=gha,scope=runtime
+          type=gha,scope=runtime-pr
+        cache-to: type=gha,mode=max,scope=runtime-pr
 
     - name: Smoke test image
       run: ./script/smoke-test.sh perldocjp-runtime:latest
