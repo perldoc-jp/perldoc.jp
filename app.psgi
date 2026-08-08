@@ -11,11 +11,15 @@ use Log::Minimal;
 my $STATIC_MAX_AGE    = 14400;
 my $GENERATED_MAX_AGE = 7200;
 
+# 対象は下の Plack::Middleware::Static 2 つが配信する path 全体。
+# ここに漏れた path はヘッダ無しで配信されるので、Static の path を
+# 変えるときはこの関数も揃えること
 sub static_max_age {
     my $path = shift;
     return $GENERATED_MAX_AGE if $path eq '/static/docs.json';
     return $GENERATED_MAX_AGE if $path =~ m{\A/static/rss/};
-    return $STATIC_MAX_AGE    if $path =~ m{\A/static/} or $path eq '/favicon.ico';
+    return $STATIC_MAX_AGE    if $path =~ m{\A/static/}
+        or $path eq '/favicon.ico' or $path eq '/robots.txt';
     return undef;
 }
 
