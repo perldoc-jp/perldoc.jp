@@ -84,6 +84,23 @@ describe('クライアント由来の X-Forwarded-* の一掃', () => {
   });
 });
 
+// 一掃は Cloudflare が付けた実クライアント IP も消すため、Cloudflare 自身が
+// 確定させる CF-Connecting-IP から設定し直す。origin の ReverseProxy は
+// X-Forwarded-For しか読まない
+describe('X-Forwarded-For', () => {
+  it('CF-Connecting-IP から設定し直す (クライアント由来の値は使わない)', async () => {
+    await proxy('https://perldoc.jp/', {
+      headers: { 'CF-Connecting-IP': '203.0.113.7', 'X-Forwarded-For': '10.0.0.1, 127.0.0.1' },
+    });
+    assert.equal(calls[0].init.headers.get('X-Forwarded-For'), '203.0.113.7');
+  });
+
+  it('CF-Connecting-IP が無ければ付けない', async () => {
+    await proxy('https://perldoc.jp/', { headers: { 'X-Forwarded-For': '10.0.0.1' } });
+    assert.equal(calls[0].init.headers.get('X-Forwarded-For'), null);
+  });
+});
+
 describe('X-Forwarded-Host', () => {
   it('リクエストのホスト名を入れる', async () => {
     await proxy('https://perldoc.jp/');

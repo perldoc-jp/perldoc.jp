@@ -21,6 +21,12 @@ export default {
     for (const name of [...headers.keys()]) {
       if (/^x-forwarded-/i.test(name) || name.toLowerCase() === 'forwarded') headers.delete(name);
     }
+    // 一掃で Cloudflare が付けた実クライアント IP (X-Forwarded-For) も消えるため、
+    // Cloudflare 自身が確定させる CF-Connecting-IP から設定し直す。origin の
+    // ReverseProxy は X-Forwarded-For しか読まないので、これが無いと Cloud Run の
+    // アクセスログは全リクエストが Cloudflare の egress IP に見える
+    const clientIp = request.headers.get('CF-Connecting-IP');
+    if (clientIp) headers.set('X-Forwarded-For', clientIp);
     // Amon2::Web::redirect は Plack::Request->base (= HTTP_HOST 由来) で Location の
     // 絶対 URL を組む。fetch 先が run.app になるため、元のホスト名を明示的に
     // 引き継がないと /func/* などの正規化リダイレクトが
