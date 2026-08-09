@@ -80,12 +80,21 @@ subtest 'GET /favicon.ico' => sub {
     ok $mech->header_like('Content-Type', qr{^image/}), 'Content-Type is an image';
 };
 
+subtest 'GET /robots.txt' => sub {
+    # 本番はエッジ (Cloudflare のゾーン管理) が配信するが、エッジ管理を
+    # 無効化した場合に origin が 404 を返さないことをここで守る
+    $mech->get('/robots.txt');
+    is $mech->status, 200, 'status is 200';
+    like $mech->content, qr{^User-agent: \*}m, 'robots.txt の実体が返る';
+};
+
 subtest '静的ファイルの Cache-Control' => sub {
     # ファイル名にダイジェストが入らないので恒久キャッシュにはしない。
     # docs.json と rss はビルドごとに変わるため短い側に置く
     my %expected = (
         '/static/css/style.css'  => 'public, max-age=14400',
         '/favicon.ico'           => 'public, max-age=14400',
+        '/robots.txt'            => 'public, max-age=14400',
         '/static/docs.json'      => 'public, max-age=7200',
         '/static/rss/recent.rss' => 'public, max-age=7200',
     );

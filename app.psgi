@@ -39,11 +39,14 @@ builder {
         };
     };
     enable 'Plack::Middleware::Static',
-        path => qr{^(/static/|/robots\.txt)},
+        path => qr{^/static/},
         root => './';
-    # favicon.ico の実体は static/ にしか無いので root を分ける
+    # ルート直下で配信するファイル。実体は static/ に置くので root を分ける。
+    # 本番の robots.txt は Cloudflare のゾーン管理 (Content Signals) がエッジで
+    # 配信しており、この実体はエッジ管理を無効化した場合に origin が 404 を
+    # 返さないためのもの
     enable 'Plack::Middleware::Static',
-        path => qr{^/favicon\.ico$},
+        path => qr{^/(?:favicon\.ico|robots\.txt)$},
         root => './static/';
     enable 'Plack::Middleware::ReverseProxy';
     enable sub {
