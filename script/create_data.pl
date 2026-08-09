@@ -206,9 +206,17 @@ sub sort_by_updated_at {
     # 初出が最新イベント
     $updated_at{$_->{path}} //= $_->{date} for @$events;
 
+    my @keyed = map { [ $updated_at{"docs/articles/$_->{distvname}"} // '', $_ ] } @$articles;
+
+    # イベントの無い path は日付なし (末尾送り) が正しいが、全滅は結合キーの
+    # 組み立てがイベントの path 形式からドリフトした兆候。放置すると一覧が
+    # 黙って distvname 逆順に退化する (エラーは出ず、リンク数のテストも通る)
+    die "no article matched any translation event; the join key drifted from the event path format?"
+        unless grep { $_->[0] ne '' } @keyed;
+
     return map  { $_->[1] }
            sort { $b->[0] cmp $a->[0] || $a->[1]{distvname} cmp $b->[1]{distvname} }
-           map  { [ $updated_at{"docs/articles/$_->{distvname}"} // '', $_ ] } @$articles;
+           @keyed;
 }
 
 # 先頭の + は do がブロックと誤解釈しないための明示。
