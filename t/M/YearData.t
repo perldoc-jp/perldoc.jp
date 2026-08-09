@@ -143,10 +143,40 @@ subtest '対象年以降の seed は使われない (削除だけの年が seed 
     is paths_of($year->{2010}), ['docs/modules/Old-1.00/Old.pod'], '対象年より前の seed は保たれる';
 };
 
+subtest '再導出できない年を対象にしたらビルドを止める' => sub {
+    # 2011 年より前の統計は git 履歴から再現できない凍結データ。対象年にすると
+    # seed の保護 (対象年より前だけ取り込む) から外れ、不完全な導出結果で
+    # 黙って上書きされる。docs/cloud-run.md の回復手順は対象年を手動指定する
+    # ので、誤指定はここで止める
+    my $foo = entry(date => '2025-06-01 00:00:00', path => 'docs/modules/Foo-1.00/Foo.pod');
+    like dies { PJP::M::YearData->build([$foo], undef, 2002) },
+        qr/predates git-derivable history/, '2011 年より前の対象年で die する';
+    like dies { PJP::M::YearData->build([$foo], undef, '20xx') },
+        qr/must be a 4-digit year/, '年でない対象年で die する';
+    like dies { PJP::M::YearData->build([$foo], undef, undef) },
+        qr/must be a 4-digit year/, '対象年なしで die する';
+};
+
+subtest '対象年より前の年が縮んだら die する' => sub {
+    # seed 由来の年も「最初に現れた年に計上する」再構築ループを通るため、
+    # キーの解釈の誤り等で seed 済みのエントリが食われる余地がある。結果は
+    # 自動コミットで次回ビルドの seed になるので、失われたら返す前に止める
+    my $a = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Foo-1.00/Foo.pod',
+                  in => 'Foo', version => '1.00');
+    my $dup = entry(date => '2012-05-01 00:00:00', path => 'docs/modules/Foo-1.00/Bar.pod',
+                    in => 'Foo', version => '1.00', name => 'Bar');
+    my $seed = {
+        2010 => seed_year([$a],   { alice => 1 }),
+        2012 => seed_year([$dup], { bob   => 1 }),
+    };
+    like dies { PJP::M::YearData->build([], $seed, 2025) },
+        qr/year 2012 lost modules/, '重複排除に食われた年で die する';
+};
+
 subtest 'build が seed を変更しない' => sub {
     # build の結果は seed とは別の構造として返る。seed を書き換えると、
-    # 呼び出し元が seed と結果を突き合わせる検証 (script/create_year_data.pl)
-    # が自明に通ってしまい成立しない
+    # build 自身の完全性検査 (seed と結果の突き合わせ) が自明に通ってしまい
+    # 成立しない
     my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
     my $cur = entry(date => '2026-02-01 00:00:00', path => 'docs/modules/New-1.00/New.pod', in => 'New');
     my $seed = {

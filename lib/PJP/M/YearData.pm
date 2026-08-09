@@ -14,8 +14,24 @@ package PJP::M::YearData;
 # $seed        : 既存の data/years.pl を読んだもの。初回ビルドでは undef。
 #                対象年より前の年だけが取り込まれ、対象年以降のキーは無視される
 # $target_year : 再導出の対象年 (= 前年)。これ以降が git 由来で組み直される
+
+# git 履歴から再導出できる最古の年。これより前の統計は、複数の旧リポジトリを
+# 当時のシステムで観測した結果の凍結で、現在の git 履歴からは再現できない
+use constant GIT_DERIVABLE_SINCE => 2011;
+
 sub build {
     my ($class, $events, $seed, $target_year) = @_;
+
+    # 対象年より前の seed は取り込むだけで再検証されないため、再導出できない
+    # 年を対象にすると凍結された統計を不完全な導出結果で黙って置き換えて
+    # しまう。docs/cloud-run.md が回復手順として対象年の手動指定
+    # (script/create_data.pl <対象年>) を案内しているので、誤指定はここで止める
+    die "target year must be a 4-digit year (got: " . ($target_year // 'undef') . ")\n"
+        unless defined $target_year && $target_year =~ /^[0-9]{4}$/;
+    die "target year $target_year predates git-derivable history:"
+        . " years before @{[ GIT_DERIVABLE_SINCE ]} are frozen observations"
+        . " that cannot be rebuilt from the git history\n"
+        if $target_year < GIT_DERIVABLE_SINCE;
 
     # 対象年以降を「path ごとの年内最終イベント」に畳む。イベント列は git の
     # 走査順 (新しい方が先) なので、(年, path) の初出が年内最終。年内最終が
@@ -75,6 +91,18 @@ sub build {
         }
         if ($y >= $target_year) {
             $year->{$y}->{commit_count_all}->{$module->{author}}++;
+        }
+    }
+
+    # 対象年より前の年が縮んでいたら返さない (年ブロック自体は上の 1 段コピーで
+    # 必ず残る)。seed 由来の年も再構築ループ (重複排除) を通るため、キーの
+    # 解釈の誤り等で seed 済みのエントリが食われる余地があり、結果は自動
+    # コミットで次回ビルドの seed になって誤りが恒久化する。seed のどの年が
+    # 保存対象かを知るのはこのモジュールなので、検査もここで行う
+    if ($seed) {
+        for my $y (grep { $_ < $target_year } keys %$seed) {
+            die "year $y lost modules in rebuild"
+                if @{$year->{$y}{modules}} != @{$seed->{$y}{modules}};
         }
     }
 
