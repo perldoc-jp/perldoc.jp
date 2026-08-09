@@ -13,6 +13,7 @@ use File::Basename;
 use version;
 use PJP::M::Index::Article;
 use PJP::M::BuiltinFunction;
+use PJP::M::Repository;
 use PJP::Util qw(markdown_to_html);
 
 sub slurp {
@@ -203,7 +204,9 @@ sub generate {
                 my $repository = $base;
                 my $extention_exp;
                 if ($repository =~ s{^.+?/assets/}{}) {
-                    $extention_exp = qr/\.(pod|html|md)$/;
+                    # 何を翻訳文書として配信するかは、イベント観測・現ツリー列挙と
+                    # 同じ述語 (PJP::M::Repository) を通す
+                    $extention_exp = PJP::M::Repository::TRANSLATION_FILE_RE;
                 } else {
                     $extention_exp = '*.pod';
                 }

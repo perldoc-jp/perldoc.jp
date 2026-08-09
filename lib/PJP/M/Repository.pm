@@ -220,11 +220,12 @@ sub _normalize_historical_rel {
 
 sub _file2name {
     my $name = shift;
+    my $ext = TRANSLATION_FILE_RE;
     my $in;
     if ($name =~ s{^docs/modules/(.+?)-v?[\d\._]+(?:[-\w]+)?/(?:lib/)?}{}) {
         $in = $1;
         $in =~s{-}{::}g;
-    } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)\.(?:pod|html|md)$}{$2}) {
+    } elsif ($name =~ s{^docs/articles/([^/]+)/(?:.+/)?([^/]+)$ext}{$2}) {
         $in = $1;
     } elsif ($name =~ s{^docs/(perl|core)/[^/]+/}{}) {
         $in = 'perl';
