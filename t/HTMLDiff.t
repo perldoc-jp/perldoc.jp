@@ -71,6 +71,18 @@ subtest '空文字列との比較' => sub {
     is $empty, "<table class='diff'>\n</table>\n", '両方空なら空の table';
 };
 
+subtest '内容が "0" だけの行も増減が描画される' => sub {
+    # "0" は Perl の真偽値判定で偽になるため、移植元 Text::Diff::FormattedHTML は
+    # この行の増減を丸ごと落とす。行が黙って消えると差分の見落としになるので、
+    # 旧実装との唯一の意図的な差分として修正を固定する (このリポジトリは
+    # falsy な "0" を defined/length で扱う)
+    my $del = PJP::HTMLDiff::diff_strings_vertical("a\n0\nb\n", "a\nb\n");
+    like $del, qr{<tr class='disc_a del'><td>2</td><td></td><td>0</td></tr>}, '"0" の削除行が出る';
+
+    my $ins = PJP::HTMLDiff::diff_strings_vertical("a\nb\n", "a\n0\nb\n");
+    like $ins, qr{<tr class='disc_b ins'><td></td><td>2</td><td>0</td></tr>}, '"0" の追加行が出る';
+};
+
 subtest '末尾改行がなくても同じ結果になる' => sub {
     is(
         PJP::HTMLDiff::diff_strings_vertical("a\nb", "a\nc"),

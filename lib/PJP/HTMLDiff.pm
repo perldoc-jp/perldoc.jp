@@ -189,7 +189,8 @@ sub _render_vertical {
 
 # 以下 3 つは Text::Diff::FormattedHTML 0.08 の vertical 出力の忠実な移植。
 # 出力の互換性 (行の形・クラス名・エスケープ) を守るため、独自の改変は
-# 加えないこと。
+# 加えないこと。唯一の意図的な差分: 内容がちょうど "0" の行を真偽値判定で
+# 落とさない (このリポジトリは falsy な "0" を defined/length で扱う)。
 
 sub _vertical_rows {
     my ($class, $ln, $rn, $l, $r) = @_;
@@ -202,11 +203,11 @@ sub _vertical_rows {
         $class eq 'disc_b' && ($class = 'disc_b ins');
 
         $class eq 'change' && ($class = 'change del');
-        $l and $out .= sprintf("<tr class='%s'><td>%s</td><td></td><td>%s</td></tr>\n",
-                               $class, $ln, $l);
+        length $l and $out .= sprintf("<tr class='%s'><td>%s</td><td></td><td>%s</td></tr>\n",
+                                      $class, $ln, $l);
         $class eq 'change del' && ($class = 'change ins');
-        $r and $out .= sprintf("<tr class='%s'><td></td><td>%s</td><td>%s</td></tr>\n",
-                               $class, $rn, $r);
+        length $r and $out .= sprintf("<tr class='%s'><td></td><td>%s</td><td>%s</td></tr>\n",
+                                      $class, $rn, $r);
     }
     return $out;
 }
