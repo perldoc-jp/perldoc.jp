@@ -58,15 +58,12 @@ jobs:
       - run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
 
       # translation の HEAD を build-arg に渡し、translation が更新された
-      # ときだけ databuild ステージのキャッシュを無効化する。
-      # ls-remote の失敗をコマンド置換で握りつぶすと、空の TRANSLATION_COMMIT に
-      # よって checkout が no-op になり pin されないまま進んでしまうため、
-      # 空でないことを明示的に検証する
+      # ときだけ databuild ステージのキャッシュを無効化する。pin の規則は
+      # PR の runtime-test (test.yml) と共有のスクリプトに一本化されている
       - name: Resolve translation HEAD
         id: translation
         run: |
-          sha=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
-          test -n "$sha"
+          sha=$(./script/resolve-translation-head.sh)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
