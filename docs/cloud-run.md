@@ -289,9 +289,8 @@ TAG=manual-$(date +%Y%m%d%H%M%S)
 # 一度だけ: docker が Artifact Registry へ push できるようにする
 gcloud auth configure-docker "${REGION}-docker.pkg.dev"
 
-# translation の HEAD に固定する (deploy.yml と同じ)
-TRANSLATION_COMMIT=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
-test -n "$TRANSLATION_COMMIT"
+# translation の HEAD に固定する (deploy.yml / test.yml と同じ pin 規則)
+TRANSLATION_COMMIT=$(./script/resolve-translation-head.sh)
 
 # Cloud Run は linux/amd64 のみ対応。Apple Silicon ではエミュレーションで動くため、
 # 初回は CPAN 依存の XS ビルドを含めて時間がかかる
@@ -735,7 +734,9 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
   自動コミットが止まっていた場合も、対象年の翌年中に一度
   `perl script/create_data.pl <対象年>` の結果をコミットすれば回復する。
   対象年を過去に指定すればその年以降を git 履歴からまとめて再導出できる
-  (削除・rename された翻訳のイベントも `commit_events` が履歴から列挙する)
+  (削除・rename された翻訳のイベントも `commit_events` が履歴から列挙する)。
+  git 履歴から再導出できるのは 2011 年以降で、それより前を対象年に指定すると
+  `PJP::M::YearData` が die する (凍結された統計の上書き防止)
 - **`data/years.pl` の完全性 (cutover の必須前提)**: `create_data.pl` は
   既存の `data/years.pl` のうち対象年より前だけを seed として取り込み、
   対象年以降は毎ビルド git 履歴から再構築する (イベントが削除だけになった年の
