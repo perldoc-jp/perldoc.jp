@@ -12,6 +12,7 @@ use warnings;
 
 use utf8;
 use Data::Dumper;
+use List::Util qw/maxstr/;
 use Time::Piece;
 use JSON::XS ();
 use XML::RSS;
@@ -59,23 +60,28 @@ sub create_recent {
 
     # 掲載期間は最新の翻訳イベントから遡って 1 年。壁時計を基準にすると
     # 同じ translation からのビルドで結果が変わり、キャッシュされたレイヤの
-    # 再利用で期限切れの項目が feed に残り続ける
-    my $latest = Time::Piece->strptime($events->[0]{date}, '%Y-%m-%d %H:%M:%S');
+    # 再利用で期限切れの項目が feed に残り続ける。イベント列は git の走査順で
+    # 日付順とは限らないため、最新の日時は全イベントから取る
+    my $latest = Time::Piece->strptime(maxstr(map { $_->{date} } @$events), '%Y-%m-%d %H:%M:%S');
     my $cutoff = ($latest - 365 * 86400)->strftime('%Y-%m-%d %H:%M:%S');
 
-    # path ごとの最新イベントを、現存する翻訳に限って新しい順に集める
+    # path ごとの最新イベント (走査順の初出) を、現存する翻訳に限って集める
     # (commit_events は削除・rename 済みの path のイベントも返す)
     my $current_paths = PJP::M::Repository->current_paths($pjp);
-    my $max = 50;
     my (%seen, @updates);
     foreach my $event (@$events) {
-        last if $event->{date} lt $cutoff;
-        last if @updates > $max;
         next if $seen{$event->{path}}++;
         next unless $current_paths->{$event->{path}};
+        next if $event->{date} lt $cutoff;
         push @updates, $event;
     }
     die "no recent updates found in translation" unless @updates;
+
+    # feed は新しい順 (同日時は path で締めて決定的にする)。件数の上限は
+    # 旧実装の [0 .. $max] スライスと同じ (最大 $max + 1 件) を維持する
+    my $max = 50;
+    @updates = sort { $b->{date} cmp $a->{date} || $a->{path} cmp $b->{path} } @updates;
+    @updates = @updates[0 .. $max] if $#updates > $max;
 
     write_data_pl('data/recent.pl', { recent => \@updates });
     create_rss(\@updates);
@@ -86,8 +92,8 @@ sub create_rss {
 
     mkdir 'static/rss' or die $! if not -d 'static/rss';
 
-    # channel の日時は最新エントリのコミット日時から導出する (commit_events は
-    # 日時の降順ソート済み)。ファイルの mtime やビルド時刻に依らせないことで、
+    # channel の日時は最新エントリのコミット日時から導出する (create_recent が
+    # 新しい順に整列済み)。ファイルの mtime やビルド時刻に依らせないことで、
     # 同じ translation からのビルドは同じバイト列の feed になる
     my $latest = Time::Piece->strptime($updates->[0]{date}, '%Y-%m-%d %H:%M:%S');
     my $datetime = $latest->strftime("%a, %d %b %Y %H:%M:%S +0900");
@@ -127,7 +133,7 @@ sub create_year_data {
     # 当年ターゲットだと年をまたいだ瞬間に前年分が data/years.pl のシード
     # (最終コミット時点) で凍結され、シード更新から年末までの統計が
     # サイレントに欠落するため、前年以降を毎ビルド再導出する
-    $target_year //= ($events->[0]{date} =~ m{^(\d+)})[0] - 1;
+    $target_year //= (maxstr(map { $_->{date} } @$events) =~ m{^(\d+)})[0] - 1;
 
     # 初回ビルド時のみ data/years.pl が存在しない。存在するのに読めない場合は
     # 過去年のデータを黙って失うことになるので config_do に croak させる。
@@ -206,7 +212,8 @@ sub sort_by_updated_at {
     my ($events, $articles) = @_;
 
     my %updated_at;
-    # commit_events は日付の降順なので、path ごとの初出が最新イベント
+    # commit_events は git log の走査順 (子が親より先) なので、path ごとの
+    # 初出が最新イベント
     $updated_at{$_->{path}} //= $_->{date} for @$events;
 
     return map  { $_->[1] }

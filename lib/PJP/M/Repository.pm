@@ -58,7 +58,12 @@ sub current_paths {
 }
 
 # 翻訳イベント (コミット × ファイル) の全列挙。git log の全走査 1 回で、
-# 削除・rename により現ツリーから消えた翻訳のイベントも含めて日付の降順で返す。
+# 削除・rename により現ツリーから消えた翻訳のイベントも含めて、git log の
+# 出力順 (子が親より先 = 配列の先頭側が新しい) のまま返す。真のコミット順を
+# 運ぶのはこの順序だけで、date は「いつ起きたか」(年の割当・掲載期間) の
+# データであり「どちらが後か」の判定には使わない。git log の既定順は親を
+# 子の処理時に初めて走査キューへ入れるため祖先順を常に守り、同一履歴に
+# 対して決定的。
 # ファイルの削除イベントは deleted フラグ付きで返し、扱いは呼び出し側の
 # 関心事にする (年次統計は「年内最終イベントが削除」の path をその年に
 # 数えない、など)。
@@ -83,6 +88,7 @@ sub commit_events {
   my $current = $class->current_paths($c);
 
   my @events;
+  my (%prev_date, @inverted);
   foreach my $repos (qw/translation/) {
       # コミットの区切りは %x01 (--name-status のファイル行と衝突しない制御文字)。
       # --no-renames は rename を削除+追加の 2 イベントとして出す
@@ -128,10 +134,16 @@ sub commit_events {
                       if $current->{_rel2path($rel)};
                   return;
               }
+              my $path = _rel2path($rel);
+              # 走査順は新しい方が先。後から出る (= 祖先側の) イベントの date が
+              # 先に出たものより新しければ、コミット順と日時が矛盾している
+              push @inverted, "$path: $date (ancestor) > $prev_date{$path} (descendant)"
+                  if defined $prev_date{$path} and $date gt $prev_date{$path};
+              $prev_date{$path} = $date;
               push @events, {
                               date    => $date,
                               author  => $author,
-                              path    => _rel2path($rel),
+                              path    => $path,
                               name    => $name,
                               in      => $in,
                               version => _file2version($rel),
@@ -141,19 +153,18 @@ sub commit_events {
           },
       );
   }
-  # 日付の降順。同時刻・同 path のイベントは git log の出力順 (子コミットが
-  # 親より先 = 新しい順) だけが真のコミット順を運ぶため、パース時の添字で
-  # その順序を保存する。下流 (YearData の年内最終判定、create_recent の
-  # path 初出採用) は配列の先頭側を新しい方として扱うので、ここに author 等の
-  # 無関係なキーを挟むと同秒の「追加→削除」が逆転して削除が見えなくなる。
-  # 異なる path 同士は path で締めて hash の列挙順に依存させない
-  @events = @events[
-      sort {
-          $events[$b]{date} cmp $events[$a]{date}
-              || $events[$a]{path} cmp $events[$b]{path}
-              || $a <=> $b
-      } 0 .. $#events
-  ];
+  # committer date は push 元マシンの時計なので、祖先順 (= 上の走査順) と
+  # 矛盾しうる。矛盾した履歴では年の割当 (date 由来) と path ごとの最新状態の
+  # 判定 (祖先順由来) が食い違い、削除済みの翻訳が年次統計に生き残るなど
+  # 誤った導出になる。data/years.pl は自動コミットで恒久化するため、自動で
+  # 辻褄を合わせずビルドを止めて履歴を確認させる
+  die "commit dates contradict the commit order (ancestry) for these paths:\n"
+      . join('', map { "  $_\n" } @inverted)
+      . "a skewed clock probably produced them, so the year assignment (by date)\n"
+      . "and the latest-state decisions (by ancestry) would disagree in the\n"
+      . "derived stats. inspect the history before deriving again.\n"
+      if @inverted;
+
   return \@events;
 }
 
@@ -177,7 +188,8 @@ sub assert_no_shadowed_deletions {
 
   my $current = $class->current_paths($c);
 
-  # commit_events は日付の降順なので、path ごとの初出が最新イベント
+  # commit_events は git log の走査順 (子が親より先) なので、path ごとの
+  # 初出が最新イベント
   my %newest;
   $newest{$_->{path}} //= $_ for @$events;
 

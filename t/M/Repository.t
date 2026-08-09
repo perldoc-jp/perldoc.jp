@@ -107,7 +107,7 @@ subtest 'current_paths が現ツリーの path を列挙する' => sub {
     ], '2 ファイルとも path 形式で列挙される';
 };
 
-subtest 'commit_events が全コミットを日付の降順で列挙する' => sub {
+subtest 'commit_events が全コミットを git log の走査順 (新しい方が先頭) で列挙する' => sub {
     my ($c, $r) = new_repo();
     $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
     $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
@@ -159,10 +159,12 @@ subtest 'subtree merge 前の path が現在の構造に正規化される' => s
     $r->write_file('wiki/translation-tips.md', "# tips\n");
     $r->commit_at('2020-06-01T12:00:00+0900', 'add wiki page');
 
+    # 走査順 = コミット順の逆 (新しい方が先)。perlvar の方が後にコミット
+    # されているので、日時が古くても先に列挙される
     my $events = PJP::M::Repository->commit_events($c);
     is [map { $_->{path} } @$events], [
-        'docs/perl/5.8.8/perlfunc.pod',
         'docs/perl/5.6.1/perlvar.pod',
+        'docs/perl/5.8.8/perlfunc.pod',
     ], 'perl/ と core/ は docs/perl/ に写像され、翻訳文書でない path は落ちる';
     is $events->[0]{in}, 'perl', '正規化後の path から name/in が導出される';
 };
@@ -255,6 +257,33 @@ subtest '同秒の追加と削除は git のコミット順で返る (author 名
             [['D', $remover], ['A', $adder]],
             "削除が新しい側に来る ($adder → $remover)";
     }
+};
+
+subtest '同一 path の日時が祖先順と矛盾したらビルドを止める' => sub {
+    # 時計の遅れたマシンからの push は、祖先順で後のコミットに古い committer
+    # date を残す。date は年の割当に使うため、矛盾した履歴から導出すると
+    # 年内最終判定 (祖先順) と年の割当 (date) が食い違った統計になり、
+    # 自動コミットで恒久化する
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
+    $r->commit_at('2025-05-01T12:00:00+0900', 'update Foo with a skewed clock');
+
+    like dies { PJP::M::Repository->commit_events($c) },
+        qr{docs/modules/Foo-1\.00/Foo\.pod}, '該当する path を挙げて die する';
+};
+
+subtest '別 path 同士の日時の前後は矛盾ではない' => sub {
+    # ブランチをまたぐと別 path のイベントの日時は走査順で前後しうる。
+    # 単調性の要請は path ごと
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
+    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
+    $r->commit_at('2025-05-01T12:00:00+0900', 'translate Bar with an older clock');
+
+    ok lives { PJP::M::Repository->commit_events($c) }, 'die しない';
 };
 
 subtest 'merge で復活した翻訳を検出してビルドを止める' => sub {

@@ -107,9 +107,9 @@ subtest '同じ path の同年イベントは年内最終だけが数えられ�
 };
 
 subtest '同秒の追加と削除は配列の先頭側 (新しい方) が勝つ' => sub {
-    # commit_events は同秒・同 path のイベントを git のコミット順 (新しい順)
-    # で返す。年内最終の判定は date の厳密比較なので、同秒では配列で先に
-    # 現れた方が最終イベントとして扱われる
+    # commit_events はイベントを git のコミット順 (新しい順) で返し、
+    # 年内最終の判定は (年, path) の初出採用なので、配列で先に現れた方が
+    # 最終イベントとして扱われる
     my $add = entry(date => '2025-06-01 12:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp');
     my $del = entry(date => '2025-06-01 12:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp', deleted => 1);
 

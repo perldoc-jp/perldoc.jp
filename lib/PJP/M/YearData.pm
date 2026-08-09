@@ -8,24 +8,25 @@ package PJP::M::YearData;
 # 側に残し、ここは (翻訳イベント列, seed, 対象年) から年ごとの統計を作る
 # 純粋な処理だけを持つ。
 #
-# $events      : PJP::M::Repository->commit_events の結果。削除・rename で
-#                現ツリーから消えた翻訳のイベントも含む
+# $events      : PJP::M::Repository->commit_events の結果 (git log の走査順 =
+#                配列の先頭側が新しい)。削除・rename で現ツリーから消えた
+#                翻訳のイベントも含む
 # $seed        : 既存の data/years.pl を読んだもの。初回ビルドでは undef。
 #                対象年より前の年だけが取り込まれ、対象年以降のキーは無視される
 # $target_year : 再導出の対象年 (= 前年)。これ以降が git 由来で組み直される
 sub build {
     my ($class, $events, $seed, $target_year) = @_;
 
-    # 対象年以降を「path ごとの年内最終イベント」に畳む。年内最終が削除の
-    # path はその年に数えない。旧 VPS が毎日の観測で当年を上書きし年末時点の
-    # 状態を凍結していたのと同じ意味論になる (年の途中の削除はその年から
-    # 消え、削除前の年の実績はイベントがある限り残る)
+    # 対象年以降を「path ごとの年内最終イベント」に畳む。イベント列は git の
+    # 走査順 (新しい方が先) なので、(年, path) の初出が年内最終。年内最終が
+    # 削除の path はその年に数えない。旧 VPS が毎日の観測で当年を上書きし
+    # 年末時点の状態を凍結していたのと同じ意味論になる (年の途中の削除は
+    # その年から消え、削除前の年の実績はイベントがある限り残る)
     my %latest;
     foreach my $event (@$events) {
         my ($y) = $event->{date} =~ m{^(\d+)} or next;
         next if $y < $target_year;
-        my $found = $latest{$y}{$event->{path}};
-        $latest{$y}{$event->{path}} = $event if not $found or $event->{date} gt $found->{date};
+        $latest{$y}{$event->{path}} //= $event;
     }
     my @updates = grep { not $_->{deleted} } map { values %$_ } values %latest;
 
