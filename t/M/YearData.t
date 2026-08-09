@@ -179,6 +179,27 @@ subtest '再導出が古い年の実績を横取りしない' => sub {
     is $count{bob}, 1, '2025 側は commit_count_all にだけ計上される';
 };
 
+subtest '旧規則の in を持つ seed と新規則のイベントが二重計上されない' => sub {
+    # モジュール名の導出は「先頭のハイフン 1 個だけ ::」の時代があり、seed には
+    # Class::Data-Inheritable のような旧規則の in が凍結されている。現行規則は
+    # 全ハイフンを :: にするため、同じ dist の同じ版のイベントが文字列としては
+    # 一致しない。重複排除が表記の違いを越えて効かないと、seed 済みの版が
+    # 対象年に再掲載され、翻訳者の commit_count が水増しされる
+    my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Class-Data-Inheritable-0.06/Inheritable.pod',
+                    in => 'Class::Data-Inheritable', version => '0.06', author => 'alice');
+    my $new = entry(date => '2025-05-01 00:00:00', path => 'docs/modules/Class-Data-Inheritable-0.06/Inheritable.pod',
+                    in => 'Class::Data::Inheritable', version => '0.06', author => 'bob');
+    my $seed = { 2010 => seed_year([$old], { alice => 1 }) };
+
+    my $year = PJP::M::YearData->build([$new], $seed, 2025);
+
+    is paths_of($year->{2010}), ['docs/modules/Class-Data-Inheritable-0.06/Inheritable.pod'],
+        '2010 の初出は seed のまま';
+    is paths_of($year->{2025}), [], '同じ dist の同じ版は 2025 に再掲載されない';
+    my %count = map { $_->[0] => $_->[2] } @{ $year->{2025}{commit_count} };
+    is $count{bob}, undef, '初出扱いの commit_count には計上されない';
+};
+
 subtest 'seed が無くても組み立てられる (初回ビルド)' => sub {
     my $foo = entry(date => '2025-06-01 00:00:00', path => 'docs/modules/Foo-1.00/Foo.pod');
     my $year = PJP::M::YearData->build([$foo], undef, 2025);

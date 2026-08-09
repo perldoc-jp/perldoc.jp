@@ -68,7 +68,7 @@ sub build {
         }
         my $n = $module->{in} eq 'perl'
             ? $module{perl}->{$module->{name}}->{$module->{version}}++
-            : $module{$module->{in}}->{$module->{version}}++;
+            : $module{_dedup_in($module->{in})}->{$module->{version}}++;
         if (not $n) {
             push @{$year->{$y}->{modules}}, $module;
             $year->{$y}->{commit_count}->{$module->{author}}++;
@@ -99,6 +99,17 @@ sub build {
     }
 
     return $year;
+}
+
+# 「同じ dist の同じ版か」の判定に使う in の正規化。in は表示用の文字列で、
+# モジュール名の導出規則が「先頭のハイフン 1 個だけ ::」から「全ハイフン」に
+# 変わった経緯があり、seed には旧規則の値 (例: Class::Data-Inheritable) が
+# 凍結されている。表示は凍結のまま、同一性だけを現行規則へ冪等に収束させ、
+# 同じ dist の同じ版が seed と新イベントで別物として二重計上されるのを防ぐ
+sub _dedup_in {
+    my ($in) = @_;
+    $in =~ s{-}{::}g;
+    return $in;
 }
 
 1;
