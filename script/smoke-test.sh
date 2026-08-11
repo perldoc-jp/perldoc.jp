@@ -35,25 +35,34 @@ docker run -d --name "$NAME" --read-only --tmpfs /tmp \
   -e PORT=8080 -p 127.0.0.1::8080 "$IMAGE"
 BASE="http://$(docker port "$NAME" 8080/tcp)"
 
+# 応答が返らなくなったコンテナ相手に、ジョブの timeout (60 分) まで待ち続ける
+# ことがないよう、すべての curl に上限を付ける
+CURL="curl -fsS --connect-timeout 5 --max-time 30"
+
 for _ in $(seq 1 30); do
-  curl -fsS -o /dev/null "$BASE/" && break
+  $CURL -o /dev/null "$BASE/" && break
   sleep 2
 done
-curl -fsS "$BASE/" | grep 'perldoc.jp' > /dev/null
-curl -fsS -o /dev/null "$BASE/docs/perl/perl.pod"
-curl -fsS "$BASE/translators" | grep '年</h2>' > /dev/null
-curl -fsS "$BASE/static/docs.json" | grep 'Acme::Bleach' > /dev/null
+$CURL "$BASE/" | grep 'perldoc.jp' > /dev/null
+$CURL -o /dev/null "$BASE/docs/perl/perl.pod"
+$CURL "$BASE/translators" | grep '年</h2>' > /dev/null
+$CURL "$BASE/static/docs.json" | grep 'Acme::Bleach' > /dev/null
 # イメージへの static/favicon.ico の取り込み漏れを検出する
-curl -fsS -o /dev/null "$BASE/favicon.ico"
+$CURL -o /dev/null "$BASE/favicon.ico"
 # runtime の allowlist COPY の列挙漏れを検出する
 # (toc.txt / toc-var.txt はこの 2 ルートでしか読まれない)
-curl -fsS -o /dev/null "$BASE/index/core"
-curl -fsS -o /dev/null "$BASE/index/variable"
+$CURL -o /dev/null "$BASE/index/core"
+$CURL -o /dev/null "$BASE/index/variable"
+# functions.txt と static/rss も runtime へ COPY するが、これらを読むルートは
+# prove では databuild の作業ツリー (どちらも存在する) で走るため、
+# COPY の抜けはここでしか検出できない
+$CURL "$BASE/func/chomp" | grep 'chomp' > /dev/null
+$CURL "$BASE/static/rss/recent.rss" | grep '<rss' > /dev/null
 # 差分表示は、外部コマンドの diff を fork し /tmp に一時ファイルを書く唯一の
 # ルート。prove は diffutils が必ず入っている databuild イメージ (slim ではない)
 # で走るため、slim の runtime で diff が引けることと、read-only FS + tmpfs の
 # /tmp に書けることは、ここでしか確かめられない。
 # 版の組は t/endpoints.t と同じものを使う (translation から失われた場合は
 # test ステージの prove が先に落ちる)
-curl -fsS "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod" \
+$CURL "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod" \
   | grep "<table class='diff'>" > /dev/null

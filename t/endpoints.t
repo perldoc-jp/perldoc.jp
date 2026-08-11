@@ -232,7 +232,7 @@ subtest 'GET /variable/*' => sub {
     };
 };
 
-subtest '/docs/modules/{distvname}{trailingslash}' => sub {
+subtest '/docs/modules/{distvname}/*.pod' => sub {
     subtest '指定モジュールの翻訳が存在すれば、その翻訳が表示される' => sub {
         $mech->get('/docs/modules/Acme-Bleach-1.12/Bleach.pod');
 
@@ -242,6 +242,29 @@ subtest '/docs/modules/{distvname}{trailingslash}' => sub {
 
     subtest '指定モジュールの翻訳が存在しなければ、404が返る' => sub {
         $mech->get('/docs/modules/DoesNotExist-1.12/DoesNotExist.pod');
+        is $mech->status, 404, 'status is 404';
+    };
+};
+
+# 上の subtest が叩いているのはファイル名まで含む path で、こちらのルートには
+# 一致しない (distvname にスラッシュを含められないため)。dist の一覧を出す
+# こちらのルートは、版が無い名前で来たときに package として解釈し直して
+# 最新の dist を選ぶ経路を持つ
+subtest '/docs/modules/{distvname}{trailingslash}' => sub {
+    subtest '版付きの dist 名で一覧が出る' => sub {
+        $mech->get('/docs/modules/Acme-Bleach-1.12/');
+        is $mech->status, 200, 'status is 200';
+        $mech->content_like(qr{Bleach\.pod}, '収録された pod へのリンクがある');
+    };
+
+    subtest '版の無い名前は package として解釈され、最新の dist が出る' => sub {
+        $mech->get('/docs/modules/Acme-Bleach');
+        is $mech->status, 200, 'status is 200';
+        $mech->content_like(qr{Acme-Bleach-\d}, '版付きの dist の内容が出る');
+    };
+
+    subtest '該当する dist が無ければ 404 が返る' => sub {
+        $mech->get('/docs/modules/DoesNotExist');
         is $mech->status, 404, 'status is 404';
     };
 };

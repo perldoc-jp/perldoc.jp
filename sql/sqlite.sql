@@ -32,5 +32,3 @@ CREAte INDEX if not exists pod_distvname_cover on pod (distvname, package, path,
 -- path への後方一致 LIKE (get_latest の '%/Foo.pod' 等) をテーブル全走査でなく
 -- インデックス全走査で済ませるための index
 CREAte INDEX if not exists pod_path_cover      on pod (path, package, distvname);
-
-

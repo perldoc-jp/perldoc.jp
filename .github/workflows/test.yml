@@ -7,6 +7,29 @@ on:
   pull_request:
 
 jobs:
+  # 行末の空白やタブ混じりのインデントは、後から触った差分に紛れて読みにくく
+  # なるので、入った時点で気づけるようにする
+  whitespace:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        # 比較対象のコミットまで遡れるようにする
+        fetch-depth: 0
+
+    - name: Check whitespace errors
+      env:
+        BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+      run: |
+        # push の初回や force push では before が 0 埋めになり、比較対象が無い
+        if [ -z "$BASE" ] || [ "$BASE" = '0000000000000000000000000000000000000000' ]; then
+          echo 'no base commit to compare against; skipping'
+          exit 0
+        fi
+        # 終点に HEAD を明示する。省くと作業ツリー (生成物を含む) が対象になる
+        git diff --check "$BASE" HEAD --
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -83,6 +106,23 @@ jobs:
           type=gha,scope=runtime
           type=gha,scope=runtime-pr
         cache-to: type=gha,mode=max,scope=runtime-pr
+
+    # years-export は runtime から参照されないので、上のビルドでは作られない。
+    # deploy.yml はデプロイが成功した後にこのステージを使うため、壊れていても
+    # 「本番へ反映された後に years.pl の書き戻しだけが失敗する」形になる。
+    # runtime と同じ translation SHA・同じキャッシュで作るので、ここでの
+    # 追加ビルドはほぼ全レイヤがキャッシュに当たる
+    - name: Build years-export stage
+      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      with:
+        context: .
+        target: years-export
+        outputs: type=cacheonly
+        build-args: |
+          TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
+        cache-from: |
+          type=gha,scope=runtime
+          type=gha,scope=runtime-pr
 
     - name: Smoke test image
       run: ./script/smoke-test.sh perldocjp-runtime:latest
