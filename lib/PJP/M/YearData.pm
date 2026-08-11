@@ -3,6 +3,7 @@ use warnings;
 use utf8;
 
 package PJP::M::YearData;
+use PJP::M::Repository ();
 
 # data/years.pl の中身を組み立てる。ファイル入出力は script/create_data.pl
 # 側に残し、ここは (翻訳イベント列, seed, 対象年) から年ごとの統計を作る
@@ -19,6 +20,10 @@ package PJP::M::YearData;
 # 当時のシステムで観測した結果の凍結で、現在の git 履歴からは再現できない
 use constant GIT_DERIVABLE_SINCE => 2011;
 
+# data/years.pl が持つ最も古い年。この年から対象年の前年までが揃っていない
+# seed は、途中の年が失われた状態なので受け付けない
+use constant SEED_SINCE => 2002;
+
 sub build {
     my ($class, $events, $seed, $target_year) = @_;
 
@@ -32,6 +37,18 @@ sub build {
         . " years before @{[ GIT_DERIVABLE_SINCE ]} are frozen observations"
         . " that cannot be rebuilt from the git history\n"
         if $target_year < GIT_DERIVABLE_SINCE;
+
+    # 最新イベントより後の年を対象にすると、全イベントが対象年より前として
+    # 捨てられ、seed をそのまま書き戻しただけの結果が正常終了する。回復手順の
+    # 打ち間違いが「差分が出ない = 再導出は不要だった」と読めてしまうため止める
+    my ($newest_year) = sort { $b <=> $a } map { $_->{date} =~ m{^(\d{4})} } @$events;
+    die "target year $target_year is after the newest translation event ($newest_year);"
+        . " nothing would be rebuilt\n"
+        if defined $newest_year && $target_year > $newest_year;
+
+    # 再利用するブロック (対象年より前) だけ形を検査する。対象年以降は毎回
+    # 捨てて作り直すので、壊れていても結果に影響しない
+    _assert_seed_block($_, $seed->{$_}) for grep { $_ < $target_year } keys %{ $seed // {} };
 
     # 対象年以降を「path ごとの年内最終イベント」に畳む。イベント列は git の
     # 走査順 (新しい方が先) なので、(年, path) の初出が年内最終。年内最終が
@@ -127,6 +144,74 @@ sub build {
     }
 
     return $year;
+}
+
+# data/years.pl が原本として欠けていないことを検査する。
+#
+# build は与えられた seed の形しか見ない (純粋な組み立てなので、どの年が
+# 揃っているべきかは入力の性質)。実際の data/years.pl は 2002 年から連続して
+# いて、2011 年より前は git 履歴から再現できない唯一の原本なので、欠けた
+# ファイルを黙って通すと復元できないまま自動コミットで上書きされる。
+# その前提を知っているのは呼び出し側 (databuild) なので、検査もそこから呼ぶ。
+sub assert_seed_is_complete {
+    my ($class, $seed, $target_year) = @_;
+
+    die "no seed given; data/years.pl holds the only copy of the pre-"
+        . GIT_DERIVABLE_SINCE . " statistics (restore it with: git restore data/years.pl)\n"
+        unless $seed && %$seed;
+
+    my $this_year = PJP::M::Repository->_now_jst()->year;
+    my @bad_keys = sort grep { !/^[0-9]{4}$/ || $_ < SEED_SINCE || $_ > $this_year } keys %$seed;
+    die "data/years.pl has keys that are not plausible years:\n"
+        . join('', map { "  $_\n" } @bad_keys)
+        if @bad_keys;
+
+    my @missing = grep { !exists $seed->{$_} } SEED_SINCE .. $target_year - 1;
+    die "data/years.pl is missing these years:\n"
+        . join('', map { "  $_\n" } @missing)
+        . "years before @{[ GIT_DERIVABLE_SINCE ]} cannot be rebuilt from the git history\n"
+        if @missing;
+    return;
+}
+
+# 再利用する年ブロックの形を検査する。build がそのまま次の data/years.pl へ
+# 引き継ぐので、壊れた値はここで止めないと自動コミットで恒久化する
+sub _assert_seed_block {
+    my ($y, $block) = @_;
+
+    my $bad = sub { die "data/years.pl year $y is broken: $_[0]\n" };
+
+    $bad->('not a hash') if ref $block ne 'HASH';
+    # modules は空でもよい。更新はあったが、その年に初出となる dist が
+    # 無かった年を build 自身が modules => [] で作る
+    $bad->('modules is not an array') if ref $block->{modules} ne 'ARRAY';
+    for my $module (@{$block->{modules}}) {
+        $bad->('a module entry is not a hash') if ref $module ne 'HASH';
+        defined $module->{$_} or $bad->("a module entry has no $_")
+            for qw/date author path name in version/;
+    }
+
+    $bad->('commit_count_all is not a hash') if ref $block->{commit_count_all} ne 'HASH';
+    $bad->('commit_count_all is empty')      if !%{$block->{commit_count_all}};
+    $bad->('commit_count is not an array')   if ref $block->{commit_count} ne 'ARRAY';
+
+    my %seen;
+    for my $row (@{$block->{commit_count}}) {
+        $bad->('a commit_count row is not an array') if ref $row ne 'ARRAY' || @$row != 3;
+        my ($author, $all, $first) = @$row;
+        $bad->('a commit_count row has no author') unless defined $author && length $author;
+        $bad->("commit_count has $author twice")   if $seen{$author}++;
+        $bad->("$author is not in commit_count_all") unless exists $block->{commit_count_all}{$author};
+        $bad->("$author has a different count in commit_count_all")
+            if ($all // -1) != $block->{commit_count_all}{$author};
+        # 3 番目は「その年に初出だった dist の数」で、0 件の author は undef の
+        # まま出力される (既存の data/years.pl にも実在する)
+        $bad->("$author has a broken first-appearance count")
+            if defined $first && $first !~ /^[0-9]+$/;
+    }
+    $bad->('commit_count and commit_count_all disagree on the set of authors')
+        if keys %seen != keys %{$block->{commit_count_all}};
+    return;
 }
 
 # 「同じ dist の同じ版か」の判定に使う in の正規化。in は表示用の文字列で、

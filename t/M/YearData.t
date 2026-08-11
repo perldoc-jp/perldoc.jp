@@ -257,4 +257,69 @@ subtest '入力を変更しない・同じ入力なら結果が変わらない' 
     is paths_of($second->{2010}), ['docs/modules/Ancient-1.00/Ancient.pod'], '2010 も保たれる';
 };
 
+subtest '最新イベントより後の対象年を止める' => sub {
+    # 回復手順 (script/create_data.pl <対象年>) の打ち間違いで未来年を渡すと、
+    # 全イベントが対象年より前として捨てられ、seed をそのまま書き戻した結果が
+    # 正常終了する。差分が出ないので「再導出は不要だった」と読めてしまう
+    my @events = (entry(date => '2025-06-01 00:00:00', path => 'docs/modules/Foo-1.00/Foo.pod'));
+
+    like dies { PJP::M::YearData->build(\@events, undef, 2052) },
+        qr/after the newest translation event \(2025\)/,
+        '最新イベントの年より後は die する';
+    ok lives { PJP::M::YearData->build(\@events, undef, 2025) }, '最新イベントの年ちょうどは通る';
+};
+
+subtest '再利用する年ブロックの形を検査する' => sub {
+    my $entry = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+
+    my $broken_module = { 2010 => seed_year([{ %$entry, author => undef }], { alice => 1 }) };
+    like dies { PJP::M::YearData->build([], $broken_module, 2025) },
+        qr/year 2010 is broken: a module entry has no author/, 'module のフィールド欠けで die する';
+
+    my $extra_author = { 2010 => seed_year([$entry], { alice => 1 }) };
+    push @{$extra_author->{2010}{commit_count}}, ['bob', 1, 1];
+    like dies { PJP::M::YearData->build([], $extra_author, 2025) },
+        qr/bob is not in commit_count_all/, 'commit_count にだけ居る author で die する';
+
+    my $missing_author = { 2010 => seed_year([$entry], { alice => 1, bob => 2 }) };
+    shift @{$missing_author->{2010}{commit_count}};
+    like dies { PJP::M::YearData->build([], $missing_author, 2025) },
+        qr/disagree on the set of authors/, 'commit_count_all にだけ居る author で die する';
+
+    my $duplicated = { 2010 => seed_year([$entry], { alice => 1 }) };
+    push @{$duplicated->{2010}{commit_count}}, ['alice', 1, 1];
+    like dies { PJP::M::YearData->build([], $duplicated, 2025) },
+        qr/commit_count has alice twice/, '同じ author の行が 2 つあると die する';
+
+    # 初出 dist が無かった年は 3 番目が undef のまま出力される (実データにもある)
+    my $undef_first = { 2010 => seed_year([$entry], { alice => 1 }) };
+    $undef_first->{2010}{commit_count}[0][2] = undef;
+    ok lives { PJP::M::YearData->build([], $undef_first, 2025) }, '3 番目が undef の行は通る';
+
+    # 更新はあったが初出 dist が無かった年は modules => [] になる
+    my $empty_modules = { 2010 => seed_year([], { alice => 1 }) };
+    ok lives { PJP::M::YearData->build([], $empty_modules, 2025) }, 'modules が空の年も通る';
+};
+
+subtest 'seed が原本として欠けていないか検査する' => sub {
+    my $entry = entry(date => '2002-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+    my $seed  = { 2002 => seed_year([$entry], { alice => 1 }) };
+
+    ok lives { PJP::M::YearData->assert_seed_is_complete($seed, 2003) },
+        '対象年の前年まで揃っていれば通る';
+
+    like dies { PJP::M::YearData->assert_seed_is_complete(undef, 2003) },
+        qr/no seed given/, 'seed が無ければ die する';
+    like dies { PJP::M::YearData->assert_seed_is_complete({}, 2003) },
+        qr/no seed given/, '空の seed でも die する';
+
+    like dies { PJP::M::YearData->assert_seed_is_complete($seed, 2005) },
+        qr/missing these years:\n  2003\n  2004/, '間の年が欠けていたら die する';
+
+    like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, 'recent' => {} }, 2003) },
+        qr/not plausible years/, '年でないキーがあれば die する';
+    like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, 3000 => {} }, 2003) },
+        qr/not plausible years/, '現在年より後のキーがあれば die する';
+};
+
 done_testing;
