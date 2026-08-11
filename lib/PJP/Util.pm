@@ -5,9 +5,23 @@ use warnings;
 use feature qw(state);
 use parent 'Exporter';
 
+use File::Basename ();
+use File::Temp ();
+use POSIX ();
 use Text::Markdown::Discount ();
 
-our @EXPORT_OK = qw/slurp markdown_to_html read_command/;
+our @EXPORT_OK = qw/slurp markdown_to_html read_command write_file_atomic record_perldoc_failure/;
+
+# Pod::Perldoc の検索失敗を仕分ける。組み込み関数・変数の候補は pod の
+# C<...> から拾った文字列なので、実際には関数でも変数でもないものが混ざり、
+# Pod::Perldoc はそれを die で伝える。この「見つからなかった」だけは正常系
+# として通し、それ以外 (ファイルが読めない等) は集めて呼び出し元に止めさせる
+sub record_perldoc_failure {
+    my ($failures, $name, $error) = @_;
+    return if $error =~ m{^No documentation for perl (?:function|variable)};
+    push @$failures, "$name: $error";
+    return;
+}
 
 # 外部コマンドを読み取りパイプで実行し、出力を 1 行ずつ $cb に渡す。
 #
@@ -24,21 +38,76 @@ our @EXPORT_OK = qw/slurp markdown_to_html read_command/;
 sub read_command {
     my ($cmd, $cb, %opts) = @_;
     my %ok_exit = map { $_ => 1 } @{ $opts{ok_exit} // [0] };
+    my $desc = join ' ', @$cmd;
 
-    open my $fh, '-|', @$cmd or die "Cannot run $cmd->[0]: $!";
-    while (my $line = <$fh>) {
-        $cb->($line);
-    }
+    my $pid = open my $fh, '-|', @$cmd or die "Cannot run $cmd->[0]: $!";
+
+    # 読み取り中に die した場合 (呼び出し元の alarm など) は、close の前に子を
+    # 明示的に殺す。close は子の終了を待つので、まだ出力し続けている子が
+    # 相手だとそこで止まり、タイムアウトが効かなくなる
+    eval {
+        while (my $line = <$fh>) {
+            $cb->($line);
+        }
+        1;
+    } or do {
+        my $error = $@ || "died\n";
+        _terminate_child($pid);
+        close $fh;
+        die $error;
+    };
 
     return if close $fh;
 
-    my $desc = join ' ', @$cmd;
     die "Cannot read output from $desc: $!" if $!;
     die "$desc was killed by signal " . ($? & 127) if $? & 127;
 
     my $exit = $? >> 8;
     return if $ok_exit{$exit};
     die "$desc exited with status $exit";
+}
+
+# TERM で止まらない子のために KILL まで進む。消費者 (git, diff) は孫を作らない
+# ので、直接の子だけを相手にすれば close が待ち続けることはない
+sub _terminate_child {
+    my ($pid) = @_;
+
+    kill 'TERM', $pid or return;
+    for (1 .. 20) {    # 最大 1 秒
+        return if waitpid($pid, POSIX::WNOHANG()) == $pid;
+        select undef, undef, undef, 0.05;
+    }
+    kill 'KILL', $pid;
+    waitpid $pid, 0;
+}
+
+# 生成物を書き出す。同じディレクトリの一時ファイルに書き切ってから rename する
+# ことで、書き込み中の中断が既存のファイルを壊さないようにする。
+# data/years.pl は git 管理下の唯一の年次統計の原本で、2011 年より前は履歴から
+# 再現できない。運用手順は手元でこのスクリプトを直接実行することも案内している
+# ため、原子性は「壊れても再ビルドすればよい」では済まない。
+#
+# 一時ファイル名は File::Temp に任せる (固定名だと、同じディレクトリで
+# 並行実行したときに双方が同じ inode に書き、片方の rename 後にもう片方が
+# 最終ファイルを書き換えられる)。途中で die した場合は File::Temp が
+# デストラクタで消すので、残骸は残らない。
+sub write_file_atomic {
+    my ($path, $cb) = @_;
+
+    my $tmp = File::Temp->new(
+        DIR    => File::Basename::dirname($path),
+        SUFFIX => '.tmp',
+        UNLINK => 1,
+    );
+    $cb->($tmp);
+    $tmp->flush or die "Cannot write $path: $!";
+    close $tmp or die "Cannot write $path: $!";
+
+    chmod 0644, $tmp->filename or die "Cannot chmod $path: $!";
+    rename $tmp->filename, $path or die "Cannot rename to $path: $!";
+    # rename 済みなので、デストラクタに消させない
+    $tmp->unlink_on_destroy(0);
+    return;
 }
 
 sub slurp {

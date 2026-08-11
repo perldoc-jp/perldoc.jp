@@ -34,9 +34,12 @@ sub generate {
         push @{$module2versions{$_->{name}}}, $_;
     }
     for my $module ( keys %module2versions ) {
+        # 版が同値になる組 (解析できない版どうしを含む) の並びを readdir の
+        # 列挙順に委ねると、versions の順序も先頭から採る abstract も環境に
+        # 依存するので、distvname で締めて全順序にする
         $module2versions{$module} = [
             map            { $_->[0] }
-              reverse sort { $a->[1] <=> $b->[1] }
+              reverse sort { $a->[1] <=> $b->[1] || $a->[0]{distvname} cmp $b->[0]{distvname} }
               map {
                 [ $_, eval { version->new( $_->{version} ) } || 0 ]
               } @{ $module2versions{$module} }
@@ -107,8 +110,10 @@ sub _generate {
         }
 =cut
 
-        # ファイル名のいちばん短い pod ファイルが代表格といえる
-        my ($pod_file) = sort { length($a) <=> length($b) }
+        # ファイル名のいちばん短い pod ファイルが代表格といえる。
+        # 同じ長さの候補を持つ dist が実在するので、path で締めて
+        # 代表 (= 一覧に出る abstract) を環境に依存させない
+        my ($pod_file) = sort { length($a) <=> length($b) || $a cmp $b }
             File::Find::Rule->file()
                             ->name('*.pod')
                             ->in("$base/$e");

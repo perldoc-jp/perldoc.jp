@@ -32,20 +32,28 @@ foreach my $db_type (qw/master_db slave_db/) {
 }
 
 if (! -d $assets_dir) {
-    mkdir $assets_dir;
+    mkdir $assets_dir or die "Cannot mkdir $assets_dir: $!";
 }
 
+# 以下の外部コマンドは、失敗しても後続がそれらしく動いてしまう。translation の
+# 取得に失敗すれば「翻訳が 1 件も無い」生成物ができ、DB の初期化に失敗すれば
+# 空のテーブルに書き込むだけになるので、その場で止める
 if (! -d $assets_dir . '/translation/') {
-    system(qq{git clone https://github.com/perldoc-jp/translation.git $assets_dir/translation/});
+    system(qq{git clone https://github.com/perldoc-jp/translation.git $assets_dir/translation/}) == 0
+        or die "Cannot clone translation repository";
 }
 
 if (! $ENV{SKIP_ASSETS_UPDATE}) {
-    system(qq{cd $assets_dir/translation; git pull origin master});
+    system(qq{cd $assets_dir/translation; git pull origin master}) == 0
+        or die "Cannot update translation repository";
 }
 
-chdir $code_dir;
+# code_dir が誤っていても、たまたま正しい cwd から起動していれば以降は
+# 成功してしまうので、設定の誤りをここで顕在化させる
+chdir $code_dir or die "Cannot chdir to $code_dir: $!";
 if (! -e $sqlite_db) {
-    system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql});
+    system(qq{sqlite3 $sqlite_db < ./sql/sqlite.sql}) == 0
+        or die "Cannot initialize $sqlite_db";
 }
 
 my $t = time;
@@ -54,7 +62,8 @@ PJP::M::BuiltinVariable->generate($pjp);
 PJP::M::PodFile->generate($pjp);
 
 if ($config->{master_db} and -e $config->{master_db} and $config->{slave_db}) {
-  system('cp ' . $config->{master_db} . ' ' . $config->{slave_db});
+  system('cp', $config->{master_db}, $config->{slave_db}) == 0
+      or die "Cannot copy $config->{master_db} to $config->{slave_db}";
 }
 
 print $mode_name, "\n";

@@ -190,13 +190,13 @@ sub generate {
 
         # perlfunc.pod の HTML には組み込み関数へのリンクを焼き込む (下の
         # generate_one_file)。一覧が空のまま生成すると、リテラル置換分だけが
-        # 残った HTML が黙ってイメージに入る。ファイル単位の eval が生成中の
-        # die を warn に落とすため、原因はここで検査しないと終了コードに出ない。
+        # 残った HTML が黙ってイメージに入る。
         # script/update.pl は PJP::M::BuiltinFunction->generate を先に実行し、
         # その最後で functions.txt を読み直すので、この時点では埋まっている
         die 'PJP::M::BuiltinFunction has no function list; run its generate() first'
             unless @PJP::M::BuiltinFunction::REGEXP;
 
+        my @failures;
         my $txn = $c->dbh_master->txn_scope();
         $c->dbh_master->do(q{DELETE FROM pod});
         my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')));
@@ -212,7 +212,9 @@ sub generate {
                 }
                 $repository =~ s{^([\w\-.]+)/.+}{$1};
 
-                my @files = File::Find::Rule->file()
+                # 列挙順はファイルシステムに依存する。pod テーブルへの挿入順が
+                # そのまま DB のバイト列に出るので、並べ替えて決定的にする
+                my @files = sort File::Find::Rule->file()
                     ->name($extention_exp)
                     ->in($base);
                 for my $file (@files) {
@@ -224,14 +226,22 @@ sub generate {
                         } else {
                             $class->generate_one_file_html($c, $file, $base, $repository);
                         }
+                        1;
+                    } or do {
+                        # 1 ファイルの失敗で全体を止めず、最後にまとめて報告する。
+                        # そのファイルだけ配信から欠ける状態でイメージが完成すると、
+                        # 「500 件以上ある」程度のテストは通ってしまい気づけない
+                        push @failures, "$file: " . ($@ || 'unknown error');
                     };
-                    if ($@) {
-                      warn '===============================================';
-                      warn "cannot generate: $file ($@)";
-                      warn '===============================================';
-                    }
                 }
         }
+
+        # commit の前に判定する。後に置くと、失敗したビルドが部分的な pod
+        # テーブルを確定させてしまう
+        die "cannot generate these documents:\n"
+            . join('', map { "  $_\n" } @failures)
+            if @failures;
+
         $txn->commit;
 }
 

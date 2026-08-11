@@ -7,6 +7,7 @@ use PJP::M::Pod;
 use Pod::Perldoc;
 use Amon2::Declare;
 use English ();
+use PJP::Util qw/record_perldoc_failure/;
 
 my @VARIABLES;
 sub VARIABLES {
@@ -52,12 +53,14 @@ sub generate {
             close $fh;
             my %tmp;
             @tmp{@_candidate} = ();
-            ($_encoding, keys %tmp);
+            # keys の順は実行ごとに変わる。この列がそのまま var テーブルの
+            # 挿入順になるので、並べ替えて生成物を決定的にする
+            ($_encoding, sort keys %tmp);
         };
 
     $encoding ||= 'euc-jp';
 
-    my @variables;
+    my (@variables, @failures);
     my $txn = $c->dbh_master->txn_scope();
     $c->dbh_master->do(q{DELETE FROM var});
     for my $name (@candidate) {
@@ -65,7 +68,8 @@ sub generate {
 	my $perldoc = Pod::Perldoc->new(opt_v => $name);
 	eval {
 	    $perldoc->search_perlvar([$path], \@dynamic_pod);
-	};
+	    1;
+	} or record_perldoc_failure(\@failures, $name, $@);
 	next if not @dynamic_pod;
 
 	push @variables, $name;

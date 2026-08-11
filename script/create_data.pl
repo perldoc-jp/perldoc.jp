@@ -18,6 +18,7 @@ use JSON::XS ();
 use XML::RSS;
 use lib qw(./lib);
 use PJP;
+use PJP::Util qw/write_file_atomic/;
 use Config::PL;
 use Module::Find qw/useall/;
 
@@ -120,9 +121,13 @@ sub create_rss {
             pubDate     => $datetime->strftime("%a, %d %b %Y %H:%M:%S +0900"),
             );
     }
-    open my $fh, '>', 'static/rss/recent.rss' or die $!;
-    print $fh $rss->as_string;
-    close $fh;
+    # as_string が返すのは decode 済みの文字列で、宣言する encoding は UTF-8。
+    # 層を付けずに書くと非 ASCII の author 名でバイト列が内部表現任せになる
+    write_file_atomic('static/rss/recent.rss', sub {
+        my $fh = shift;
+        binmode $fh, ':encoding(UTF-8)';
+        print {$fh} $rss->as_string;
+    });
 }
 
 sub create_year_data {
@@ -163,9 +168,13 @@ sub create_docs_json {
         $docs{$package} = $path;
     }
 
-    open my $fh, '>:raw', 'static/docs.json' or die "Cannot open static/docs.json: $!";
-    print {$fh} JSON::XS->new->canonical->encode(\%docs);
-    close $fh;
+    # ->utf8 で encode 側にバイト列を作らせる。付けないと非 ASCII の package が
+    # 内部表現のまま raw ハンドルへ出て、latin-1 のバイト列や wide character 警告になる
+    write_file_atomic('static/docs.json', sub {
+        my $fh = shift;
+        binmode $fh, ':raw';
+        print {$fh} JSON::XS->new->canonical->utf8->encode(\%docs);
+    });
 }
 
 # /index/module と /index/article の目次データを data/ に書き出す。
@@ -177,15 +186,14 @@ sub create_index_data {
 
     # abstract を含む大きな構造なので、目次データだけ従来どおり Indent=1 で
     # 出力する (バイト列を既存の生成物から変えない)
-    local $Data::Dumper::Indent = 1;
-
     my @modules = PJP::M::Index::Module->generate($pjp);
     die "PJP::M::Index::Module->generate returned no entries" unless @modules;
-    write_data_pl('data/index-module.pl', { index => \@modules });
+    write_data_pl('data/index-module.pl', { index => \@modules }, indent => 1);
 
     my @articles = PJP::M::Index::Article->generate($pjp);
     die "PJP::M::Index::Article->generate returned no entries" unless @articles;
-    write_data_pl('data/index-article.pl', { index => [sort_by_updated_at($events, \@articles)] });
+    write_data_pl('data/index-article.pl', { index => [sort_by_updated_at($events, \@articles)] },
+                  indent => 1);
 }
 
 # その他の翻訳の一覧を「更新が新しい順」に並べる。
@@ -220,11 +228,9 @@ sub sort_by_updated_at {
 }
 
 # 先頭の + は do がブロックと誤解釈しないための明示。
-# ビルド時に読み手は居ない (アプリはデプロイ単位で不変なファイルを読む) ので、
-# 書き込みの原子性は要らない
+# indent は生成物ごとに違う (目次データだけ従来の Indent=1 を保つ) ため引数で受ける
 sub write_data_pl {
-    my ($path, $data) = @_;
-    open my $fh, '>', $path or die "Cannot open $path: $!";
-    print {$fh} '+', Dumper($data);
-    close $fh or die "Cannot write $path: $!";
+    my ($path, $data, %opts) = @_;
+    local $Data::Dumper::Indent = $opts{indent} if defined $opts{indent};
+    write_file_atomic($path, sub { print {$_[0]} '+', Dumper($data) });
 }

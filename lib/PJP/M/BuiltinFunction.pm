@@ -8,10 +8,11 @@ use Pod::Perldoc;
 use Amon2::Declare;
 use Regexp::Assemble;
 use constant FUNCTION_LIST_FILE => 'functions.txt';
-use PJP::Util qw/slurp/;
+use PJP::Util qw/slurp write_file_atomic record_perldoc_failure/;
 
 # perlop から検索するものの正規表現
 my $OPS_REGEXP = 'tr|s|q|qq|y|m|qr|qx';
+
 
 # パッケージ変数にしているのは、テストが local で退避してから
 # _load_functions を呼べるようにするため (my だと local できない)
@@ -104,7 +105,10 @@ sub generate {
             close $fh;
             my %tmp;
             @tmp{@_candidate} = ();
-            ($_encoding, keys %tmp);
+            # keys の順は同じ入力でも実行ごとに変わる。この列がそのまま
+            # functions.txt の行順と func テーブルの挿入順になるため、
+            # 並べ替えないと生成物が非決定的になる
+            ($_encoding, sort keys %tmp);
         };
 
     my $perlop_encoding = do
@@ -124,7 +128,7 @@ sub generate {
     $perlfunc_encoding ||= 'euc-jp';
     $perlop_encoding   ||= 'euc-jp';
 
-    my @functions;
+    my (@functions, @failures);
     my $txn = $c->dbh_master->txn_scope();
     $c->dbh_master->do(q{DELETE FROM func});
     for my $name (@candidate) {
@@ -135,12 +139,14 @@ sub generate {
         if (not $name =~ m{^(?:$OPS_REGEXP)$}) {
             eval {
                 $perldoc->search_perlfunc([$path, $perlop_path], \@dynamic_pod);
-            };
+                1;
+            } or record_perldoc_failure(\@failures, $name, $@);
             $encoding = $perlfunc_encoding;
         } else {
             eval {
                 $perldoc->search_perlop([$perlop_path], \@dynamic_pod);
-            };
+                1;
+            } or record_perldoc_failure(\@failures, $name, $@);
             if (@dynamic_pod) {
                 $found_in_perlop = 1;
                 # search_perlop が search_perlfuncと挙動が違い、=over と =back の後を余計に拾ってしまう
@@ -177,11 +183,12 @@ sub generate {
                               );
     }
 
-    open my $fh, '>', FUNCTION_LIST_FILE . '.update' or die "Cannot open " . FUNCTION_LIST_FILE . ".update: $!";
-    print $fh join "\n", @functions;
-    close $fh;
-    chmod 0644, FUNCTION_LIST_FILE . '.update' or die "Cannot chmod " . FUNCTION_LIST_FILE . ".update: $!";
-    rename FUNCTION_LIST_FILE . '.update' => FUNCTION_LIST_FILE;
+    # DB の確定と functions.txt の差し替えより前に判定する。後に置くと、
+    # 失敗したビルドが部分的な一覧を公開してしまう
+    die "cannot look up these builtins:\n" . join('', map { "  $_\n" } @failures)
+        if @failures;
+
+    write_file_atomic(FUNCTION_LIST_FILE, sub { print {$_[0]} join "\n", @functions });
     $txn->commit();
 
     # 書いたばかりの一覧をこのプロセスに反映する。後続の PodFile->generate が
