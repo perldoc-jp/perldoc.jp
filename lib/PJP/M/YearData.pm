@@ -187,8 +187,12 @@ sub _assert_seed_block {
     $bad->('modules is not an array') if ref $block->{modules} ne 'ARRAY';
     for my $module (@{$block->{modules}}) {
         $bad->('a module entry is not a hash') if ref $module ne 'HASH';
-        defined $module->{$_} or $bad->("a module entry has no $_")
-            for qw/date author path name in version/;
+        for my $field (qw/date author path name in version/) {
+            # 参照が入っていると Data::Dumper では書き戻せてしまい、表示側で
+            # 初めて壊れる。値として使える形かまで見る
+            $bad->("a module entry has a broken $field")
+                if !defined $module->{$field} || ref $module->{$field};
+        }
     }
 
     $bad->('commit_count_all is not a hash') if ref $block->{commit_count_all} ne 'HASH';
@@ -199,19 +203,30 @@ sub _assert_seed_block {
     for my $row (@{$block->{commit_count}}) {
         $bad->('a commit_count row is not an array') if ref $row ne 'ARRAY' || @$row != 3;
         my ($author, $all, $first) = @$row;
-        $bad->('a commit_count row has no author') unless defined $author && length $author;
+        $bad->('a commit_count row has no author')
+            unless defined $author && !ref $author && length $author;
         $bad->("commit_count has $author twice")   if $seen{$author}++;
         $bad->("$author is not in commit_count_all") unless exists $block->{commit_count_all}{$author};
+        # 件数は数を数えたものなので非負整数しかありえない。数値比較だけだと
+        # 双方が同じ負数や小数でも通ってしまう
+        $bad->("$author has a broken count") unless _is_count($all);
+        $bad->("$author has a broken count in commit_count_all")
+            unless _is_count($block->{commit_count_all}{$author});
         $bad->("$author has a different count in commit_count_all")
-            if ($all // -1) != $block->{commit_count_all}{$author};
+            if $all != $block->{commit_count_all}{$author};
         # 3 番目は「その年に初出だった dist の数」で、0 件の author は undef の
         # まま出力される (既存の data/years.pl にも実在する)
         $bad->("$author has a broken first-appearance count")
-            if defined $first && $first !~ /^[0-9]+$/;
+            if defined $first && !_is_count($first);
     }
     $bad->('commit_count and commit_count_all disagree on the set of authors')
         if keys %seen != keys %{$block->{commit_count_all}};
     return;
+}
+
+sub _is_count {
+    my ($n) = @_;
+    return defined $n && !ref $n && $n =~ /^[0-9]+$/;
 }
 
 # 「同じ dist の同じ版か」の判定に使う in の正規化。in は表示用の文字列で、

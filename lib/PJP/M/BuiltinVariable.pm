@@ -84,6 +84,12 @@ sub generate {
 				      },
 			      );
     }
+
+    # commit より前に判定する。後に置くと、失敗したビルドが部分的な
+    # var テーブルを確定させてしまう
+    die "cannot look up these builtins:\n" . join('', map { "  $_\n" } @failures)
+        if @failures;
+
     $txn->commit();
 }
 

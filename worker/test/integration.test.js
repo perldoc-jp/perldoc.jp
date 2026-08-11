@@ -10,7 +10,7 @@
 // 中継されず、ネットワークエラーも 500 応答に化ける。ヘッダの組み立てと
 // origin 障害時の 502 は proxy.test.js が Workers の意味論のまま検証している。
 import assert from 'node:assert/strict';
-import { after, before, describe, it } from 'node:test';
+import { after, afterEach, before, describe, it } from 'node:test';
 
 import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
@@ -39,6 +39,12 @@ before(async () => {
   await production.listen();
   await staging.listen();
 });
+// テストごとに、差し替えたハンドラと Worker 側の状態を戻す
+afterEach(async () => {
+  network.resetHandlers();
+  await production.reset();
+  await staging.reset();
+});
 after(async () => {
   network.close();
   await production.close();
@@ -63,5 +69,20 @@ describe('実 workerd 上の Worker', () => {
     const res = await staging.fetch('https://staging.perldoc.jp/');
     assert.equal(res.status, 200);
     assert.equal(res.headers.get('X-Robots-Tag'), 'noindex, nofollow');
+  });
+
+  // ORIGIN の検証が実ランタイムでも効いていること (設定ミスのまま
+  // デプロイされた場合に、origin を叩かず 502 で止まる)
+  it('不正な ORIGIN では 502 を返す', async () => {
+    const harness = createTestHarness({
+      workers: [{ configPath, vars: { ORIGIN: 'not-a-url' } }],
+    });
+    try {
+      await harness.listen();
+      const res = await harness.fetch('https://perldoc.jp/');
+      assert.equal(res.status, 502);
+    } finally {
+      await harness.close();
+    }
   });
 });

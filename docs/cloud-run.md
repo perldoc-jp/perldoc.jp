@@ -452,8 +452,10 @@ exact な devDependency で、`worker/package-lock.json` が依存グラフ全�
 cd worker
 npm ci
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-npm exec --offline --no -- wrangler deploy --var "ORIGIN:$(gcloud run services describe perldoc-jp \
-  --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')"
+ORIGIN=$(gcloud run services describe perldoc-jp \
+  --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
+ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
+npm exec --offline --no -- wrangler deploy --var "ORIGIN:$ORIGIN"
 ```
 
 #### DNS
@@ -574,6 +576,7 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    cd worker
    npm ci   # トークンを export する前に入れる (§9 の手元デプロイ参照)
    export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
+   ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
    npm exec --offline --no -- wrangler deploy --env staging --var "ORIGIN:$ORIGIN"
    ```
 3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
@@ -637,6 +640,7 @@ cutover 時に確かめる。
 3. 本番の Worker をデプロイする (`--env` なし):
    ```sh
    cd worker
+   ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
    npm exec --offline --no -- wrangler deploy --var "ORIGIN:$ORIGIN"
    ```
 4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
@@ -729,6 +733,32 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
   translation の更新が続いている限りは起きにくい)。Actions タブの Deploy workflow に無効化の告知が出ていたら
   re-enable すること (repository_dispatch / workflow_dispatch 起動は無効化の
   対象外なので、translation 起点の反映は止まらない)
+- **翻訳者の帰属がおかしいとき (並行編集の調べ方)**: `commit_events` は
+  git log の出力順の初出をその path の最新イベントとして扱う。`--date-order` に
+  より祖先が子より先に出ることはないので、時計の巻き戻ったコミットは日時の
+  逆転として検出されて止まる。ただし同じ path を 2 つのブランチで並行して
+  編集した場合、どちらを最新とするかは日時に依るため、merge の解決内容とは
+  食い違いうる。疑わしいときは両親の変更が交差した merge を探す:
+  ```sh
+  cd assets/translation
+  git log --merges --format='%H' | while read m; do
+    p1=$(git rev-parse "$m^1"); p2=$(git rev-parse "$m^2")
+    if b=$(git merge-base "$p1" "$p2" 2>/dev/null); then
+      a=$(git -c core.quotepath=false diff --no-renames --name-only "$b" "$p1")
+      c=$(git -c core.quotepath=false diff --no-renames --name-only "$b" "$p2")
+    else
+      # 共通の祖先が無い merge (2023 年の subtree 取り込み 3 件) は両親の
+      # ツリーそのものを突き合わせる
+      a=$(git -c core.quotepath=false ls-tree -r --name-only "$p1")
+      c=$(git -c core.quotepath=false ls-tree -r --name-only "$p2")
+    fi
+    common=$(comm -12 <(echo "$a" | sort) <(echo "$c" | sort) | grep -E '\.(pod|html|md)$')
+    [ -n "$common" ] && echo "$m: $common"
+  done
+  ```
+  現在の履歴で交差するのは 2023 年の 1 件だけで、並行した 2 つのコミットも
+  merge も同じ翻訳者、その path は翌年に rename で消えているため、
+  現在の統計と feed には現れない
 - **ロールバック**: `gcloud run services update-traffic perldoc-jp \
   --project <PROJECT_ID> --region asia-northeast1 --to-revisions <REVISION>=100`
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。

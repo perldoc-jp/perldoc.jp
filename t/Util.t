@@ -1,9 +1,12 @@
 use v5.38;
+use utf8;
 use Test2::V0;
 
 use File::Temp qw/tempdir/;
 use POSIX ();
-use PJP::Util qw(markdown_to_html read_command write_file_atomic);
+use Encode ();
+use JSON::XS ();
+use PJP::Util qw(markdown_to_html read_command write_file_atomic record_perldoc_failure);
 
 # 正常な 1 行を出してから指定の死に方をするコマンドを作り、その置き場所を返す
 sub fake_bin {
@@ -99,8 +102,47 @@ subtest 'write_file_atomic は途中で失敗しても既存のファイルを�
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
+subtest 'Pod::Perldoc の検索失敗の仕分け' => sub {
+    # 候補は pod の C<...> から拾った文字列なので、関数でも変数でもないものが
+    # 混ざる。その「見つからない」だけを正常系として通し、それ以外は集めて
+    # 呼び出し元に止めさせる (集めた分が空でなければ generate が die する)
+    my @failures;
+    record_perldoc_failure(\@failures, 'notafunc', "No documentation for perl function 'notafunc' found\n");
+    record_perldoc_failure(\@failures, 'notavar',  "No documentation for perl variable 'notavar' found\n");
+    # 変数の候補は「そもそも変数の形ではない」文言でも落ちる
+    # (perlvar の C<...> には autoflush や見出しの断片も混ざる)
+    record_perldoc_failure(\@failures, 'autoflush', "'autoflush' does not look like a Perl variable\n");
+    is \@failures, [], '見つからないだけなら記録しない';
+
+    record_perldoc_failure(\@failures, 'chomp', "Cannot open perlfunc.pod: Permission denied\n");
+    is scalar @failures, 1, 'それ以外の失敗は記録する';
+    like $failures[0], qr/^chomp: Cannot open/, '名前と原因が残る';
+};
+
+subtest 'writer に渡した非 ASCII が壊れずに書き出される' => sub {
+    # 生成物 (docs.json / RSS) は decode 済みの文字列を受け取るので、
+    # 層を付けずに書くとバイト列が内部表現任せになる
+    my $dir = tempdir(CLEANUP => 1);
+
+    write_file_atomic("$dir/out.json", sub {
+        my $fh = shift;
+        binmode $fh, ':raw';
+        print {$fh} JSON::XS->new->canonical->utf8->encode({ 'Acme::日本語' => 'docs/日本語.pod' });
+    });
+    my $json = JSON::XS->new->utf8->decode(slurp_file("$dir/out.json"));
+    is $json->{'Acme::日本語'}, 'docs/日本語.pod', 'JSON は strict な UTF-8 として読み戻せる';
+
+    write_file_atomic("$dir/out.xml", sub {
+        my $fh = shift;
+        binmode $fh, ':encoding(UTF-8)';
+        print {$fh} qq{<?xml version="1.0" encoding="UTF-8"?>\n<t>翻訳者</t>\n};
+    });
+    my $xml = Encode::decode('UTF-8', slurp_file("$dir/out.xml"), Encode::FB_CROAK);
+    like $xml, qr{<t>翻訳者</t>}, 'XML も strict な UTF-8 として読み戻せる';
+};
+
 sub slurp_file {
-    open my $fh, '<', $_[0] or die $!;
+    open my $fh, '<:raw', $_[0] or die $!;
     return do { local $/; <$fh> };
 }
 

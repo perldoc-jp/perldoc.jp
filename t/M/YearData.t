@@ -274,7 +274,17 @@ subtest '再利用する年ブロックの形を検査する' => sub {
 
     my $broken_module = { 2010 => seed_year([{ %$entry, author => undef }], { alice => 1 }) };
     like dies { PJP::M::YearData->build([], $broken_module, 2025) },
-        qr/year 2010 is broken: a module entry has no author/, 'module のフィールド欠けで die する';
+        qr/year 2010 is broken: a module entry has a broken author/,
+        'module のフィールド欠けで die する';
+
+    # 参照が入っていると Data::Dumper では書き戻せてしまい、表示側で初めて壊れる
+    my $ref_module = { 2010 => seed_year([{ %$entry, name => ['Foo'] }], { alice => 1 }) };
+    like dies { PJP::M::YearData->build([], $ref_module, 2025) },
+        qr/a module entry has a broken name/, 'module のフィールドが参照でも die する';
+
+    my $negative = { 2010 => seed_year([$entry], { alice => -1 }) };
+    like dies { PJP::M::YearData->build([], $negative, 2025) },
+        qr/alice has a broken count/, '件数が負の数なら die する';
 
     my $extra_author = { 2010 => seed_year([$entry], { alice => 1 }) };
     push @{$extra_author->{2010}{commit_count}}, ['bob', 1, 1];

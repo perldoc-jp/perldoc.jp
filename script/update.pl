@@ -44,7 +44,10 @@ if (! -d $assets_dir . '/translation/') {
 }
 
 if (! $ENV{SKIP_ASSETS_UPDATE}) {
-    system(qq{cd $assets_dir/translation; git pull origin master}) == 0
+    # cd と ; で繋ぐと、cd が失敗しても現在のリポジトリで git pull が走り、
+    # それが成功すると「更新できた」ことになってしまう (パスに空白が
+    # 含まれる場合に起きる)。-C でリポジトリを指定し、shell も挟まない
+    system('git', '-C', "$assets_dir/translation", 'pull', 'origin', 'master') == 0
         or die "Cannot update translation repository";
 }
 

@@ -27,6 +27,15 @@ jobs:
           echo 'no base commit to compare against; skipping'
           exit 0
         fi
+        # force push 前の位置など、現在の ref から到達できない commit は
+        # fetch-depth: 0 でも手元に無い。明示的に取りに行き、それでも
+        # 無ければ (GC 済み等) 比較を諦める
+        if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+          git fetch --no-tags origin "$BASE" || {
+            echo "base commit $BASE is unavailable; skipping"
+            exit 0
+          }
+        fi
         # 終点に HEAD を明示する。省くと作業ツリー (生成物を含む) が対象になる
         git diff --check "$BASE" HEAD --
 

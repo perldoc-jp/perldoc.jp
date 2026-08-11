@@ -13,12 +13,17 @@ use Text::Markdown::Discount ();
 our @EXPORT_OK = qw/slurp markdown_to_html read_command write_file_atomic record_perldoc_failure/;
 
 # Pod::Perldoc の検索失敗を仕分ける。組み込み関数・変数の候補は pod の
-# C<...> から拾った文字列なので、実際には関数でも変数でもないものが混ざり、
-# Pod::Perldoc はそれを die で伝える。この「見つからなかった」だけは正常系
-# として通し、それ以外 (ファイルが読めない等) は集めて呼び出し元に止めさせる
+# C<...> から拾った文字列なので、実際には関数でも変数でもないものが混ざる。
+# Pod::Perldoc はそれを 2 通りの die で伝えるので、どちらも正常系として通し、
+# それ以外 (ファイルが読めない等) は集めて呼び出し元に止めさせる
+my $NOT_FOUND = qr{
+    ^No\ documentation\ for\ perl\ (?:function|variable|FAQ\ keyword)  # 該当なし
+  | does\ not\ look\ like\ a\ Perl\ variable                           # 変数の形ですらない
+}x;
+
 sub record_perldoc_failure {
     my ($failures, $name, $error) = @_;
-    return if $error =~ m{^No documentation for perl (?:function|variable)};
+    return if $error =~ $NOT_FOUND;
     push @$failures, "$name: $error";
     return;
 }
@@ -100,6 +105,11 @@ sub write_file_atomic {
         UNLINK => 1,
     );
     $cb->($tmp);
+    # print の失敗はハンドルにエラーとして残る。呼び出し側の print の返り値に
+    # 頼ると、末尾が print でないコールバックを書いた瞬間に検査が抜けるため、
+    # ハンドルの状態を直接見る (書き損じたまま rename すると、既存のファイルが
+    # 不完全な内容で置き換わる)
+    die "Cannot write $path: $!" if $tmp->error;
     $tmp->flush or die "Cannot write $path: $!";
     close $tmp or die "Cannot write $path: $!";
 

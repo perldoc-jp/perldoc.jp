@@ -99,6 +99,28 @@ subtest '変更行の片側が "0" でも内容が残る' => sub {
     }
 };
 
+subtest 'HTML のメタ文字が変更行でもエスケープされる' => sub {
+    # 変更部分は <del>/<ins> で囲むので、本文側のエスケープが抜けると
+    # 翻訳に含まれる山括弧がそのままタグとして解釈される
+    # 変更部分は <del>/<ins> で割られるため、実体参照も分断されて出る
+    my $html = PJP::HTMLDiff::diff_strings_vertical("x\n<a> & 'b'\ny\n", "x\n<c> & 'd'\ny\n");
+    like $html,   qr{&lt;<del>a</del>&gt;}, '< と > が実体参照になる (変更部分を挟んでも)';
+    like $html,   qr{&amp;},                '& が実体参照になる';
+    unlike $html, qr{(?<!&lt;)<a>},         '生の <a> が出ない';
+};
+
+subtest 'REFINE_LIMIT 超過時に内容が同じ行を変更として壊さない' => sub {
+    # 上限を超えると sdiff を使わず 1:1 で組にするので、たまたま同じ内容の
+    # 行どうしが組になる。falsy な "0" でも内容を落とさない
+    local $PJP::HTMLDiff::REFINE_LIMIT = 1;
+    my $html = PJP::HTMLDiff::_render_vertical(['0', 'a'], ['0', 'b'], [['c', 1, 2, 1, 2]]);
+    like $html, qr{<tr class='change'><td>1</td><td>1</td><td>0</td></tr>},
+        '左右が同じ "0" は change の 1 行として残る';
+    unlike $html, qr{<del>0</del>|<ins>0</ins>}, '同じ内容なので del/ins に割らない';
+    like $html, qr{<tr class='change del'><td>2</td><td></td><td><del>a</del></td></tr>},
+        '本当に変わった行はこれまでどおり割る';
+};
+
 subtest '本文に含まれる #del# が偽のタグにならない' => sub {
     # 旧実装は #del# 等を本文に埋め込んでから置換していたため、同じ文字列を
     # 含む翻訳の差分でリテラルが消えて表示が壊れた

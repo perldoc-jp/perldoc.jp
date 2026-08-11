@@ -95,8 +95,13 @@ function safeUrl(value) {
   }
 }
 
-// Error 以外が投げられてもログの組み立てで落ちないようにする
+// Error 以外が投げられてもログの組み立てで落ちないようにする。
+// String() 自体が投げる値もある (Object.create(null) は toString を持たない)
 function describe(error) {
-  if (error instanceof Error) return `${error.name}: ${error.message}`;
-  return `non-error thrown: ${String(error)}`;
+  try {
+    if (error instanceof Error) return `${error.name}: ${error.message}`;
+    return `non-error thrown: ${String(error)}`;
+  } catch {
+    return 'non-error thrown: (not representable)';
+  }
 }

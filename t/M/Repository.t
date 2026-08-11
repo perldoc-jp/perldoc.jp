@@ -5,6 +5,7 @@ use Test2::V0;
 use File::Temp qw/tempdir/;
 use File::Path qw/make_path/;
 use File::Basename qw/dirname/;
+use Encode ();
 use File::Find::Rule;
 use Time::Piece;
 use PJP::M::Repository;
@@ -42,12 +43,14 @@ sub new_repo {
         system('git', '-C', $self->dir, @args) == 0 or die "git @args failed";
     }
 
+    # ファイルの中身も名前も、git が扱うのはバイト列。テストのソースは
+    # use utf8 なので、境界で明示的に UTF-8 へ寄せる
     sub write_file {
         my ($self, $path, $body) = @_;
-        my $full = $self->dir . "/$path";
+        my $full = $self->dir . '/' . Encode::encode_utf8($path);
         File::Path::make_path(File::Basename::dirname($full));
-        open my $fh, '>', $full or die $!;
-        print $fh $body;
+        open my $fh, '>:raw', $full or die $!;
+        print $fh Encode::encode_utf8($body);
         close $fh;
     }
 
@@ -74,7 +77,7 @@ sub new_repo {
         my ($self, $date, $message, %opts) = @_;
         local $ENV{GIT_AUTHOR_DATE}    = $date;
         local $ENV{GIT_COMMITTER_DATE} = $date;
-        local $ENV{GIT_AUTHOR_NAME}    = $opts{author} if $opts{author};
+        local $ENV{GIT_AUTHOR_NAME}    = Encode::encode_utf8($opts{author}) if $opts{author};
         $self->git('add', '-A');
         $self->git('commit', '-q', '-m', $message);
     }
@@ -466,6 +469,38 @@ subtest '不正な UTF-8 の path でビルドを止める' => sub {
 
     like dies { PJP::M::Repository->commit_events($c) },
         qr/utf-?8/i, '不正なバイト列で die する';
+};
+
+subtest '不正な UTF-8 の path は decode の時点で止まる' => sub {
+    # git 由来と readdir 由来のどちらもこの写像を通る。置換文字に倒すと
+    # 異なるバイト列が同じ path に潰れ、両方の入口が同じ誤りに揃うことで
+    # 突き合わせの検査まで素通りしてしまう。
+    # (readdir 側を実ファイルで再現するテストは置けない。macOS は不正な
+    #  UTF-8 のファイル名の作成自体を拒否する)
+    like dies { PJP::M::Repository::decode_path("docs/modules/Foo-1.00/\xff.pod") },
+        qr/utf-?8/i, '不正なバイト列で die する';
+    is PJP::M::Repository::decode_path("docs/articles/perl/\x{e6}\x{97}\x{a5}.md"),
+        'docs/articles/perl/日.md', '正しい UTF-8 は文字列に写る';
+};
+
+subtest '正常な並行ブランチでは日時の逆転検査が誤発火しない' => sub {
+    # --date-order は「祖先を子より先に出さない」だけで、並行ブランチどうしの
+    # 前後は日時に依存する。健全な履歴で止まってしまわないことを固定する
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo');
+
+    $r->git('checkout', '-q', '-b', 'topic');
+    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
+    $r->commit_at('2025-02-01T12:00:00+0900', 'translate Bar');
+
+    $r->git('checkout', '-q', '-');
+    $r->write_file('docs/modules/Baz-1.00/Baz.pod', "=head1 Baz\n");
+    $r->commit_at('2025-03-01T12:00:00+0900', 'translate Baz');
+    $r->git('merge', '-q', '--no-edit', 'topic');
+
+    ok lives { PJP::M::Repository->commit_events($c) },
+        '並行して別の翻訳が進んだだけの履歴では止まらない';
 };
 
 subtest '非 ASCII の author 名とファイル名が文字列として扱われる' => sub {
