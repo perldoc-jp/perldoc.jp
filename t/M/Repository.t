@@ -6,6 +6,7 @@ use File::Temp qw/tempdir/;
 use File::Path qw/make_path/;
 use File::Basename qw/dirname/;
 use File::Find::Rule;
+use Time::Piece;
 use PJP::M::Repository;
 
 # PJP::M::Repository が使う PJP のインターフェイスだけを持つ最小のコンテキスト
@@ -314,7 +315,7 @@ subtest 'merge で復活した翻訳を検出してビルドを止める' => sub
     ok PJP::M::Repository->current_paths($c)->{'docs/modules/Foo-1.00/Foo.pod'},
         'ファイルは現ツリーに存在する';
 
-    like dies { PJP::M::Repository->assert_no_shadowed_deletions($c, $events) },
+    like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
         qr{docs/modules/Foo-1\.00/Foo\.pod}, '該当する path を挙げて die する';
 };
 
@@ -327,7 +328,7 @@ subtest '通常の削除や現存する翻訳では止まらない' => sub {
     $r->commit_at('2026-03-01T12:00:00+0900', 'remove Bar');
 
     my $events = PJP::M::Repository->commit_events($c);
-    ok lives { PJP::M::Repository->assert_no_shadowed_deletions($c, $events) },
+    ok lives { PJP::M::Repository->assert_current_paths_observable($c, $events) },
         '現ツリーから消えている path の削除イベントは矛盾ではない';
 };
 
@@ -350,5 +351,139 @@ subtest 'git log がシグナルで死んでもビルドを止める' => sub {
         qr/git .+ was killed by signal 9/,
         'シグナル死で die する';
 };
+
+subtest 'merge の衝突解決でだけ作られたファイルを検出してビルドを止める' => sub {
+    # どちらの親にも無いファイルを merge の解決で作ると、merge コミットの
+    # diff は出ないためイベントが 1 件も現れない。配信はされるのに年次統計と
+    # feed から落ちる状態なので、気づけるように止める
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo');
+
+    $r->git('checkout', '-q', '-b', 'topic');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo topic\n");
+    $r->commit_at('2025-02-01T12:00:00+0900', 'update Foo on topic');
+
+    $r->git('checkout', '-q', '-');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo master\n");
+    $r->commit_at('2025-03-01T12:00:00+0900', 'update Foo on master');
+
+    # 衝突の解決ついでに、どちらの親にも無かったファイルを足す
+    $r->merge_conflicting('topic');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo merged\n");
+    $r->write_file('docs/modules/Baz-1.00/Baz.pod', "=head1 Baz\n");
+    $r->commit_at('2025-04-01T12:00:00+0900', 'merge topic', author => 'merger');
+
+    my $events = PJP::M::Repository->commit_events($c);
+    ok !grep({ $_->{path} eq 'docs/modules/Baz-1.00/Baz.pod' } @$events),
+        'merge でだけ作られた path のイベントは 1 件も無い';
+
+    like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
+        qr{docs/modules/Baz-1\.00/Baz\.pod}, '該当する path を挙げて die する';
+};
+
+subtest '祖先より先に子孫が出る走査順で、時計のずれたコミットを検出する' => sub {
+    # 分岐した 2 つの子のうち一方が親より古い時計でコミットされた履歴。
+    # --date-order は祖先を子より先に出さないので、親は後から読まれ、
+    # その時点で日時の逆転として検出できる
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');    # 親 (新しい日時)
+
+    $r->git('checkout', '-q', '-b', 'topic');
+    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
+    $r->commit_at('2025-07-01T12:00:00+0900', 'translate Bar');    # 別 path の子
+
+    $r->git('checkout', '-q', '-');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
+    $r->commit_at('2025-01-01T12:00:00+0900', 'update Foo');       # 時計が巻き戻った子
+
+    $r->git('merge', '-q', '--no-edit', 'topic');
+
+    like dies { PJP::M::Repository->commit_events($c) },
+        qr{docs/modules/Foo-1\.00/Foo\.pod.+later output.+earlier output}s,
+        '同じ path の日時が走査順と矛盾したら die する';
+};
+
+subtest '未来日時のコミットでビルドを止める' => sub {
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2026-06-01T12:00:00+0900', 'translate Foo');
+
+    {
+        # 誤差の範囲 (数分先) は通す
+        local $PJP::M::Repository::NOW_EPOCH = _jst_epoch('2026-06-01 11:55:00');
+        ok lives { PJP::M::Repository->commit_events($c) }, '数分先のずれは許容する';
+    }
+    {
+        local $PJP::M::Repository::NOW_EPOCH = _jst_epoch('2026-05-01 12:00:00');
+        like dies { PJP::M::Repository->commit_events($c) },
+            qr/2026-06-01 12:00:00/, '1 か月先のコミットは die する';
+    }
+};
+
+subtest '年をまたぐ未来日時は誤差の範囲でも止める' => sub {
+    # 対象年は最新イベントの前年なので、年をまたいだ数分のずれでも
+    # 対象年が 1 年進んで、再導出すべき年が seed 側へ凍結される
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2027-01-01T00:03:00+0900', 'translate Foo');
+
+    local $PJP::M::Repository::NOW_EPOCH = _jst_epoch('2026-12-31 23:55:00');
+    like dies { PJP::M::Repository->commit_events($c) },
+        qr/2027-01-01 00:03:00/, '年が変わる側のずれは slack の内側でも die する';
+};
+
+subtest 'C 形式でクォートされた path でビルドを止める' => sub {
+    # タブや改行を含む path は core.quotepath=false でもクォートされる。
+    # 黙って落とすと現ツリーとの突き合わせが静かにずれる
+    my ($c) = new_repo();
+    my $bin = tempdir(CLEANUP => 1);
+    open my $fh, '>', "$bin/git" or die $!;
+    print $fh "#!/bin/sh\n";
+    print $fh "printf '\\001%s\\t%s\\n' '2025-06-01 12:00:00 +0900' 'Tester'\n";
+    print $fh "printf 'M\\t\"docs/modules/Foo-1.00/Foo\\\\tbar.pod\"\\n'\n";
+    close $fh;
+    chmod 0755, "$bin/git" or die $!;
+    local $ENV{PATH} = "$bin:$ENV{PATH}";
+
+    like dies { PJP::M::Repository->commit_events($c) },
+        qr/C-quoted path/, 'クォートされた path を挙げて die する';
+};
+
+subtest '不正な UTF-8 の path でビルドを止める' => sub {
+    # 置換文字に倒すと、異なるバイト列の path が同じ文字列に潰れて
+    # 別ファイルのイベントが混ざる
+    my ($c) = new_repo();
+    my $bin = tempdir(CLEANUP => 1);
+    open my $fh, '>', "$bin/git" or die $!;
+    print $fh "#!/bin/sh\n";
+    print $fh "printf '\\001%s\\t%s\\n' '2025-06-01 12:00:00 +0900' 'Tester'\n";
+    print $fh "printf 'M\\tdocs/modules/Foo-1.00/\\377.pod\\n'\n";
+    close $fh;
+    chmod 0755, "$bin/git" or die $!;
+    local $ENV{PATH} = "$bin:$ENV{PATH}";
+
+    like dies { PJP::M::Repository->commit_events($c) },
+        qr/utf-?8/i, '不正なバイト列で die する';
+};
+
+subtest '非 ASCII の author 名とファイル名が文字列として扱われる' => sub {
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/articles/perl/日本語.md', "# 日本語\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate', author => '翻訳者');
+
+    my $events = PJP::M::Repository->commit_events($c);
+    is $events->[0]{path}, 'docs/articles/perl/日本語.md', 'path が decode 済みの文字列で返る';
+    is $events->[0]{author}, '翻訳者', 'author が decode 済みの文字列で返る';
+    ok PJP::M::Repository->current_paths($c)->{'docs/articles/perl/日本語.md'},
+        '現ツリー側も同じ文字列空間に写る';
+};
+
+# JST の壁時計を epoch に直す (テストから現在時刻を固定するため)
+sub _jst_epoch {
+    my ($wall) = @_;
+    return Time::Piece->strptime($wall, '%Y-%m-%d %H:%M:%S')->epoch - 9 * 3600;
+}
 
 done_testing;

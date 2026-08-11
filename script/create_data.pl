@@ -45,7 +45,7 @@ sub main {
     # 書き出す data/years.pl はデプロイ後に master へ自動コミットされて次回の
     # seed になる。イベント列が現ツリーと矛盾したまま導出すると誤りが恒久化
     # するため、全生成物の手前で 1 回だけ検査する
-    PJP::M::Repository->assert_no_shadowed_deletions($pjp, $events);
+    PJP::M::Repository->assert_current_paths_observable($pjp, $events);
 
     mkdir './data' or die $! if not -d './data';
 
@@ -58,23 +58,23 @@ sub main {
 sub create_recent {
     my ($pjp, $events) = @_;
 
-    # 掲載期間は最新の翻訳イベントから遡って 1 年。壁時計を基準にすると
-    # 同じ translation からのビルドで結果が変わり、キャッシュされたレイヤの
-    # 再利用で期限切れの項目が feed に残り続ける。イベント列は git の走査順で
-    # 日付順とは限らないため、最新の日時は全イベントから取る
-    my $latest = Time::Piece->strptime(maxstr(map { $_->{date} } @$events), '%Y-%m-%d %H:%M:%S');
-    my $cutoff = ($latest - 365 * 86400)->strftime('%Y-%m-%d %H:%M:%S');
-
-    # path ごとの最新イベント (走査順の初出) を、現存する翻訳に限って集める
-    # (commit_events は削除・rename 済みの path のイベントも返す)
+    # path ごとの最新イベントを、現存する翻訳に限って集める (commit_events は
+    # 削除・rename 済みの path のイベントも返す)
     my $current_paths = PJP::M::Repository->current_paths($pjp);
-    my (%seen, @updates);
-    foreach my $event (@$events) {
-        next if $seen{$event->{path}}++;
-        next unless $current_paths->{$event->{path}};
-        next if $event->{date} lt $cutoff;
-        push @updates, $event;
-    }
+    my $latest_events = PJP::M::Repository->latest_events_by_path($events);
+    my @live = grep { $current_paths->{$_->{path}} && !$_->{deleted} } values %$latest_events;
+    die "no live translation found in the checkout" unless @live;
+
+    # 掲載期間は現存翻訳の最新イベントから遡って 1 年。壁時計を基準にすると
+    # 同じ translation からのビルドで結果が変わり、キャッシュされたレイヤの
+    # 再利用で期限切れの項目が feed に残り続ける。全イベントの最大日時ではなく
+    # 現存翻訳のそれを基準にするのは、古い翻訳の削除だけが最近の活動という
+    # 期間に、窓が現存翻訳を 1 件も含まない位置まで進んでビルドが止まるため
+    my $latest = maxstr(map { $_->{date} } @live);
+    my $cutoff = (Time::Piece->strptime($latest, '%Y-%m-%d %H:%M:%S') - 365 * 86400)
+        ->strftime('%Y-%m-%d %H:%M:%S');
+
+    my @updates = grep { $_->{date} ge $cutoff } @live;
     die "no recent updates found in translation" unless @updates;
 
     # feed は新しい順 (同日時は path で締めて決定的にする)。件数の上限は
@@ -201,12 +201,12 @@ sub create_index_data {
 sub sort_by_updated_at {
     my ($events, $articles) = @_;
 
-    my %updated_at;
-    # commit_events は git log の走査順 (子が親より先) なので、path ごとの
-    # 初出が最新イベント
-    $updated_at{$_->{path}} //= $_->{date} for @$events;
+    my $latest_events = PJP::M::Repository->latest_events_by_path($events);
 
-    my @keyed = map { [ $updated_at{"docs/articles/$_->{distvname}"} // '', $_ ] } @$articles;
+    my @keyed = map {
+        my $event = $latest_events->{"docs/articles/$_->{distvname}"};
+        [ $event ? $event->{date} : '', $_ ]
+    } @$articles;
 
     # イベントの無い path は日付なし (末尾送り) が正しいが、全滅は結合キーの
     # 組み立てがイベントの path 形式からドリフトした兆候。放置すると一覧が
