@@ -35,11 +35,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      # test.yml の worker-test と同じゲートをデプロイ直前にも置く
-      # (workflow_dispatch は PR を経由しないため)
-      - name: Run tests
-        working-directory: worker
-        run: node --test
+      # wrangler は Node 22 以上を要求する。runner の既定バージョンに任せると
+      # 更新で足元が変わるので固定する
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5.0.0
+        with:
+          node-version: '22'
 
       # cloudflare/wrangler-action は使わず npm で入れて呼ぶ。ピン留めが必要な
       # 外部 action を増やさないため。
@@ -55,6 +55,13 @@ jobs:
         working-directory: worker
         run: npm ci
 
+      # test.yml の worker-test と同じゲートをデプロイ直前にも置く
+      # (workflow_dispatch は PR を経由しないため)。実 workerd を使うテストが
+      # あるので npm ci の後に置く
+      - name: Run tests
+        working-directory: worker
+        run: npm test
+
       - name: Deploy
         working-directory: worker
         env:
@@ -63,9 +70,12 @@ jobs:
           CLOUD_RUN_URL: ${{ vars.CLOUD_RUN_URL }}
           WRANGLER_SEND_METRICS: 'false'
         run: |
-          # 空の ORIGIN でデプロイすると Worker が全リクエストで例外を投げるので、
-          # 変数の設定漏れはここで落とす
-          test -n "$CLOUD_RUN_URL"
+          # 設定ミスの ORIGIN でデプロイすると、その後の全リクエストが 502 に
+          # なるまで気づけない。Worker 本体と同じ検証をここでも通す
+          node --input-type=module -e '
+            import { assertValidOrigin } from "./src/origin.js";
+            assertValidOrigin(process.env.CLOUD_RUN_URL);
+          '
           # --offline で、この step がレジストリに触れない (= 追加の
           # インストールが走らない) ことを保証する
           npm exec --offline --no -- wrangler deploy --var "ORIGIN:$CLOUD_RUN_URL"

@@ -196,3 +196,52 @@ describe('NOINDEX', () => {
     assert.equal(res.headers.get('X-Robots-Tag'), 'noindex, nofollow');
   });
 });
+
+describe('リクエストの転送', () => {
+  it('メソッドをそのまま引き継ぐ', async () => {
+    await proxy('https://perldoc.jp/', { method: 'HEAD' });
+    assert.equal(calls[0].init.method, 'HEAD');
+  });
+
+  // アプリに POST ルートが増えたときに、Worker 経由でだけボディが落ちて
+  // 壊れることがないようにする
+  it('ボディをそのまま引き継ぐ', async () => {
+    await proxy('https://perldoc.jp/', { method: 'POST', body: 'hello' });
+    assert.equal(calls[0].init.method, 'POST');
+    assert.equal(await new Response(calls[0].init.body).text(), 'hello');
+  });
+});
+
+describe('NOINDEX の判定', () => {
+  // --var は常に文字列を渡すので、無効化のつもりで '0' や 'false' を書いた
+  // 値を truthy と読むと、本番が丸ごと検索から消える
+  for (const value of ['0', 'false', '', 'yes']) {
+    it(`NOINDEX=${JSON.stringify(value)} では足さない`, async () => {
+      const res = await proxy('https://perldoc.jp/', {}, { NOINDEX: value });
+      assert.equal(res.headers.get('X-Robots-Tag'), null);
+    });
+  }
+});
+
+describe('origin 障害時の応答', () => {
+  it('fetch が失敗したら 502 を返す', async () => {
+    globalThis.fetch = () => Promise.reject(new TypeError('network error'));
+    const res = await proxy('https://perldoc.jp/');
+    assert.equal(res.status, 502);
+  });
+
+  // catch 自身が例外を投げると、利用者には Cloudflare の汎用エラーが出る
+  for (const [name, thrown] of [['null', null], ['文字列', 'boom'], ['数値', 42]]) {
+    it(`Error でない値 (${name}) が投げられても 502 を返す`, async () => {
+      globalThis.fetch = () => Promise.reject(thrown);
+      const res = await proxy('https://perldoc.jp/');
+      assert.equal(res.status, 502);
+    });
+  }
+
+  it('ORIGIN が不正なら origin を叩かずに 502 を返す', async () => {
+    const res = await proxy('https://perldoc.jp/', {}, { ORIGIN: 'not-a-url' });
+    assert.equal(res.status, 502);
+    assert.equal(calls.length, 0);
+  });
+});

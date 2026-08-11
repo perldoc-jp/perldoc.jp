@@ -18,7 +18,8 @@ db/
 /static/rss/
 xtc/
 functions.txt
-/worker/.dev.vars
+/worker/.dev.vars*
+/worker/.env*
 /worker/.wrangler/
 /worker/node_modules/
 gha-creds-*.json

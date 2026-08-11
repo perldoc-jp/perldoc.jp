@@ -5,7 +5,11 @@
   "scripts": {
     "test": "node --test"
   },
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
-    "wrangler": "4.112.0"
+    "msw": "2.15.0",
+    "wrangler": "4.118.0"
   }
 }

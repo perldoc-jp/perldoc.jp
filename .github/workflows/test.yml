@@ -96,6 +96,16 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
+    # wrangler は Node 22 以上を要求する。deploy-worker.yml と同じ版に固定する
+    - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5.0.0
+      with:
+        node-version: '22'
+
+    # 実 workerd で起動するテストがあるので、依存を入れてから回す
+    - name: Install dependencies
+      working-directory: worker
+      run: npm ci
+
     - name: Run worker tests
       working-directory: worker
-      run: node --test
+      run: npm test

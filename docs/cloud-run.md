@@ -412,15 +412,25 @@ Cache Rules) の条件は、ビルダーを使わず **Edit expression** に式�
 
 #### Worker
 
-実装は `worker/src/index.js`、設定は `worker/wrangler.toml`。master への push で
+実装は `worker/src/index.js`、設定は `worker/wrangler.jsonc`。master への push で
 `worker/` が変わったときだけ `.github/workflows/deploy-worker.yml` がデプロイする。
 
 - `X-Forwarded-Host` の付与は必須。`Amon2::Web::redirect` は `Plack::Request->base`
   (= `HTTP_HOST` 由来) で `Location` の絶対 URL を組むため、これが無いと `/func/*`
   などの正規化リダイレクトが `Location: https://<service>.run.app/...` を返す。
   app.psgi の `Plack::Middleware::ReverseProxy` がこのヘッダを `HTTP_HOST` に戻す
-- オリジンの URL は wrangler.toml に置かず、デプロイ時に `--var` で注入する。
-  値は GitHub Variables の `CLOUD_RUN_URL` (§6)
+- `X-Forwarded-For` は `CF-Connecting-IP` から付け直しているが、これで
+  `REMOTE_ADDR` が実クライアント IP になるわけではない。Cloud Run のフロントエンドが
+  受け取った値の末尾に自分から見た接続元 (= Cloudflare の egress IP) を足し、
+  `ReverseProxy` は最後の値を採るため。実クライアント IP はヘッダの先頭に残るだけ
+- オリジンの URL は wrangler.jsonc に置かず、デプロイ時に `--var` で注入する。
+  値は GitHub Variables の `CLOUD_RUN_URL` (§6)。形式は `worker/src/origin.js` が
+  検証する (https / `.run.app` のホスト名 / 資格情報・ポート・パス・クエリ無し)。
+  Worker 本体とデプロイ手順の両方が同じ検証を通すので、設定ミスはデプロイの時点で
+  落ちる
+- origin 側の障害や設定ミスは 502 にして、`cf-ray`・パス・例外の種類を
+  構造化ログに出す。ログは Workers Logs で見る (wrangler.jsonc の `observability`。
+  正常なリクエスト 1 件ごとのログは保存件数を食うだけなので切ってある)
 
 `CLOUD_RUN_URL` に入れる値:
 
@@ -450,7 +460,7 @@ npm exec --offline --no -- wrangler deploy --var "ORIGIN:$(gcloud run services d
 
 - `perldoc.jp` (apex) は Worker の **Custom Domain** として登録する。DNS レコードと
   証明書は Cloudflare が自動で作る。Workers の route にプレースホルダの
-  `AAAA 100::` を置く方式は Cloudflare が非推奨としている。apex は wrangler.toml の
+  `AAAA 100::` を置く方式は Cloudflare が非推奨としている。apex は wrangler.jsonc の
   routes には書かずダッシュボードで登録する。`wrangler deploy` が DNS の切り替えを
   伴うと事故になるため (staging は壊れても影響がないので `[env.staging]` の routes で
   宣言的に作っている)
@@ -556,15 +566,15 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    ORIGIN=$(gcloud run services describe perldoc-jp \
      --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
    ```
-2. staging の Worker をデプロイする。`wrangler.toml` の `[env.staging]` が
-   `staging.perldoc.jp` を Custom Domain として作る。`NOINDEX` を渡すと Worker が
-   `X-Robots-Tag: noindex, nofollow` を足すので、本番と重複した内容が検索結果に
-   出るのを防げる:
+2. staging の Worker をデプロイする。`wrangler.jsonc` の `env.staging` が
+   `staging.perldoc.jp` を Custom Domain として作り、`NOINDEX` も設定ファイル側で
+   与える (Worker が `X-Robots-Tag: noindex, nofollow` を足し、本番と重複した内容が
+   検索結果に出るのを防ぐ):
    ```sh
    cd worker
    npm ci   # トークンを export する前に入れる (§9 の手元デプロイ参照)
    export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-   npm exec --offline --no -- wrangler deploy --env staging --var "ORIGIN:$ORIGIN" --var NOINDEX:1
+   npm exec --offline --no -- wrangler deploy --env staging --var "ORIGIN:$ORIGIN"
    ```
 3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
 4. 確認する:
@@ -661,7 +671,7 @@ cutover 時に確かめる。
 `workers_dev` と `preview_urls` は既定で有効なため、明示しないと本番 Worker は
 `perldoc-jp.<subdomain>.workers.dev` と、version ごとの公開 Preview URL という
 入口も持つ。どちらも perldoc.jp ゾーンの Cache / Redirect / Rate Limiting を
-通らないため、wrangler.toml のトップレベルで両方を false にして、公開入口を
+通らないため、wrangler.jsonc のトップレベルで両方を false にして、公開入口を
 Custom Domain (perldoc.jp / staging.perldoc.jp) だけにしている。
 
 #### Workers の枠と、Worker を挟まない構成
