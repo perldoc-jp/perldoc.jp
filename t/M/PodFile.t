@@ -221,4 +221,33 @@ subtest '_is_stable: プレリリース判定' => sub {
     ok $s->('README'), '無版は stable 扱い (版比較には version 0 が先に効く)';
 };
 
+subtest 'developer release は同じ数値版の final より新しい' => sub {
+    # 1.2_01 は 1.2 のリリース後に次の版へ向けて出るものなので、RC (final の
+    # 前身) とは前後が逆になる。_is_stable では両方 unstable 扱いだが、
+    # 数値としては 1.2_01 > 1.2 なので数値比較が先に決める
+    with_pod_rows [
+        ['Foo', 'Foo-1.2',    'modules/Foo-1.2/Foo.pod'],
+        ['Foo', 'Foo-1.2_01', 'modules/Foo-1.2_01/Foo.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest('Foo'), 'modules/Foo-1.2_01/Foo.pod',
+            '1.2_01 が 1.2 より後';
+    };
+};
+
+subtest '版として解析できない distvname は 0 扱いのまま選べる' => sub {
+    # 実データに存在する 3 例。いずれも package ごとの候補が 1 つだけなので、
+    # 0 扱いでも表示される版は変わらない (候補が増えたら version 0 同士の
+    # タイブレークで path 順に決まる)
+    for my $distvname (qw/BerkeleyDB-Lite-1_10 CGI-Lite-2.001-emergencyrelease mod_perl-1.29_related/) {
+        ok PJP::M::PodFile::_version($distvname) == version->new(0), "$distvname は 0 扱い";
+    }
+
+    with_pod_rows [
+        ['CGI::Lite', 'CGI-Lite-2.001-emergencyrelease', 'modules/CGI-Lite-2.001-emergencyrelease/Lite.pod'],
+    ], sub {
+        is +PJP::M::PodFile->get_latest('CGI::Lite'),
+            'modules/CGI-Lite-2.001-emergencyrelease/Lite.pod', '単独候補ならそのまま選ばれる';
+    };
+};
+
 done_testing;

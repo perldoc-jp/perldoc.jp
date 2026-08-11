@@ -284,16 +284,18 @@ sub diff {
     my $diff;
     local $@;
     $option->{timeout} ||= 0;
+    # ハンドラは alarm の解除より外側で生かす。eval の中で local すると、
+    # eval を抜けた時点でハンドラだけが先に復元され、そこから alarm 0 に
+    # 到達するまでの隙間に残タイマーが着弾するとデフォルト動作
+    # (プロセス終了) でワーカーが即死する
+    local $SIG{ALRM} = sub { die "diff timeout" };
     eval {
-        local $SIG{ALRM} = sub { die "diff timeout" };
         if ($option->{timeout} > 0) {
             alarm $option->{timeout};
         }
         $diff = PJP::HTMLDiff::diff_strings_vertical($target_content, $origin_content);
     };
-    # timeout 以外の die でも必ず解除する。eval 内だけで解除していると、
-    # armed のまま local の ALRM ハンドラが復元され、残タイマーの着弾が
-    # デフォルト動作 (プロセス終了) でワーカーを即死させる
+    # timeout 以外の die でも必ず解除する
     alarm 0;
     if ($@ =~m{diff timeout}) {
         warn "diff timeout: $origin $target";

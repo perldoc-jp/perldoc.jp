@@ -116,15 +116,10 @@ sub _render_vertical {
     };
     my $change = sub {
         my ($l, $r) = @_;
-        my $diff = String::Diff::diff($l, $r,
-            remove_open  => '#del#',
-            remove_close => '#/del#',
-            append_open  => '#ins#',
-            append_close => '#/ins#',
-        );
+        my ($removed, $added) = _char_segments($l, $r);
         ++$ll; ++$rl;
         $out .= _vertical_rows('change', $ll, $rl,
-            _retag(_protect($diff->[0])), _retag(_protect($diff->[1])));
+            _render_segments($removed, 'del'), _render_segments($added, 'ins'));
     };
 
     # c hunk の中身を出力する。上限内なら sdiff で組み直して hunk 内の同一行を
@@ -187,10 +182,13 @@ sub _render_vertical {
     return $out;
 }
 
-# 以下 3 つは Text::Diff::FormattedHTML 0.08 の vertical 出力の忠実な移植。
+# 以下は Text::Diff::FormattedHTML 0.08 の vertical 出力の忠実な移植。
 # 出力の互換性 (行の形・クラス名・エスケープ) を守るため、独自の改変は
-# 加えないこと。唯一の意図的な差分: 内容がちょうど "0" の行を真偽値判定で
-# 落とさない (このリポジトリは falsy な "0" を defined/length で扱う)。
+# 加えないこと。意図的な差分は 2 つだけ:
+# - 内容がちょうど "0" の行や区間を真偽値判定で落とさない
+# - 文字単位の差分をマーカー文字列ではなく区間の列として組み立てる
+#   (旧実装は #del# 等を本文に埋めてから置換していたため、本文に同じ文字列が
+#    あると偽のタグに化けた)
 
 sub _vertical_rows {
     my ($class, $ln, $rn, $l, $r) = @_;
@@ -214,18 +212,40 @@ sub _vertical_rows {
 
 sub _protect {
     my $x = shift;
-    if ($x) {
-        $x =~ s/&/&amp;/g;
-        $x =~ s/</&lt;/g;
-        $x =~ s/>/&gt;/g;
-    }
+    return $x unless defined $x && length $x;
+    $x =~ s/&/&amp;/g;
+    $x =~ s/</&lt;/g;
+    $x =~ s/>/&gt;/g;
     return $x;
 }
 
-sub _retag {
-    my $x = shift;
-    $x =~ s{#(.?(?:del|ins))#}{<$1>}g;
-    return $x;
+# 変更行の左右を文字単位の区間に分ける。
+#
+# String::Diff は「文字列が偽なら空の区間列を返す」実装なので、内容が "0" の
+# 側は区間が 1 つも返らず、そのまま描画すると "0" が表示から消える
+# ("0" 対 "x" のように片側だけ空になる場合もある)。元の文字列に長さがあるのに
+# 区間が無い側は、行全体を 1 区間として補う。
+sub _char_segments {
+    my ($old, $new) = @_;
+
+    return ([['u', $old]], [['u', $new]]) if $old eq $new && length $old;
+
+    my ($removed, $added) = @{ String::Diff::diff_fully($old, $new) };
+    $removed = [['-', $old]] if !@$removed && length $old;
+    $added   = [['+', $new]] if !@$added   && length $new;
+    return ($removed, $added);
+}
+
+# 区間列を HTML にする。変更部分だけを <del> / <ins> で囲む
+sub _render_segments {
+    my ($segments, $tag) = @_;
+
+    my $out = '';
+    for my $segment (@$segments) {
+        my ($op, $text) = @$segment;
+        $out .= $op eq 'u' ? _protect($text) : "<$tag>" . _protect($text) . "</$tag>";
+    }
+    return $out;
 }
 
 1;

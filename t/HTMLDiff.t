@@ -83,6 +83,32 @@ subtest '内容が "0" だけの行も増減が描画される' => sub {
     like $ins, qr{<tr class='disc_b ins'><td></td><td>2</td><td>0</td></tr>}, '"0" の追加行が出る';
 };
 
+subtest '変更行の片側が "0" でも内容が残る' => sub {
+    # String::Diff は文字列が偽なら区間を 1 つも返さないため、"0" の側が
+    # 変更行から丸ごと消えていた (増減の行ではなく、変更として組になる場合)
+    my %cases = (
+        '"0" が空行に変わる'   => ["a\n0\nz\n", "a\n\nz\n",   qr{<del>0</del>}],
+        '空行が "0" に変わる'  => ["a\n\nz\n",  "a\n0\nz\n",  qr{<ins>0</ins>}],
+        '"0" が "x" に変わる'  => ["a\n0\nz\n", "a\nx\nz\n",  qr{<del>0</del>}],
+        '"x" が "0" に変わる'  => ["a\nx\nz\n", "a\n0\nz\n",  qr{<ins>0</ins>}],
+        '"0" が "00" に変わる' => ["a\n0\nz\n", "a\n00\nz\n", qr{<del>0</del>}],
+    );
+    for my $name (sort keys %cases) {
+        my ($from, $to, $expected) = @{ $cases{$name} };
+        like PJP::HTMLDiff::diff_strings_vertical($from, $to), $expected, $name;
+    }
+};
+
+subtest '本文に含まれる #del# が偽のタグにならない' => sub {
+    # 旧実装は #del# 等を本文に埋め込んでから置換していたため、同じ文字列を
+    # 含む翻訳の差分でリテラルが消えて表示が壊れた
+    my $html = PJP::HTMLDiff::diff_strings_vertical("x\n#del# a\ny\n", "x\n#del# b\ny\n");
+    like $html, qr{<tr class='change del'><td>2</td><td></td><td>\#del\# <del>a</del></td></tr>},
+        'リテラルはそのまま残り、実際の変更部分だけがタグになる';
+    like $html, qr{<tr class='change ins'><td></td><td>2</td><td>\#del\# <ins>b</ins></td></tr>},
+        '右側も同じ';
+};
+
 subtest '末尾改行がなくても同じ結果になる' => sub {
     is(
         PJP::HTMLDiff::diff_strings_vertical("a\nb", "a\nc"),
