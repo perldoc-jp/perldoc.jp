@@ -96,12 +96,6 @@ RUN mkdir -p db static/rss && \
 
 RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
 
-# update.pl も内部で master→slave をコピーするが、後続の create_data.pl が
-# 読む slave の内容を update.pl の実装詳細に依存させないよう、ここで明示的に
-# コピーしておく (空の slave を読んでも生成スクリプトは警告や空の生成物を
-# 出すだけでビルドは成功してしまうため)
-RUN cp db/perldocjp.master.db db/perldocjp.db
-
 # 年次統計の seed (data/years.pl)。デプロイのたびに自動コミットされるため、
 # update.pl より下に置いて pod2html のレイヤキャッシュを壊さないようにする
 COPY data ./data

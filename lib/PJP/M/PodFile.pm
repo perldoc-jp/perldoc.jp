@@ -248,10 +248,7 @@ sub generate {
 sub generate_one_file {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
-        my $args = $c->cache->file_cache(
-                "path:26",
-                $file,
-                sub {
+        my $args = do {
                     my $html = PJP::M::Pod->pod2html($file);
                     if ($file =~ m{/perlfunc\.pod$}) {
                         $html = PJP::M::BuiltinFunction->linkify_functions($html);
@@ -281,8 +278,7 @@ sub generate_one_file {
                         distvname   => $distvname,
                         html        => $html,
                     };
-                }
-        );
+        };
         $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,
@@ -295,10 +291,7 @@ sub generate_one_file {
 sub generate_one_file_html {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
-        my $args = $c->cache->file_cache(
-                "path:26",
-                $file,
-                sub {
+        my $args = do {
                     my $html = PJP::M::Index::Article::slurp($file);
                     my $relpath = abs2rel( $file, $base );
                     my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.html$};
@@ -312,8 +305,7 @@ sub generate_one_file_html {
                         distvname   => $distvname,
                         html        => $html,
                     };
-                }
-        );
+        };
         $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,
@@ -326,10 +318,7 @@ sub generate_one_file_html {
 sub generate_one_file_md {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
-        my $args = $c->cache->file_cache(
-                "path:26",
-                $file,
-                sub {
+        my $args = do {
                     my $md_src = PJP::M::Index::Article::slurp($file);
                     my $relpath = abs2rel( $file, $base );
                     my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.md$};
@@ -345,8 +334,7 @@ sub generate_one_file_md {
                         distvname   => $distvname,
                         html        => $html,
                     };
-                }
-        );
+        };
         $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,

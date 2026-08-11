@@ -23,10 +23,9 @@ env:
   REGION: asia-northeast1
   SERVICE: perldoc-jp
   IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/perldoc-jp/app
-  # schedule / repository_dispatch では github.sha が変わらないまま中身の
-  # 異なるイメージ (translation 更新分) が作られ、:<sha> タグは上書きで
-  # 移動してしまう。ビルドを後から特定できるよう run 毎に一意なタグも
-  # 付け、smoke test とデプロイはそちらを参照する
+  # イメージのタグは run ごとに一意にする。schedule / repository_dispatch では
+  # github.sha が変わらないまま中身の異なるイメージ (translation 更新分) が
+  # 作られるため、sha だけのタグはビルドを特定できない
   # (run_id は re-run で同一になるため run_attempt まで含める)
   TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -72,9 +71,7 @@ jobs:
           context: .
           target: runtime
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ github.sha }}
-            ${{ env.IMAGE }}:${{ env.TAG }}
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
           build-args: |
             TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
           cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache

@@ -14,8 +14,9 @@ SQLiteに保存しておき、それを表示しています。
 
 組み込み関数や組み込み変数などの一覧情報は、perldocの情報を元に生成しています.
 
-現在は、Japan Perl Associationが管理しているVPS上で動作しています。
-Google Cloud Run への移行構成を用意してあります。詳細は [docs/cloud-run.md](docs/cloud-run.md) を参照してください。
+Google Cloud Run 上で動作しています。翻訳データや一覧情報はイメージのビルド時に
+生成して焼き込むので、配信するデータの更新はイメージの再ビルドと再デプロイで行います。
+構成と運用は [docs/cloud-run.md](docs/cloud-run.md) を参照してください。
 
 # WORKFLOW
 
@@ -33,6 +34,10 @@ Google Cloud Run への移行構成を用意してあります。詳細は [docs
 ```shell
 # サーバーを立ち上げる
 make up
+
+# 翻訳データと、それに依存する生成物 (data/ や static/docs.json) を作る。
+# 立ち上げた直後は生成物が無く、トップページや一覧が表示できない
+make setup-data
 
 # サーバーを落とす
 make down
