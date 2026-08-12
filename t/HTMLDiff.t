@@ -2,21 +2,15 @@ use v5.38;
 use utf8;
 use Test2::V0;
 
-use File::Temp qw/tempdir/;
 use PJP::HTMLDiff;
 
-# 正常な hunk を 1 つ出力してから指定の死に方をする diff ラッパを作り、
-# その置き場所を返す。呼び出し側が PATH の先頭に差し込む
+use lib 't/lib';
+use Test::FakeBin qw/fake_bin/;
+
+# 正常な hunk を 1 つ出力してから指定の死に方をする diff ラッパを作る
 sub fake_diff_bin {
     my ($tail) = @_;
-    my $bin = tempdir(CLEANUP => 1);
-    open my $fh, '>', "$bin/diff" or die $!;
-    print $fh "#!/bin/sh\n";
-    print $fh "echo '2c2'\n";
-    print $fh "$tail\n";
-    close $fh;
-    chmod 0755, "$bin/diff" or die $!;
-    return $bin;
+    return fake_bin('diff', q{echo '2c2'}, $tail);
 }
 
 subtest '同一入力なら全行 match になる' => sub {

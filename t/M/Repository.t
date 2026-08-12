@@ -10,6 +10,9 @@ use File::Find::Rule;
 use Time::Piece;
 use PJP::M::Repository;
 
+use lib 't/lib';
+use Test::FakeBin qw/fake_bin/;
+
 # PJP::M::Repository が使う PJP のインターフェイスだけを持つ最小のコンテキスト
 {
     package Test::Context;
@@ -84,19 +87,15 @@ sub new_repo {
 }
 
 # git log の異常終了を再現するため、正常な 1 コミット分を出力してから
-# 指定の死に方をする git ラッパを作り、その置き場所を返す。呼び出し側が
-# PATH の先頭に差し込む (new_repo のセットアップは実 git で済ませておくこと)
+# 指定の死に方をする git ラッパを作る (new_repo のセットアップは実 git で
+# 済ませておくこと)
 sub fake_git_bin {
     my ($tail) = @_;
-    my $bin = tempdir(CLEANUP => 1);
-    open my $fh, '>', "$bin/git" or die $!;
-    print $fh "#!/bin/sh\n";
-    print $fh "printf '\\001%s\\t%s\\n' '2025-06-01 12:00:00 +0900' 'Tester'\n";
-    print $fh "printf 'A\\tdocs/modules/Foo-1.00/Foo.pod\\n'\n";
-    print $fh "$tail\n";
-    close $fh;
-    chmod 0755, "$bin/git" or die $!;
-    return $bin;
+    return fake_bin('git',
+        q{printf '\001%s\t%s\n' '2025-06-01 12:00:00 +0900' 'Tester'},
+        q{printf 'A\tdocs/modules/Foo-1.00/Foo.pod\n'},
+        $tail,
+    );
 }
 
 subtest 'current_paths が現ツリーの path を列挙する' => sub {
@@ -441,13 +440,10 @@ subtest 'C 形式でクォートされた path でビルドを止める' => sub 
     # タブや改行を含む path は core.quotepath=false でもクォートされる。
     # 黙って落とすと現ツリーとの突き合わせが静かにずれる
     my ($c) = new_repo();
-    my $bin = tempdir(CLEANUP => 1);
-    open my $fh, '>', "$bin/git" or die $!;
-    print $fh "#!/bin/sh\n";
-    print $fh "printf '\\001%s\\t%s\\n' '2025-06-01 12:00:00 +0900' 'Tester'\n";
-    print $fh "printf 'M\\t\"docs/modules/Foo-1.00/Foo\\\\tbar.pod\"\\n'\n";
-    close $fh;
-    chmod 0755, "$bin/git" or die $!;
+    my $bin = fake_bin('git',
+        q{printf '\001%s\t%s\n' '2025-06-01 12:00:00 +0900' 'Tester'},
+        q{printf 'M\t"docs/modules/Foo-1.00/Foo\\\\tbar.pod"\n'},
+    );
     local $ENV{PATH} = "$bin:$ENV{PATH}";
 
     like dies { PJP::M::Repository->commit_events($c) },
@@ -458,13 +454,10 @@ subtest '不正な UTF-8 の path でビルドを止める' => sub {
     # 置換文字に倒すと、異なるバイト列の path が同じ文字列に潰れて
     # 別ファイルのイベントが混ざる
     my ($c) = new_repo();
-    my $bin = tempdir(CLEANUP => 1);
-    open my $fh, '>', "$bin/git" or die $!;
-    print $fh "#!/bin/sh\n";
-    print $fh "printf '\\001%s\\t%s\\n' '2025-06-01 12:00:00 +0900' 'Tester'\n";
-    print $fh "printf 'M\\tdocs/modules/Foo-1.00/\\377.pod\\n'\n";
-    close $fh;
-    chmod 0755, "$bin/git" or die $!;
+    my $bin = fake_bin('git',
+        q{printf '\001%s\t%s\n' '2025-06-01 12:00:00 +0900' 'Tester'},
+        q{printf 'M\tdocs/modules/Foo-1.00/\377.pod\n'},
+    );
     local $ENV{PATH} = "$bin:$ENV{PATH}";
 
     like dies { PJP::M::Repository->commit_events($c) },

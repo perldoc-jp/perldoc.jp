@@ -8,16 +8,8 @@ use Encode ();
 use JSON::XS ();
 use PJP::Util qw(markdown_to_html read_command write_file_atomic record_perldoc_failure);
 
-# 正常な 1 行を出してから指定の死に方をするコマンドを作り、その置き場所を返す
-sub fake_bin {
-    my ($name, @body) = @_;
-    my $bin = tempdir(CLEANUP => 1);
-    open my $fh, '>', "$bin/$name" or die $!;
-    print $fh "#!/bin/sh\n", map { "$_\n" } @body;
-    close $fh;
-    chmod 0755, "$bin/$name" or die $!;
-    return $bin;
-}
+use lib 't/lib';
+use Test::FakeBin qw/fake_bin/;
 
 subtest 'markdown_to_html' => sub {
     my $html = markdown_to_html(<<~'DOC');
