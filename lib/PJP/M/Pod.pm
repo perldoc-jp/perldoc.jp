@@ -227,8 +227,14 @@ sub get_latest_file_path {
 
         my $output = join( "\n\n", @{ $self->{'output'} } );
 
-	# 日本語の L</..> を英語のアンカーに変更する
-	my %reverse_toc = reverse %{$self->{translated_toc_manually} || {}};
+	# 日本語の L</..> を英語のアンカーに変更する。
+	# 同じ訳語を持つ見出しが複数ある pod があり (CPAN::Meta::Spec の
+	# "Version Range" と "Version Ranges" はどちらも「バージョンの範囲」)、
+	# reverse に任せるとどちらが勝つかがハッシュの列挙順で決まる。
+	# 英語見出しの辞書順で先勝ちに固定して、同じ pod から同じアンカーを出す
+	my $manual = $self->{translated_toc_manually} || {};
+	my %reverse_toc;
+	$reverse_toc{ $manual->{$_} } //= $_ for sort keys %$manual;
 	$output =~s{href="#pod([\d\-]+)"}{my $t = pack("U*", split /\-/, $1); q{href="#} . ($reverse_toc{$t} || $1) . '"'}eg;
 
         $output =~ s[TRANHEADSTART(.+?)TRANHEADEND][

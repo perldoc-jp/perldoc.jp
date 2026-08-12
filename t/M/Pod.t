@@ -71,6 +71,37 @@ subtest 'pod2html' => sub {
     };
 };
 
+subtest '同じ訳語の見出しが複数あってもアンカーが揺れない' => sub {
+    # 訳語から英語の見出しを引き戻す表は、同じ訳語を持つ見出しが複数あると
+    # どちらが勝つかがハッシュの列挙順で決まっていた (実データでは
+    # CPAN::Meta::Spec の "Version Range" と "Version Ranges" が該当し、
+    # 生成される HTML が実行ごとに変わっていた)
+    # 見出しの直後に (訳語) を置くのが、この pod 群での訳の付け方
+    my $dup = <<'...';
+=encoding utf-8
+
+=head1 NAME
+
+Dup - 重複した訳語
+
+=head2 Version Range
+
+(バージョンの範囲)
+
+=head2 Version Ranges
+
+(バージョンの範囲)
+
+=head1 SEE ALSO
+
+L</バージョンの範囲>
+...
+
+    my $html = PJP::M::Pod->pod2html(\$dup);
+    my ($anchor) = $html =~ m{href="#(Version Ranges?)"};
+    is $anchor, 'Version Range', '英語見出しの辞書順で先のものに固定される';
+};
+
 subtest 'parse_name_section' => sub {
     my ($pkg, $desc) = PJP::M::Pod->parse_name_section(\$pod);
     is $pkg, 'OK';
