@@ -231,7 +231,14 @@ describe('origin 障害時の応答', () => {
   });
 
   // catch 自身が例外を投げると、利用者には Cloudflare の汎用エラーが出る
-  for (const [name, thrown] of [['null', null], ['文字列', 'boom'], ['数値', 42]]) {
+  // Object.create(null) は toString を持たないので String() 自体が投げる。
+  // ログの整形で二次例外を起こすと 502 を返しきれない
+  for (const [name, thrown] of [
+    ['null', null],
+    ['文字列', 'boom'],
+    ['数値', 42],
+    ['prototype なしのオブジェクト', Object.create(null)],
+  ]) {
     it(`Error でない値 (${name}) が投げられても 502 を返す`, async () => {
       globalThis.fetch = () => Promise.reject(thrown);
       const res = await proxy('https://perldoc.jp/');

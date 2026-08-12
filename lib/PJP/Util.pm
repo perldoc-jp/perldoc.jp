@@ -108,7 +108,9 @@ sub write_file_atomic {
     # print の失敗はハンドルにエラーとして残る。呼び出し側の print の返り値に
     # 頼ると、末尾が print でないコールバックを書いた瞬間に検査が抜けるため、
     # ハンドルの状態を直接見る (書き損じたまま rename すると、既存のファイルが
-    # 不完全な内容で置き換わる)
+    # 不完全な内容で置き換わる)。
+    # 実際にはバッファが残っていれば下の flush や close も同じ条件で失敗する。
+    # これは「書き込みは失敗したが後片付けは成功する」場合のための備え
     die "Cannot write $path: $!" if $tmp->error;
     $tmp->flush or die "Cannot write $path: $!";
     close $tmp or die "Cannot write $path: $!";

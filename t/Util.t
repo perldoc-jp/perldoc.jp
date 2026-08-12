@@ -102,6 +102,40 @@ subtest 'write_file_atomic は途中で失敗しても既存のファイルを�
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
+subtest 'write_file_atomic は書き込みの失敗を見逃さない' => sub {
+    # print が失敗してもハンドルにエラーが残るだけで、返り値を見ていない
+    # コールバックだと素通りする。書き損じたまま rename すると、既存の
+    # ファイルが不完全な内容に置き換わる
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = "$dir/out.txt";
+    write_file_atomic($path, sub { print {$_[0]} "original\n" });
+
+    like dies {
+        write_file_atomic($path, sub {
+            my $fh = shift;
+            close $fh;                 # 以降の print は必ず失敗する
+            print {$fh} "never";
+        });
+    }, qr/Cannot write/, '書き込みに失敗したら die する';
+
+    is slurp_file($path), "original\n", '既存の内容が残る';
+    is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
+};
+
+subtest 'write_file_atomic は置き換えの失敗を見逃さない' => sub {
+    # 置き換え先がディレクトリなら rename は失敗する
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = "$dir/out";
+    mkdir $path or die $!;
+    mkdir "$path/keep" or die $!;   # 空でないディレクトリは置き換えられない
+
+    like dies { write_file_atomic($path, sub { print {$_[0]} "x" }) },
+        qr/Cannot rename/, '置き換えに失敗したら die する';
+
+    ok -d $path, '既存のものが残る';
+    is [grep { !m{/out$} } glob("$dir/*")], [], '一時ファイルが残らない';
+};
+
 subtest 'Pod::Perldoc の検索失敗の仕分け' => sub {
     # 候補は pod の C<...> から拾った文字列なので、関数でも変数でもないものが
     # 混ざる。その「見つからない」だけを正常系として通し、それ以外は集めて

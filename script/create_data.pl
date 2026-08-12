@@ -33,7 +33,8 @@ local $Data::Dumper::Sortkeys = 1;
 # に成否が依存してしまい使えない
 local $Data::Dumper::Useqq    = 1;
 
-main();
+# require されたとき (t/CreateData.t が生成の各段を直接呼ぶ) は実行しない
+main() unless caller;
 
 sub main {
     my $pjp = PJP->bootstrap;
@@ -121,11 +122,12 @@ sub create_rss {
             pubDate     => $datetime->strftime("%a, %d %b %Y %H:%M:%S +0900"),
             );
     }
-    # as_string が返すのは decode 済みの文字列で、宣言する encoding は UTF-8。
-    # 層を付けずに書くと非 ASCII の author 名でバイト列が内部表現任せになる
+    # XML::RSS の as_string は非 ASCII を数値文字参照に変換するので、返る文字列は
+    # 常に ASCII の範囲に収まる。層は明示するが変換のためではなく、環境変数
+    # (PERL_UNICODE) でハンドルに層が付いても出力バイト列が変わらないようにするため
     write_file_atomic('static/rss/recent.rss', sub {
         my $fh = shift;
-        binmode $fh, ':encoding(UTF-8)';
+        binmode $fh, ':raw';
         print {$fh} $rss->as_string;
     });
 }
