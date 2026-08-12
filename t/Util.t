@@ -122,6 +122,43 @@ subtest 'write_file_atomic は書き込みの失敗を見逃さない' => sub {
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
+subtest 'write_file_atomic は後始末の失敗を見逃さない' => sub {
+    # print と flush は成功しても close で失敗することがある (書き戻しは
+    # close のタイミングで起きる)。バッファに何も溜めずに fd だけ落とすと、
+    # その経路だけを再現できる
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = "$dir/out.txt";
+    write_file_atomic($path, sub { print {$_[0]} "original\n" });
+
+    like dies {
+        write_file_atomic($path, sub { POSIX::close(fileno $_[0]) });
+    }, qr/Cannot write/, 'close に失敗したら die する';
+
+    is slurp_file($path), "original\n", '既存の内容が残る';
+    is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
+};
+
+subtest 'write_file_atomic はパーミッション設定の失敗を見逃さない' => sub {
+    # 書き出しは終わっているのに chmod で失敗する状況を、一時ファイルを
+    # 消して作る (rename まで進むと、読めないファイルが本番に出る)
+    my $dir  = tempdir(CLEANUP => 1);
+    my $path = "$dir/out.txt";
+    write_file_atomic($path, sub { print {$_[0]} "original\n" });
+
+    like dies {
+        write_file_atomic($path, sub {
+            my $fh = shift;
+            print {$fh} "new";
+            # File::Temp のオブジェクトはコールバックの引数からは辿れないので、
+            # 同じディレクトリの一時ファイルを消す
+            unlink glob("$dir/*.tmp");
+        });
+    }, qr/Cannot chmod/, 'chmod に失敗したら die する';
+
+    is slurp_file($path), "original\n", '既存の内容が残る';
+    is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
+};
+
 subtest 'write_file_atomic は置き換えの失敗を見逃さない' => sub {
     # 置き換え先がディレクトリなら rename は失敗する
     my $dir  = tempdir(CLEANUP => 1);
