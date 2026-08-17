@@ -51,6 +51,9 @@ jobs:
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          # Cloud Audit Logs に run_id / run_attempt を残し、WIF の監査ログから
+          # どの GitHub Actions run が認証したか追跡できるようにする
+          request_reason: gha:${{ github.run_id }}:${{ github.run_attempt }}
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 

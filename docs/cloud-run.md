@@ -205,23 +205,79 @@ gcloud iam workload-identity-pools create github \
   --location=global
 
 # ref 条件により master 以外のブランチからは認証できない
-# (workflow_dispatch で誤って別ブランチを選んでも未レビューのコードは
-# デプロイされない)
+# (workflow_dispatch で誤って別ブランチを選んでも、master 以外のコードは
+# デプロイされない。master 自体の branch protection の有無とは独立)
+#
+# リポジトリ名ではなく repository_id / repository_owner_id (不変の数値ID) で
+# 照合する。リポジトリが削除された後に同名で第三者が再取得する攻撃を防げる。
+# attribute-condition は attribute-mapping を経由しない生の assertion.* を
+# 直接参照できるが、SA バインディング側の principalSet はマッピング済みの
+# attribute.* しか参照できないため、repository_id / repository_owner_id は
+# mapping にも追加している
+#
+# workflow_ref 条件により、deploy.yml のリネーム・移動、リポジトリ名変更、
+# デフォルトブランチ名変更のいずれでも認証が fail-closed で失敗する。
+# その場合は --attribute-condition を新しい値で更新すること
 gcloud iam workload-identity-pools providers create-oidc perldoc-jp \
   --project="$PROJECT_ID" \
   --location=global \
   --workload-identity-pool=github \
   --issuer-uri="https://token.actions.githubusercontent.com" \
-  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --attribute-condition="assertion.repository == 'perldoc-jp/perldoc.jp' && assertion.ref == 'refs/heads/master'"
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.repository_id=assertion.repository_id,attribute.repository_owner_id=assertion.repository_owner_id" \
+  --attribute-condition="assertion.repository_id == '4013525' && assertion.repository_owner_id == '610796' && assertion.ref == 'refs/heads/master' && assertion.workflow_ref == 'perldoc-jp/perldoc.jp/.github/workflows/deploy.yml@refs/heads/master'"
 
 gcloud iam service-accounts add-iam-policy-binding "$SA" \
   --project="$PROJECT_ID" \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/perldoc-jp/perldoc.jp" \
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository_id/4013525" \
   --role=roles/iam.workloadIdentityUser
 ```
 
-### 6. GitHub リポジトリの Variables と Secrets
+### 6. 監査ログの有効化
+
+WIF 経由の認証は (1) STS へのトークン交換 (`sts.googleapis.com`)、(2) 得られた
+federated token でのデプロイ用 SA へのなりすまし (`iamcredentials.googleapis.com`
+の `generateAccessToken`) の2段階で行われる。何かあった際に「どの GitHub Actions
+run が認証したか」を追跡できるよう、両方の Data Access 監査ログを有効にする。
+
+`iamcredentials.googleapis.com` は単独では Data Access ログを有効化できず、
+`iam.googleapis.com` に対して有効化する必要がある。両サービスとも
+`generateAccessToken` / `ExchangeToken` は `ADMIN_READ` 権限区分の監査対象。
+
+```sh
+gcloud projects get-iam-policy "$PROJECT_ID" --format=json > /tmp/iam-policy.json
+cp /tmp/iam-policy.json /tmp/iam-policy.before-audit.json  # ロールバック用に保持
+
+# /tmp/iam-policy.json の既存 "auditConfigs" (無ければ新規作成) に以下をマージする。
+# "bindings" と "etag" には触れないこと
+```
+
+```json
+{
+  "auditConfigs": [
+    {
+      "service": "sts.googleapis.com",
+      "auditLogConfigs": [{"logType": "ADMIN_READ"}]
+    },
+    {
+      "service": "iam.googleapis.com",
+      "auditLogConfigs": [{"logType": "ADMIN_READ"}]
+    }
+  ]
+}
+```
+
+```sh
+gcloud projects set-iam-policy "$PROJECT_ID" /tmp/iam-policy.json
+```
+
+ロールバックする場合、`/tmp/iam-policy.before-audit.json` をそのまま再適用しても
+`etag` が古く競合で拒否される。`gcloud projects get-iam-policy` で最新のポリシーを
+取り直し、`auditConfigs` だけを `/tmp/iam-policy.before-audit.json` の内容に戻して
+から `set-iam-policy` すること。
+
+Data Access ログは課金対象のため、有効化後にログ量を確認しておくこと。
+
+### 7. GitHub リポジトリの Variables と Secrets
 
 perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Variables に:
 
@@ -231,7 +287,7 @@ perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Var
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp` |
 | `GCP_SERVICE_ACCOUNT` | `perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare のアカウント ID |
-| `CLOUD_RUN_URL` | Cloud Run のサービス URL (§9 の Worker のオリジン) |
+| `CLOUD_RUN_URL` | Cloud Run のサービス URL (§10 の Worker のオリジン) |
 
 いずれも秘匿情報ではないため repository variable でよい。
 
@@ -267,10 +323,10 @@ branch policy の無い素通しになり、secret が無ければ同名の repo
 
 WIF の attribute-condition と cloudflare-production の branch policy がどちらも
 master に固定されているため、master へ merge するまで GitHub Actions からは
-デプロイできない。cutover までは §7 (Cloud Run) と §9 (Worker) の手順で
+デプロイできない。cutover までは §8 (Cloud Run) と §10 (Worker) の手順で
 手元からビルドとデプロイを行う。
 
-### 7. 手動でのビルドとデプロイ
+### 8. 手動でのビルドとデプロイ
 
 master へ merge する前の cutover はこの手順で行う。使うのは操作者自身の gcloud
 認証情報で、デプロイ用 SA (§5) は経由しない。
@@ -365,7 +421,7 @@ gcloud run services get-iam-policy perldoc-jp \
 
 master へ merge すると以降は Deploy workflow が自動で回り、この手順は不要になる。
 
-### 8. translation リポジトリ側の workflow
+### 9. translation リポジトリ側の workflow
 
 perldoc-jp/translation に以下を追加すると、翻訳の push で即座に再ビルドされる
 (なくても日次の schedule で反映される):
@@ -392,7 +448,7 @@ jobs:
 `PERLDOC_JP_DISPATCH_TOKEN` は perldoc-jp/perldoc.jp への Contents:
 Read and write 権限を持つ fine-grained PAT (または GitHub App トークン)。
 
-### 9. Cloudflare (Worker で Cloud Run にリバースプロキシする)
+### 10. Cloudflare (Worker で Cloud Run にリバースプロキシする)
 
 perldoc.jp へのリクエストは Cloudflare の Worker が受け、`<service>.run.app` へ
 リバースプロキシする。Cloud Run のドメインマッピングは使わない。
@@ -424,7 +480,7 @@ Cache Rules) の条件は、ビルダーを使わず **Edit expression** に式�
   受け取った値の末尾に自分から見た接続元 (= Cloudflare の egress IP) を足し、
   `ReverseProxy` は最後の値を採るため。実クライアント IP はヘッダの先頭に残るだけ
 - オリジンの URL は wrangler.jsonc に置かず、デプロイ時に `--var` で注入する。
-  値は GitHub Variables の `CLOUD_RUN_URL` (§6)。形式は `worker/src/origin.js` が
+  値は GitHub Variables の `CLOUD_RUN_URL` (§7)。形式は `worker/src/origin.js` が
   検証する (https / `.run.app` のホスト名 / 資格情報・ポート・パス・クエリ無し)。
   Worker 本体とデプロイ手順の両方が同じ検証を通すので、設定ミスはデプロイの時点で
   落ちる
@@ -563,7 +619,7 @@ Custom Domain にすれば、Cache Rules の式がパスベースなのでその
 後の挙動を事前に確かめられる。`workers.dev` のサブドメインだけではゾーンの Cache
 Rules も Redirect Rules も適用されないためキャッシュの確認には足りない。
 
-1. Cloud Run にデプロイし (§7)、URL を取っておく:
+1. Cloud Run にデプロイし (§8)、URL を取っておく:
    ```sh
    ORIGIN=$(gcloud run services describe perldoc-jp \
      --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
@@ -574,7 +630,7 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    検索結果に出るのを防ぐ):
    ```sh
    cd worker
-   npm ci   # トークンを export する前に入れる (§9 の手元デプロイ参照)
+   npm ci   # トークンを export する前に入れる (§10 の手元デプロイ参照)
    export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
    ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
    npm exec --offline --no -- wrangler deploy --env staging --var "ORIGIN:$ORIGIN"
@@ -719,7 +775,7 @@ Firefox アドオンが参照している。移行後もパスと JSON 構造 (`
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
 デプロイ後に古い docs.json が残る時間は app.psgi が付ける `Cache-Control` で決まる
-(2 時間。旧構成の更新間隔は 6 時間毎だった)。エッジもこれを尊重する (§9)。
+(2 時間。旧構成の更新間隔は 6 時間毎だった)。エッジもこれを尊重する (§10)。
 
 ## 運用
 
