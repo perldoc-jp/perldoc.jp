@@ -33,7 +33,8 @@ sub seed_year {
 sub paths_of { [ sort map { $_->{path} } @{ $_[0]{modules} // [] } ] }
 
 subtest '対象年より前は seed から復元される' => sub {
-    my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+    my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod',
+                    in => 'Old', author => 'alice');
     my $seed = { 2010 => seed_year([$old], { alice => 1 }) };
 
     my $year = PJP::M::YearData->build([], $seed, 2025);
@@ -125,7 +126,8 @@ subtest '対象年以降の seed は使われない (削除だけの年が seed 
     # 「追加 → 削除」だけになった状況 (年明けに追加された翻訳がすぐ消された等)。
     # 年内最終が削除なので 2026 は現れてはならない。seed 側のブロックが
     # 生き残ると、自動コミットで書き戻されて以後のビルドでも残り続ける
-    my $old   = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+    my $old   = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod',
+                      in => 'Old', author => 'alice');
     my $stale = entry(date => '2026-01-05 00:00:00', path => 'docs/modules/Tmp-1.00/Tmp.pod', in => 'Tmp', author => 'bob');
     my $seed  = {
         2010 => seed_year([$old],   { alice => 1 }),
@@ -162,22 +164,23 @@ subtest '対象年より前の年が縮んだら die する' => sub {
     # キーの解釈の誤り等で seed 済みのエントリが食われる余地がある。結果は
     # 自動コミットで次回ビルドの seed になるので、失われたら返す前に止める
     my $a = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Foo-1.00/Foo.pod',
-                  in => 'Foo', version => '1.00');
+                  in => 'Foo', version => '1.00', author => 'alice');
     my $dup = entry(date => '2012-05-01 00:00:00', path => 'docs/modules/Foo-1.00/Bar.pod',
-                    in => 'Foo', version => '1.00', name => 'Bar');
+                    in => 'Foo', version => '1.00', name => 'Bar', author => 'bob');
     my $seed = {
         2010 => seed_year([$a],   { alice => 1 }),
         2012 => seed_year([$dup], { bob   => 1 }),
     };
     like dies { PJP::M::YearData->build([], $seed, 2025) },
-        qr/year 2012 lost modules/, '重複排除に食われた年で die する';
+        qr/year 2012 changed while rebuilding frozen data/, '重複排除に食われた年で die する';
 };
 
 subtest 'build が seed を変更しない' => sub {
     # build の結果は seed とは別の構造として返る。seed を書き換えると、
     # build 自身の完全性検査 (seed と結果の突き合わせ) が自明に通ってしまい
     # 成立しない
-    my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
+    my $old = entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod',
+                    in => 'Old', author => 'alice');
     my $cur = entry(date => '2026-02-01 00:00:00', path => 'docs/modules/New-1.00/New.pod', in => 'New');
     my $seed = {
         2010 => seed_year([$old], { alice => 1 }),
@@ -249,7 +252,8 @@ subtest '入力を変更しない・同じ入力なら結果が変わらない' 
     is $events, $before, 'build がイベント列を変更しない';
 
     $first->{2010} = seed_year(
-        [ entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Ancient-1.00/Ancient.pod', in => 'Ancient') ],
+        [ entry(date => '2010-05-01 00:00:00', path => 'docs/modules/Ancient-1.00/Ancient.pod',
+                in => 'Ancient', author => 'alice') ],
         { alice => 1 });
     my $second = PJP::M::YearData->build($events, $first, 2025);
 
@@ -330,6 +334,45 @@ subtest 'seed が原本として欠けていないか検査する' => sub {
         qr/not plausible years/, '年でないキーがあれば die する';
     like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, 3000 => {} }, 2003) },
         qr/not plausible years/, '現在年より後のキーがあれば die する';
+};
+
+subtest '凍結年は件数が同じでも中身が変われば die する' => sub {
+    # 以前の検査は modules の要素数しか見ていなかったので、並びの入れ替わりは
+    # 素通りしていた。凍結年は seed をそのまま引き継ぐのが契約で、結果は
+    # デプロイ後に自動コミットされて次回ビルドの seed になる
+    my $old = entry(date => '2010-01-01 00:00:00', path => 'docs/modules/Aaa-1.00/Aaa.pod',
+                    in => 'Aaa', author => 'alice');
+    my $new = entry(date => '2010-06-01 00:00:00', path => 'docs/modules/Bbb-1.00/Bbb.pod',
+                    in => 'Bbb', author => 'alice');
+
+    ok lives { PJP::M::YearData->build([], { 2010 => seed_year([$old, $new], { alice => 2 }) }, 2025) },
+        '再構築後と同じ並びなら通る';
+    like dies { PJP::M::YearData->build([], { 2010 => seed_year([$new, $old], { alice => 2 }) }, 2025) },
+        qr/year 2010 changed while rebuilding frozen data/,
+        '件数は同じでも modules の並びが違えば die する';
+};
+
+subtest '凍結年の commit_count の行順も固定する' => sub {
+    # 行の並びは「全体の件数の降順・同数なら名前順」。seed_year は名前順に作るので、
+    # 件数の多い bob が後ろに来る seed は正規の並びと食い違う (modules の件数は同じ)
+    my @modules = (
+        entry(date => '2010-01-01 00:00:00', path => 'docs/modules/Aaa-1.00/Aaa.pod',
+              in => 'Aaa', author => 'alice'),
+        entry(date => '2010-02-01 00:00:00', path => 'docs/modules/Bbb-1.00/Bbb.pod',
+              in => 'Bbb', author => 'bob'),
+        entry(date => '2010-03-01 00:00:00', path => 'docs/modules/Ccc-1.00/Ccc.pod',
+              in => 'Ccc', author => 'bob'),
+    );
+
+    my $by_name = seed_year([@modules], { alice => 1, bob => 2 });
+    is [map { $_->[0] } @{$by_name->{commit_count}}], ['alice', 'bob'], 'seed_year は名前順に作る';
+    like dies { PJP::M::YearData->build([], { 2010 => $by_name }, 2025) },
+        qr/year 2010 changed while rebuilding frozen data/, '正規の並びと違えば die する';
+
+    my $by_count = seed_year([@modules], { alice => 1, bob => 2 });
+    @{$by_count->{commit_count}} = reverse @{$by_count->{commit_count}};
+    ok lives { PJP::M::YearData->build([], { 2010 => $by_count }, 2025) },
+        '件数の降順に並べ直せば通る (違いは行順だけ)';
 };
 
 done_testing;

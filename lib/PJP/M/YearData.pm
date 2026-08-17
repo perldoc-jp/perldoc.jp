@@ -3,6 +3,7 @@ use warnings;
 use utf8;
 
 package PJP::M::YearData;
+use Storable ();
 use PJP::M::Repository ();
 
 # data/years.pl の中身を組み立てる。ファイル入出力は script/create_data.pl
@@ -49,6 +50,15 @@ sub build {
     # 再利用するブロック (対象年より前) だけ形を検査する。対象年以降は毎回
     # 捨てて作り直すので、壊れていても結果に影響しない
     _assert_seed_block($_, $seed->{$_}) for grep { $_ < $target_year } keys %{ $seed // {} };
+
+    # 凍結年の写しを、再構築に入る前に独立して採る。下の年ブロックのコピーは
+    # 1 段だけで、module の hashref と commit_count_all は seed と共有したままなので、
+    # $seed をそのまま比較相手にすると、将来それらを書き換える変更が入ったときに
+    # 出力と比較相手が同時に変わって、最後の検査が自明に通ってしまう
+    my $frozen = {
+        map  { $_ => Storable::dclone($seed->{$_}) }
+        grep { $_ < $target_year } keys %{ $seed // {} }
+    };
 
     # 対象年以降を「path ごとの年内最終イベント」に畳む。イベント列は git の
     # 走査順 (新しい方が先) なので、(年, path) の初出が年内最終。年内最終が
@@ -111,18 +121,6 @@ sub build {
         }
     }
 
-    # 対象年より前の年が縮んでいたら返さない (年ブロック自体は上の 1 段コピーで
-    # 必ず残る)。seed 由来の年も再構築ループ (重複排除) を通るため、キーの
-    # 解釈の誤り等で seed 済みのエントリが食われる余地があり、結果は自動
-    # コミットで次回ビルドの seed になって誤りが恒久化する。seed のどの年が
-    # 保存対象かを知るのはこのモジュールなので、検査もここで行う
-    if ($seed) {
-        for my $y (grep { $_ < $target_year } keys %$seed) {
-            die "year $y lost modules in rebuild"
-                if @{$year->{$y}{modules}} != @{$seed->{$y}{modules}};
-        }
-    }
-
     foreach my $y (keys %$year) {
         my %tmp;
         # seed 由来で再構築ループに入らなかった年 (modules が空の年) は
@@ -143,7 +141,47 @@ sub build {
             ];
     }
 
+    # 凍結年 (対象年より前) は seed をそのまま引き継ぐのが契約。ところが seed 由来の
+    # 年も重複排除ループを通り、modules と commit_count は組み直されている
+    # (commit_count_all だけが seed のまま)。つまり _dedup_in や整列の規則が変わると、
+    # 凍結年の初出 dist 数や並びが黙って変わりうる。結果はデプロイ成功後に master へ
+    # 自動コミットされて次回ビルドの seed になるので、誤りはそのまま恒久化する。
+    # 件数だけの比較では中身の入れ替わりを見逃すため、写しと完全一致するまで見る
+    for my $y (sort keys %$frozen) {
+        next if _deep_equal($frozen->{$y}, $year->{$y});
+        die "year $y changed while rebuilding frozen data;"
+            . " years before the target year must come through untouched\n";
+    }
+
     return $year;
+}
+
+# 値としての同一性を見る。hash のキーの順は問わないが、配列の順は問う
+# (modules と commit_count の並びは生成物のバイト列にそのまま出るため)
+sub _deep_equal {
+    my ($x, $y) = @_;
+
+    return 1 if !defined $x && !defined $y;
+    return 0 if !defined $x || !defined $y;
+    return 0 if ref $x ne ref $y;
+
+    if (ref $x eq 'HASH') {
+        return 0 if keys %$x != keys %$y;
+        for my $key (keys %$x) {
+            return 0 unless exists $y->{$key} && _deep_equal($x->{$key}, $y->{$key});
+        }
+        return 1;
+    }
+    if (ref $x eq 'ARRAY') {
+        return 0 if @$x != @$y;
+        for my $i (0 .. $#$x) {
+            return 0 unless _deep_equal($x->[$i], $y->[$i]);
+        }
+        return 1;
+    }
+    # seed に他の ref は現れない (_assert_seed_block が弾く)
+    return 0 if ref $x;
+    return $x eq $y;
 }
 
 # data/years.pl が原本として欠けていないことを検査する。
