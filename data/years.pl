@@ -13998,7 +13998,7 @@
                              {
                                "author" => "bayashi",
                                "date" => "2023-03-02 08:04:14",
-                               "in" => "Feature::Compat-Class",
+                               "in" => "Feature::Compat::Class",
                                "name" => "Class",
                                "path" => "docs/modules/Feature-Compat-Class-0.05/Class.pod",
                                "version" => "0.05"
@@ -14886,7 +14886,7 @@
                              {
                                "author" => "SHIRAKATA Kentaro",
                                "date" => "2023-11-26 17:14:00",
-                               "in" => "IO::Socket-SSL",
+                               "in" => "IO::Socket::SSL",
                                "name" => "SSL",
                                "path" => "docs/modules/IO-Socket-SSL-1.33/SSL.pod",
                                "version" => "1.33"
@@ -15604,7 +15604,7 @@
                              {
                                "author" => "SHIRAKATA Kentaro",
                                "date" => "2024-11-17 21:57:21",
-                               "in" => "IO::Socket-SSL",
+                               "in" => "IO::Socket::SSL",
                                "name" => "SSL",
                                "path" => "docs/modules/IO-Socket-SSL-1.76/SSL.pod",
                                "version" => "1.76"
@@ -15612,7 +15612,7 @@
                              {
                                "author" => "SHIRAKATA Kentaro",
                                "date" => "2024-11-19 01:28:15",
-                               "in" => "IO::Socket-SSL",
+                               "in" => "IO::Socket::SSL",
                                "name" => "IO::Socket::SSL",
                                "path" => "docs/modules/IO-Socket-SSL-2.002/IO/Socket/SSL.pod",
                                "version" => "2.002"
