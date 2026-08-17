@@ -146,13 +146,19 @@ subtest '対象年以降の seed は使われない (削除だけの年が seed 
 };
 
 subtest '再導出できない年を対象にしたらビルドを止める' => sub {
-    # 2011 年より前の統計は git 履歴から再現できない凍結データ。対象年にすると
-    # seed の保護 (対象年より前だけ取り込む) から外れ、不完全な導出結果で
-    # 黙って上書きされる。docs/cloud-run.md の回復手順は対象年を手動指定する
-    # ので、誤指定はここで止める
+    # GIT_DERIVABLE_SINCE より前の統計は git 履歴から再現できない凍結データ。
+    # 対象年にすると seed の保護 (対象年より前だけ取り込む) から外れ、不完全な
+    # 導出結果で黙って上書きされる。docs/cloud-run.md の回復手順は対象年を手動指定
+    # するので、誤指定はここで止める。
+    # 境界そのものを固定する — 定数を書き換えただけで緑のままにならないよう、
+    # 前年で die し当年で通ることを見る
     my $foo = entry(date => '2025-06-01 00:00:00', path => 'docs/modules/Foo-1.00/Foo.pod');
-    like dies { PJP::M::YearData->build([$foo], undef, 2002) },
-        qr/predates git-derivable history/, '2011 年より前の対象年で die する';
+    like dies { PJP::M::YearData->build([$foo], undef, PJP::M::YearData::GIT_DERIVABLE_SINCE() - 1) },
+        qr/predates git-derivable history/, '境界の前年を対象にしたら die する';
+    ok lives { PJP::M::YearData->build([$foo], undef, PJP::M::YearData::GIT_DERIVABLE_SINCE()) },
+        '境界の年ちょうどは通る';
+    is PJP::M::YearData::GIT_DERIVABLE_SINCE(), 2023,
+        '境界は現行パイプラインが git だけで導出した最初の年';
     like dies { PJP::M::YearData->build([$foo], undef, '20xx') },
         qr/must be a 4-digit year/, '年でない対象年で die する';
     like dies { PJP::M::YearData->build([$foo], undef, undef) },

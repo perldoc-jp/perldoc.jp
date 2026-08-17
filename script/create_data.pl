@@ -142,8 +142,8 @@ sub create_year_data {
     # サイレントに欠落するため、前年以降を毎ビルド再導出する
     $target_year //= (maxstr(map { $_->{date} } @$events) =~ m{^(\d+)})[0] - 1;
 
-    # data/years.pl は 2011 年より前の統計の唯一の原本で、git 管理下にあるので
-    # 常に存在する。読めない場合は config_do が croak し、中身が再利用に耐えるかは
+    # data/years.pl は PJP::M::YearData::GIT_DERIVABLE_SINCE より前の統計の唯一の
+    # 原本で、git 管理下にあるので常に存在する。読めない場合は config_do が croak し、中身が再利用に耐えるかは
     # build が検査する (結果はデプロイ成功後に master へ自動コミットされて
     # 次回ビルドの seed になるため、壊れたまま通すと復元できない)
     my $seed = scalar config_do('data/years.pl');
