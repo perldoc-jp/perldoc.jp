@@ -56,22 +56,33 @@ sub _rel2path {
   return $rel =~ m{^docs} ? $rel : 'docs/modules/' . $rel;
 }
 
-# 現在の checkout に存在する path の集合。recent feed が削除・rename 済みの
-# 翻訳を載せないためのフィルタに使う
+# production の translation checkout から配信対象として取り込む path の集合
+# (docs/ 配下)。recent feed が削除・rename 済みの翻訳を載せないためのフィルタに使う。
+#
+# checkout 全体ではなく docs/ に限るのは、配信されるのがそこだけだから。
+# PJP::M::PodFile は assets/*/docs しか読まず (generate も本文の読み出しも)、
+# .md の route は articles/ 専用なので、リポジトリ直下の manual/ や旧構成の
+# ディレクトリは DB にも入らず URL も無い。それらを live として数えると、
+# recent feed とトップページに 404 になる URL が載る。
 sub current_paths {
   my ($class, $c) = @_;
 
   my %paths;
   foreach my $repos (qw/translation/) {
-      foreach my $file (File::Find::Rule->file()->name(TRANSLATION_FILE_RE)->in(File::Spec->catdir($c->assets_dir, $repos))) {
-          my $rel = decode_path($file);
-          $rel =~ s{^.+?assets/}{};
-          $rel =~ s{^\Q$repos/\E}{};
+      my $base = File::Spec->catdir($c->assets_dir, $repos, 'docs');
+      foreach my $file (File::Find::Rule->file()->name(TRANSLATION_FILE_RE)->in($base)) {
+          # base からの相対で切り出す。文字列置換で assets/ より前を削る方式は、
+          # 祖先のディレクトリ名にも assets/ があると切りすぎる
+          my $rel = 'docs/' . decode_path(File::Spec->abs2rel($file, $base));
           $paths{_rel2path($rel)} = 1;
       }
   }
   return \%paths;
 }
+
+# 履歴上の path を現在の構造へ写す _normalize_historical_rel が書き換える先頭
+# ディレクトリ。現ツリーにこれらがあると canonical path が現行配置と衝突する
+use constant LEGACY_TOPLEVEL_DIRS => qw/modules perl articles core/;
 
 # 翻訳イベント (コミット × ファイル) の全列挙。git log の全走査 1 回で、
 # 削除・rename により現ツリーから消えた翻訳のイベントも含めて、git log の
@@ -142,10 +153,11 @@ sub commit_events {
               }
               my ($status, $file) = split /\t/, $line, 2;
               # core.quotepath=false でも、タブ・改行・引用符・バックスラッシュを
-              # 含む path は C 形式でクォートされて出る。この形は拡張子の述語も
-              # 正規化も素通りして黙ってイベントから落ちる一方、readdir 側の
-              # current_paths には生の名前で入るため、突き合わせが静かにずれる。
-              # 現ツリーには該当が無いので、出てきたらビルドを止めて気づかせる
+              # 含む path は C 形式でクォートされて出る。末尾が引用符になるので
+              # 拡張子の述語にも一致せず、黙ってイベントから落ちる。docs/ 配下の
+              # 翻訳なら現ツリーには在るのにイベントだけが欠けた状態になり、
+              # 突き合わせが静かにずれる。現ツリーには該当が無いので、
+              # 出てきたらビルドを止めて気づかせる
               die "git reported a C-quoted path; this build cannot map it to the checkout: $file\n"
                   if $file =~ /^"/;
               return unless $file =~ TRANSLATION_FILE_RE;
@@ -239,7 +251,10 @@ sub latest_events_by_path {
 }
 
 # 現ツリーの翻訳が、イベント列の上でも生きているものとして観測できることを
-# 確かめて die する。破れ方は 2 つあり、どちらも git log --name-status が
+# 確かめて die する。あわせて旧構成のディレクトリが復活していないことも見る
+# (_assert_no_legacy_layout)。
+#
+# 観測の破れ方は 2 つあり、どちらも git log --name-status が
 # merge コミットの diff を出さないことに由来する。
 #
 # (a) 最新イベントが削除: master で削除された path を、削除より前から分岐して
@@ -266,6 +281,8 @@ sub latest_events_by_path {
 sub assert_current_paths_observable {
   my ($class, $c, $events) = @_;
 
+  $class->_assert_no_legacy_layout($c);
+
   my $current = $class->current_paths($c);
   my $latest  = $class->latest_events_by_path($events);
 
@@ -284,6 +301,41 @@ sub assert_current_paths_observable {
       . "--name-status does not show merge diffs), so the derived stats and feed\n"
       . "would omit live translations. inspect the history before deriving again.\n"
       if @unobserved;
+}
+
+# 現ツリーに旧構成のディレクトリが復活していたら止める。
+#
+# _normalize_historical_rel は履歴上の modules/... を現在の docs/modules/... に写す。
+# 同じ名前のファイルが旧配置にも現行配置にもあると、両者のイベントは同じ path に
+# 集まり、latest_events_by_path は「日時の新しい方」を採る。旧配置側が新しければ
+# recent feed は旧配置の日時と author を現行 URL に結び付け、旧配置側が削除なら
+# 現行のファイルが削除済みと誤判定される。旧配置は PodFile が取り込まないので
+# 配信もされず、黙って通すと誤りだけが残る。
+#
+# current_paths が checkout 全体を拾っていた頃は、旧配置のファイルが
+# 「イベントの無い現存 path」として上の検査に引っかかっていた。列挙を docs/ に
+# 絞った分、その停止性をここで明示的に引き継ぐ。
+sub _assert_no_legacy_layout {
+  my ($class, $c) = @_;
+
+  my @legacy;
+  foreach my $repos (qw/translation/) {
+      foreach my $dir (LEGACY_TOPLEVEL_DIRS) {
+          my $base = File::Spec->catdir($c->assets_dir, $repos, $dir);
+          next unless -d $base;
+          push @legacy, map { "$dir/" . decode_path(File::Spec->abs2rel($_, $base)) }
+              File::Find::Rule->file()->name(TRANSLATION_FILE_RE)->in($base);
+      }
+  }
+  return unless @legacy;
+
+  @legacy = sort @legacy;
+  die "these translations use the pre-2023 layout in the checkout:\n"
+      . join('', map { "  $_\n" } @legacy)
+      . "the history normalizes such paths into docs/..., so their events would be\n"
+      . "attributed to the current-layout file with the same name (or mark it as\n"
+      . "deleted), while nothing under docs/ serves them. move them under docs/\n"
+      . "before deriving again.\n";
 }
 
 # コミットに記録された当時の path を現在の構造に写像する。2023 年に複数の

@@ -508,6 +508,71 @@ subtest '非 ASCII の author 名とファイル名が文字列として扱わ�
         '現ツリー側も同じ文字列空間に写る';
 };
 
+subtest '配信されない path は live に数えない' => sub {
+    # current_paths は「現行のサイトが取り込む範囲」= docs/ 配下。
+    # リポジトリ直下の運用文書や manual/ は DB にも route にも無いので、
+    # live に数えると recent feed が 404 の URL を載せることになる
+    my ($c, $r) = new_repo();
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->write_file('README.md', "# readme\n");
+    $r->write_file('manual/faq.md', "# faq\n");
+    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
+
+    is [sort keys %{ PJP::M::Repository->current_paths($c) }],
+        ['docs/modules/Foo-1.00/Foo.pod'], 'docs/ 配下だけが列挙される';
+
+    # どちらもイベントとしては現れる (manual/ は年次統計に載る) が、
+    # live ではないので観測性の検査は通る
+    my $events = PJP::M::Repository->commit_events($c);
+    ok lives { PJP::M::Repository->assert_current_paths_observable($c, $events) },
+        '直下の .md や manual/ があっても観測性の検査は誤発火しない';
+};
+
+subtest '旧構成のディレクトリが現ツリーに復活していたら止める' => sub {
+    # 履歴上の modules/... は docs/modules/... に正規化されるので、現ツリーに
+    # 旧配置が復活すると canonical path が現行配置と衝突する。旧配置は配信も
+    # されないため、黙って通すと誤った帰属だけが残る
+    for my $dir (qw/modules perl articles core/) {
+        my ($c, $r) = new_repo();
+        $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+        $r->write_file("$dir/Foo-1.00/Foo.pod", "=head1 Foo old\n");
+        $r->commit_at('2025-06-01T12:00:00+0900', 'add legacy layout');
+
+        ok !PJP::M::Repository->current_paths($c)->{"docs/modules/$dir/Foo-1.00/Foo.pod"},
+            "$dir/ は live に数えない";
+
+        my $events = PJP::M::Repository->commit_events($c);
+        like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
+            qr{pre-2023 layout}, "$dir/ の復活で die する";
+    }
+};
+
+subtest '旧配置の削除イベントは従来どおり shadowed-deletion で止まる' => sub {
+    # 旧配置のファイル自体は HEAD に無いので上の検査には掛からない。
+    # canonical path の最新イベントが旧配置側の削除になり、現行配置の
+    # ファイルが削除済みと誤判定される経路をこちらが止める
+    my ($c, $r) = new_repo();
+    $r->write_file('modules/Foo-1.00/Foo.pod', "=head1 Foo old\n");
+    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo (old layout)');
+
+    $r->git('checkout', '-q', '-b', 'topic');
+    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
+    $r->commit_at('2025-02-01T12:00:00+0900', 'move Foo under docs');
+
+    $r->git('checkout', '-q', '-');
+    $r->unlink_file('modules/Foo-1.00/Foo.pod');
+    $r->commit_at('2025-03-01T12:00:00+0900', 'remove old layout');
+    $r->git('merge', '-q', '--no-edit', 'topic');
+
+    ok !-e $r->dir . '/modules/Foo-1.00/Foo.pod', '旧配置は HEAD に残っていない';
+    ok PJP::M::Repository->current_paths($c)->{'docs/modules/Foo-1.00/Foo.pod'},
+        '現行配置は live';
+
+    my $events = PJP::M::Repository->commit_events($c);
+    like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
+        qr{newest event is a deletion}, '旧配置の削除が現行 path の最新イベントになったら die する';
+};
+
 # JST の壁時計を epoch に直す (テストから現在時刻を固定するため)
 sub _jst_epoch {
     my ($wall) = @_;
