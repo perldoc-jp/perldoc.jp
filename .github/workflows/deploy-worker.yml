@@ -33,11 +33,11 @@ jobs:
       # 外部 action はコミット SHA にピン留めする (この workflow は Cloudflare の
       # API トークンを扱うため)。更新時は SHA とコメントのバージョンを両方書き換えること
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # wrangler は Node 22 以上を要求する。runner の既定バージョンに任せると
       # 更新で足元が変わるので固定する
-      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5.0.0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
 

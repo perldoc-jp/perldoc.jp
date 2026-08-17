@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         # 比較対象のコミットまで遡れるようにする
         fetch-depth: 0
@@ -43,9 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+    - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
     # app イメージを GHA キャッシュ付きで事前ビルドする。make ci の
     # docker compose up は同名イメージが存在すればビルドしないため、
@@ -53,7 +53,7 @@ jobs:
     # master push のみ (デフォルトブランチのキャッシュは fork PR を含む
     # 全 PR から読める)
     - name: Build app image
-      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
       with:
         context: .
         target: app
@@ -82,9 +82,9 @@ jobs:
     timeout-minutes: 60
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+    - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
     # pin の規則は deploy.yml と共有のスクリプトに一本化されている。ここが
     # deploy と食い違うと、PR が deploy の作るものと違うイメージを検証してしまう
@@ -103,7 +103,7 @@ jobs:
     # ようにする (gha キャッシュは PR 単位に隔離されるので、読めるのは
     # 同じ PR の前回分だけ)
     - name: Build runtime image
-      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
       with:
         context: .
         target: runtime
@@ -122,7 +122,7 @@ jobs:
     # runtime と同じ translation SHA・同じキャッシュで作るので、ここでの
     # 追加ビルドはほぼ全レイヤがキャッシュに当たる
     - name: Build years-export stage
-      uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+      uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
       with:
         context: .
         target: years-export
@@ -143,10 +143,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     # wrangler は Node 22 以上を要求する。deploy-worker.yml と同じ版に固定する
-    - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v5.0.0
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '22'
 
