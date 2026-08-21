@@ -2,39 +2,30 @@ use v5.38;
 use utf8;
 use Test2::V0;
 
-use Cwd ();
 use Encode ();
-use File::Temp qw/tempdir/;
 use Data::Dumper ();
 use JSON::XS ();
 use POSIX ();
 use XML::RSS;
 
+use lib 't/lib';
+use Test::Slurp qw/slurp_bytes/;
+use Test::Tempdir ();
+
 # 生成側 (script/create_data.pl) の書き出しをそのまま呼ぶ。テスト側で
 # エンコードのやり方を書き写すと、生成側の指定を消しても通ってしまう
 require './script/create_data.pl';
 
-# 生成物は cwd からの相対パスに書かれるので、使い捨てのディレクトリへ移る
+# 生成物は cwd からの相対パスに書かれるので、使い捨てのディレクトリへ移る。
+# 下準備 (static/rss の作成) はここで書く — Test::Tempdir はオプションを取らない
 sub in_tempdir {
     my ($cb) = @_;
-    my $orig = Cwd::getcwd();
-    my $dir  = tempdir(CLEANUP => 1);
-    chdir $dir or die $!;
-    my $guard = Guard->new(sub { chdir $orig or die $! });
-    mkdir 'static' or die $!;
-    mkdir 'static/rss' or die $!;
-    $cb->($dir);
-}
-
-{
-    package Guard;
-    sub new { my ($class, $cb) = @_; bless { cb => $cb }, $class }
-    sub DESTROY { $_[0]->{cb}->() }
-}
-
-sub slurp_bytes {
-    open my $fh, '<:raw', $_[0] or die "$_[0]: $!";
-    return do { local $/; <$fh> };
+    return Test::Tempdir::in_tempdir(sub {
+        my ($dir) = @_;
+        mkdir 'static' or die $!;
+        mkdir 'static/rss' or die $!;
+        return $cb->($dir);
+    });
 }
 
 # create_docs_json が引くのは package の一覧と get_latest だけなので、
@@ -188,12 +179,17 @@ subtest 'RSS の日時が RFC 822 の英語表記に固定される' => sub {
         my $orig = POSIX::setlocale(POSIX::LC_TIME());
         skip_all 'ja_JP.UTF-8 is not available'
             unless defined POSIX::setlocale(POSIX::LC_TIME(), 'ja_JP.UTF-8');
-        my $guard = Guard->new(sub { POSIX::setlocale(POSIX::LC_TIME(), $orig) });
 
-        in_tempdir sub {
-            main::create_rss(\@updates);
-            $check->('ja_JP.UTF-8');
+        my $ok = eval {
+            in_tempdir sub {
+                main::create_rss(\@updates);
+                $check->('ja_JP.UTF-8');
+            };
+            1;
         };
+        my $error = $@;
+        POSIX::setlocale(POSIX::LC_TIME(), $orig);
+        die $error unless $ok;
     };
 };
 

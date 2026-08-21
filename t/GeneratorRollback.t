@@ -2,9 +2,12 @@ use v5.38;
 use utf8;
 use Test2::V0;
 
-use Cwd ();
 use File::Path qw/make_path/;
 use File::Temp qw/tempdir/;
+
+use lib 't/lib';
+use Test::Slurp qw/slurp_text/;
+use Test::Tempdir qw/in_tempdir/;
 use Encode ();
 use Pod::Perldoc;
 use PJP;
@@ -93,25 +96,6 @@ sub failing_after_first {
     };
 }
 
-sub in_tempdir {
-    my ($cb) = @_;
-    my $orig = Cwd::getcwd();
-    my $dir  = tempdir(CLEANUP => 1);
-    chdir $dir or die $!;
-    my $guard = Guard->new(sub { chdir $orig or die $! });
-    $cb->($dir);
-}
-{
-    package Guard;
-    sub new { my ($class, $cb) = @_; bless { cb => $cb }, $class }
-    sub DESTROY { $_[0]->{cb}->() }
-}
-
-sub slurp_file {
-    open my $fh, '<', $_[0] or die $!;
-    return do { local $/; <$fh> };
-}
-
 subtest 'BuiltinFunction は失敗したら func テーブルも functions.txt も変えない' => sub {
     with_fresh_db build_assets(), sub {
         my ($dbh) = @_;
@@ -133,7 +117,7 @@ subtest 'BuiltinFunction は失敗したら func テーブルも functions.txt �
             like $error, qr/bbb/, '失敗した候補の名前が残る';
 
             is rows_of($dbh, 'func'), $before, 'func テーブルが元のまま (DELETE ごと巻き戻る)';
-            is slurp_file('functions.txt'), "existing\n", '既存の functions.txt が変わらない';
+            is slurp_text('functions.txt'), "existing\n", '既存の functions.txt が変わらない';
         };
     };
 };

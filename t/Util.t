@@ -10,6 +10,7 @@ use PJP::Util qw(markdown_to_html read_command write_file_atomic record_perldoc_
 
 use lib 't/lib';
 use Test::FakeBin qw/fake_bin/;
+use Test::Slurp qw/slurp_bytes/;
 
 subtest 'markdown_to_html' => sub {
     my $html = markdown_to_html(<<~'DOC');
@@ -68,10 +69,10 @@ subtest 'write_file_atomic は書き切ってから置き換える' => sub {
     my $path = "$dir/out.txt";
 
     write_file_atomic($path, sub { print {$_[0]} "first\n" });
-    is slurp_file($path), "first\n", '書き出せる';
+    is slurp_bytes($path), "first\n", '書き出せる';
 
     write_file_atomic($path, sub { print {$_[0]} "second\n" });
-    is slurp_file($path), "second\n", '上書きできる';
+    is slurp_bytes($path), "second\n", '上書きできる';
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 
     my $mode = (stat $path)[2] & 07777;
@@ -90,7 +91,7 @@ subtest 'write_file_atomic は途中で失敗しても既存のファイルを�
         });
     }, qr/generation failed/, '書き出し中の例外はそのまま伝わる';
 
-    is slurp_file($path), "original\n", '既存の内容が残る';
+    is slurp_bytes($path), "original\n", '既存の内容が残る';
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
@@ -110,7 +111,7 @@ subtest 'write_file_atomic は書き込みの失敗を見逃さない' => sub {
         });
     }, qr/Cannot write/, '書き込みに失敗したら die する';
 
-    is slurp_file($path), "original\n", '既存の内容が残る';
+    is slurp_bytes($path), "original\n", '既存の内容が残る';
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
@@ -126,7 +127,7 @@ subtest 'write_file_atomic は後始末の失敗を見逃さない' => sub {
         write_file_atomic($path, sub { POSIX::close(fileno $_[0]) });
     }, qr/Cannot write/, 'close に失敗したら die する';
 
-    is slurp_file($path), "original\n", '既存の内容が残る';
+    is slurp_bytes($path), "original\n", '既存の内容が残る';
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
@@ -147,7 +148,7 @@ subtest 'write_file_atomic はパーミッション設定の失敗を見逃さ�
         });
     }, qr/Cannot chmod/, 'chmod に失敗したら die する';
 
-    is slurp_file($path), "original\n", '既存の内容が残る';
+    is slurp_bytes($path), "original\n", '既存の内容が残る';
     is [grep { !m{/out\.txt$} } glob("$dir/*")], [], '一時ファイルが残らない';
 };
 
@@ -192,7 +193,7 @@ subtest 'writer に渡した非 ASCII が壊れずに書き出される' => sub 
         binmode $fh, ':raw';
         print {$fh} JSON::XS->new->canonical->utf8->encode({ 'Acme::日本語' => 'docs/日本語.pod' });
     });
-    my $json = JSON::XS->new->utf8->decode(slurp_file("$dir/out.json"));
+    my $json = JSON::XS->new->utf8->decode(slurp_bytes("$dir/out.json"));
     is $json->{'Acme::日本語'}, 'docs/日本語.pod', 'JSON は strict な UTF-8 として読み戻せる';
 
     write_file_atomic("$dir/out.xml", sub {
@@ -200,13 +201,8 @@ subtest 'writer に渡した非 ASCII が壊れずに書き出される' => sub 
         binmode $fh, ':encoding(UTF-8)';
         print {$fh} qq{<?xml version="1.0" encoding="UTF-8"?>\n<t>翻訳者</t>\n};
     });
-    my $xml = Encode::decode('UTF-8', slurp_file("$dir/out.xml"), Encode::FB_CROAK);
+    my $xml = Encode::decode('UTF-8', slurp_bytes("$dir/out.xml"), Encode::FB_CROAK);
     like $xml, qr{<t>翻訳者</t>}, 'XML も strict な UTF-8 として読み戻せる';
 };
-
-sub slurp_file {
-    open my $fh, '<:raw', $_[0] or die $!;
-    return do { local $/; <$fh> };
-}
 
 done_testing;
