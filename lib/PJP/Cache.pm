@@ -17,8 +17,6 @@ sub new {
 sub get_or_set {
     my ($self, $key, $cb) = @_;
 
-    $key .= rand() if $ENV{DEBUG};
-
     # 開発環境では data/ を bind mount して make setup-data で作り直すため、
     # 期限も mtime 検査も無いこのキャッシュを効かせると、一度表示したページが
     # プロセスを再起動するまで古いままになる (plackup -r も data/ は見ない)
