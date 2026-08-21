@@ -3,6 +3,8 @@ use utf8;
 use Test2::V0;
 
 use PJP::M::Pod;
+use PJP::M::PodFile ();
+use PJP::HTMLDiff ();
 use PJP;
 use URI::Escape ();
 
@@ -242,6 +244,38 @@ L</注意>
     my $html = PJP::M::Pod->pod2html(\$second);
     like $html, qr{<p><a href="\#pod27880-24847">&quot;注意&quot;</a></p>},
         '一本目の「注意」の見出し id に引きずられない';
+};
+
+subtest 'diff のタイムアウトは呼び出し元の指定に依らず常に張られる' => sub {
+    # timeout を引数で受けていた頃は、既定が「張らない」で、唯一の呼び出し元が
+    # 明示していたから効いていた。呼び出しが増えると素通しの経路ができる
+    my $pod = { path => 'modules/Foo-1.00/Foo.pod', package => 'Foo' };
+    no warnings qw/redefine once/;
+    local *PJP::M::PodFile::retrieve = sub { $pod };
+    local *PJP::M::PodFile::slurp    = sub { "=encoding utf-8\n\n=head1 NAME\n\nFoo\n" };
+
+    subtest 'タイムアウトすると error => timeout を返す' => sub {
+        local $PJP::M::Pod::DIFF_TIMEOUT = 1;
+        local *PJP::HTMLDiff::diff_strings_vertical = sub { sleep 3; 'never' };
+        my $warned = '';
+        local $SIG{__WARN__} = sub { $warned .= $_[0] };
+
+        my $out = PJP::M::Pod->diff(
+            'modules/Foo-1.00/Foo.pod', 'modules/Foo-1.01/Foo.pod');
+        is $out->{error}, 'timeout', 'timeout を返す';
+        like $warned, qr/diff timeout/, '警告を残す';
+        is alarm(0), 0, 'タイマーが残らない';
+    };
+
+    subtest 'timeout 以外の die は伝播し、タイマーも残さない' => sub {
+        local $PJP::M::Pod::DIFF_TIMEOUT = 30;
+        local *PJP::HTMLDiff::diff_strings_vertical = sub { die "boom\n" };
+
+        like dies {
+            PJP::M::Pod->diff('modules/Foo-1.00/Foo.pod', 'modules/Foo-1.01/Foo.pod')
+        }, qr/boom/, 'die がそのまま伝播する';
+        is alarm(0), 0, 'タイマーが残らない';
+    };
 };
 
 done_testing;

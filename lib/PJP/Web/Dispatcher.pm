@@ -273,7 +273,7 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     my ($c, $p) = @_;
     my $origin = $p->{path};
     my $target = $c->req->param('target');
-    my $diff_info = PJP::M::Pod->diff($origin, $target, {timeout => 6});
+    my $diff_info = PJP::M::Pod->diff($origin, $target);
 
     $diff_info->{origin} = $origin;
     $diff_info->{target} = $target;

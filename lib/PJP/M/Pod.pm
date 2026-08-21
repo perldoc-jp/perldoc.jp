@@ -260,9 +260,15 @@ sub get_latest_file_path {
     }
 }
 
+# diff にかける秒数。0 以下にすると alarm を張らない。
+#
+# 呼び出し元から渡す形にしていた頃は、既定が「タイムアウトなし」で、
+# 唯一の呼び出し元 (Dispatcher) が明示していたから効いていた。呼び出しが
+# 増えたときに素通しの経路ができるので、既定をここに持たせる
+our $DIFF_TIMEOUT = 6;
+
 sub diff {
-    my ($self, $origin, $target, $option) = @_;
-    $option //= {};
+    my ($self, $origin, $target) = @_;
 
     # target はクエリパラメータ由来で、未指定のままアクセスされうる
     if (!defined $target || $target eq '') {
@@ -299,15 +305,14 @@ sub diff {
 
     my $diff;
     local $@;
-    $option->{timeout} ||= 0;
     # ハンドラは alarm の解除より外側で生かす。eval の中で local すると、
     # eval を抜けた時点でハンドラだけが先に復元され、そこから alarm 0 に
     # 到達するまでの隙間に残タイマーが着弾するとデフォルト動作
     # (プロセス終了) でワーカーが即死する
     local $SIG{ALRM} = sub { die "diff timeout" };
     eval {
-        if ($option->{timeout} > 0) {
-            alarm $option->{timeout};
+        if ($DIFF_TIMEOUT > 0) {
+            alarm $DIFF_TIMEOUT;
         }
         $diff = PJP::HTMLDiff::diff_strings_vertical($target_content, $origin_content);
     };
