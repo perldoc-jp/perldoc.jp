@@ -515,9 +515,18 @@ npm ci
 export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
 ORIGIN=$(gcloud run services describe perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
-ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
-npm exec --offline --no -- wrangler deploy --var "ORIGIN:$ORIGIN"
+./scripts/deploy.sh production
 ```
+
+`scripts/deploy.sh` が wrangler の argv (絶対 `--config`・environment selector・
+検証済み `ORIGIN` の注入・`--offline`) を組み立てる。`production` は
+`wrangler.jsonc` の top-level、`staging` は named environment を指す。
+`--env` を省くと `CLOUDFLARE_ENV` で環境が選ばれてしまうため、selector は
+必ず明示している。
+
+Worker の通常変数は `wrangler.jsonc` と `scripts/deploy.sh` が所有する。
+dashboard で追加した通常変数は次回のデプロイで消えるので、秘密は Wrangler の
+secret として別に管理する。
 
 #### DNS
 
@@ -637,8 +646,7 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    cd worker
    npm ci   # トークンを export する前に入れる (§10 の手元デプロイ参照)
    export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-   ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
-   npm exec --offline --no -- wrangler deploy --env staging --var "ORIGIN:$ORIGIN"
+   ./scripts/deploy.sh staging
    ```
 3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
 4. 確認する:
@@ -698,11 +706,10 @@ cutover 時に確かめる。
 1. Cloud Run にデプロイし、`status.url` を確認する
 2. 「動作確認」のとおり staging で構成を検証する。Cache Rules・SSL/TLS・Browser Cache
    TTL はゾーン単位の設定なので、ここで入れたものが cutover 後の本番にもそのまま効く
-3. 本番の Worker をデプロイする (`--env` なし):
+3. 本番の Worker をデプロイする:
    ```sh
    cd worker
-   ORIGIN="$ORIGIN" node scripts/assert-origin.mjs   # Worker 本体と同じ検証を通す
-   npm exec --offline --no -- wrangler deploy --var "ORIGIN:$ORIGIN"
+   ./scripts/deploy.sh production
    ```
 4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
    登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる
