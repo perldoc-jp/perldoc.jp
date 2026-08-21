@@ -829,7 +829,10 @@ repository_dispatch で受けるため、翻訳がマージされてから数分
   で前年+当年 (対象年は translation の最新イベントから導出) を毎ビルド
   translation の git 履歴から再導出し、デプロイ成功後に
   `commit-years-data` ジョブが再導出結果を master へ自動コミットする
-  (変更がある場合のみ。実装は `.github/workflows/commit-years-data.yml`)。再導出されるのは前年+当年だけなので、この書き戻しが
+  (変更がある場合のみ。実装は `.github/workflows/deploy.yml` の同名ジョブ)。
+  コミットの親は artifact の生成元と同じ `github.sha` に固定してあり、
+  push の時点で master が進んでいればその run の artifact は捨てる。
+  再導出されるのは前年+当年だけなので、この書き戻しが
   無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
   自動コミットが止まっていた場合も、対象年の翌年中に一度
   `perl script/create_data.pl <対象年>` の結果をコミットすれば回復する。

@@ -154,10 +154,66 @@ jobs:
           overwrite: true
 
   # デプロイ成功後、ビルドで再導出された data/years.pl に変更があれば master へ
-  # 自動コミットする。実装と設計理由は呼び出し先ファイルを参照
-  # (パス参照なので、ファイルをリネームするとここがエラーになって気づける)
+  # 自動コミットする。
+  #
+  # databuild が git から再導出するのは前年+当年だけなので、この書き戻しが
+  # 無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されて
+  # しまう (docs/cloud-run.md の「運用」参照)。
+  #
+  # GITHUB_TOKEN による push は GitHub の再帰防止によりワークフローを
+  # 再トリガーしないため、デプロイのループは起きない。その代わり translation の
+  # 更新が連続すると、seed は次の更新か日次 schedule まで古いままになりうる。
+  # デプロイ済みのイメージは各 run が再導出した正しい内容なので、この遅延は受容する。
   commit-years-data:
     needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
-    uses: ./.github/workflows/commit-years-data.yml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # artifact の生成元と commit の親を一致させる。最新の master に
+          # 対してコミットすると、この run が生成した years.pl を、別の
+          # コミットのコードから導出したかのように載せることになる
+          ref: ${{ github.sha }}
+
+      # deploy ジョブが同一 run に upload した artifact を受け取る
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: years-data
+          path: years-out
+
+      - name: Commit data/years.pl if changed
+        run: |
+          cp years-out/years.pl data/years.pl
+          if git diff --quiet -- data/years.pl; then
+            echo 'data/years.pl: no changes'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/years.pl
+          git commit -m 'data/years.pl を最新の再導出結果で更新する'
+
+          # if 複合コマンドの直後の $? は if 自身の終了状態 (0) になるので、
+          # push の終了状態は || で明示的に捕まえる
+          push_status=0
+          git push origin HEAD:master || push_status=$?
+          if [ "$push_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          # push の失敗をすべて競合として扱うと、権限不足・branch protection・
+          # 通信障害まで成功扱いになる。remote が生成元から動いたことを
+          # 確かめられたときだけ捨てる
+          git fetch --no-tags origin master || exit "$push_status"
+          remote=$(git rev-parse FETCH_HEAD)
+          if [ "$remote" != "$GITHUB_SHA" ]; then
+            echo "master has moved to $remote; dropping this run's artifact"
+            exit 0
+          fi
+          echo 'push failed although master did not advance' >&2
+          exit "$push_status"
