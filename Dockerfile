@@ -98,6 +98,16 @@ RUN mkdir -p db static/rss && \
 
 RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
 
+# ページサイズ変更を VACUUM で反映しつつ断片化を解消し、
+# ANALYZE でプランナ統計を焼き込む。
+#
+# COPY data より前に置く。data/years.pl はデプロイのたびに自動コミットされる
+# 最も揮発的な入力なので、その下に置くと DB の中身が同じでも毎回 VACUUM が
+# やり直しになる。update.pl より前へは動かせない — 空テーブルに ANALYZE が
+# 走って planner statistics が作られない。create_data.pl は DB を読むだけで
+# 更新しないため、この位置でも仕上がりの DB は変わらない
+RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
+
 # 年次統計の seed (data/years.pl)。デプロイのたびに自動コミットされるため、
 # update.pl より下に置いて pod2html のレイヤキャッシュを壊さないようにする
 COPY data ./data
@@ -106,10 +116,6 @@ COPY data ./data
 # 壁時計から取るとコマンド文字列が入力に依らず一定のため、年をまたいでも
 # キャッシュされたレイヤが再利用され、対象年が古いまま進まない
 RUN perl script/create_data.pl
-
-# ページサイズ変更を VACUUM で反映しつつ断片化を解消し、
-# ANALYZE でプランナ統計を焼き込む
-RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
 
 RUN rm -rf assets/translation/.git db/perldocjp.master.db
 
