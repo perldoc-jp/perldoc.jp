@@ -210,7 +210,7 @@ cmd_fetch() {
 
     local target type
     if [ "$ref" = 'master' ]; then
-        target=$(git -C "$dir" rev-parse --verify FETCH_HEAD^{commit}) \
+        target=$(git -C "$dir" rev-parse --verify 'FETCH_HEAD^{commit}') \
             || die 'cannot resolve the fetched master'
     else
         # rev-parse --verify <oid>^{commit} は annotated tag object も peel する。
