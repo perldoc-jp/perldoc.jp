@@ -31,6 +31,7 @@ requires 'Server::Starter';
 requires 'Starlet';
 requires 'parent';
 requires 'XML::RSS';
+requires 'POSIX::strftime::Compiler';
 requires 'JSON::XS';
 requires 'HTML::Entities';
 requires 'Router::Simple';

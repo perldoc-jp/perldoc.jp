@@ -7,6 +7,7 @@ use Encode ();
 use File::Spec;
 use File::Find::Rule;
 use Time::Piece ();
+use POSIX::strftime::Compiler ();
 use PJP::Util qw/read_command/;
 
 # git の日付をどう解釈するかは全生成物 (年次統計の集計年、RSS の +0900 表記) の
@@ -30,6 +31,19 @@ use constant CLOCK_SKEW_SLACK => 10 * 60;
 our $NOW_EPOCH;
 sub _now_jst {
   return Time::Piece->gmtime(($NOW_EPOCH // time) + 9 * 3600);
+}
+
+# RFC 822 の日時。曜日・月名は英語であることが要求されるので、実行環境の
+# ロケールを見ない POSIX::strftime::Compiler で組む ($t は JST の壁時計)。
+#
+# decode_path と同じくプレーン関数なので、外からは
+# PJP::M::Repository::format_rfc822_jst($t) と完全修飾で呼ぶこと。
+# ->format_rfc822_jst($t) と書くとクラス名が第 1 引数に入って $t が落ちる
+sub format_rfc822_jst {
+    my ($t) = @_;
+    return POSIX::strftime::Compiler::strftime(
+        '%a, %d %b %Y %H:%M:%S +0900',
+        $t->sec, $t->min, $t->hour, $t->mday, $t->mon - 1, $t->year - 1900);
 }
 
 # このモジュールが返す path と author は decode 済みの文字列。git の出力と

@@ -89,7 +89,7 @@ sub create_rss {
     # 新しい順に整列済み)。ファイルの mtime やビルド時刻に依らせないことで、
     # 同じ translation からのビルドは同じバイト列の feed になる
     my $latest = Time::Piece->strptime($updates->[0]{date}, '%Y-%m-%d %H:%M:%S');
-    my $datetime = $latest->strftime("%a, %d %b %Y %H:%M:%S +0900");
+    my $datetime = PJP::M::Repository::format_rfc822_jst($latest);
 
     my $rss = XML::RSS->new(version => '2.0');
     $rss->channel(
@@ -110,7 +110,7 @@ sub create_rss {
             title       => $module->{name},
             link        => "http://perldoc.jp/" . $module->{path},
             description => ($module->{in} ? "$module->{in}の" : '') . "$module->{name}" . ($module->{version} ? "($module->{version})": '') . "が、$module->{author} により commit されました。",
-            pubDate     => $datetime->strftime("%a, %d %b %Y %H:%M:%S +0900"),
+            pubDate     => PJP::M::Repository::format_rfc822_jst($datetime),
             );
     }
     # XML::RSS の as_string は非 ASCII を数値文字参照に変換するので、返る文字列は

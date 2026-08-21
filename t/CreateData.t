@@ -7,6 +7,7 @@ use Encode ();
 use File::Temp qw/tempdir/;
 use Data::Dumper ();
 use JSON::XS ();
+use POSIX ();
 use XML::RSS;
 
 # 生成側 (script/create_data.pl) の書き出しをそのまま呼ぶ。テスト側で
@@ -134,6 +135,66 @@ subtest 'write_data_pl の書き出しは呼び出し元の Dumper 設定に依�
         like $indent1, qr{"inner" => \[\n\s{6}1,}, 'indent => 1 では固定幅で下がる';
         isnt $indent1, $default, 'indent の指定で書き出しが変わる';
     });
+};
+
+subtest 'RSS の日時が RFC 822 の英語表記に固定される' => sub {
+    my @updates = (
+        { date => '2026-06-01 12:00:00', author => 'a', path => 'docs/p1.pod',
+          name => 'P1', in => '', version => '' },
+        { date => '2026-05-31 09:08:07', author => 'b', path => 'docs/p2.pod',
+          name => 'P2', in => '', version => '' },
+    );
+
+    # 3 つすべて (channel の pubDate / lastBuildDate と item ごとの pubDate) を
+    # 見る。channel だけだと item 側の書式を落としても通る
+    my $check = sub {
+        my ($label) = @_;
+        my $rss = XML::RSS->new;
+        $rss->parse(slurp_bytes('static/rss/recent.rss'));
+        is $rss->{channel}{pubDate},       'Mon, 01 Jun 2026 12:00:00 +0900', "$label: channel pubDate";
+        is $rss->{channel}{lastBuildDate}, 'Mon, 01 Jun 2026 12:00:00 +0900', "$label: channel lastBuildDate";
+        is $rss->{items}[0]{pubDate},      'Mon, 01 Jun 2026 12:00:00 +0900', "$label: item[0] pubDate";
+        is $rss->{items}[1]{pubDate},      'Sun, 31 May 2026 09:08:07 +0900', "$label: item[1] pubDate";
+    };
+
+    in_tempdir sub {
+        main::create_rss(\@updates);
+        $check->('既定のロケール');
+    };
+
+    subtest 'ロケール依存の strftime を通らない' => sub {
+        # ja_JP.UTF-8 を掛ける下の subtest はロケールが無い環境で skip される。
+        # C ロケールでは Time::Piece->strftime でも英語の曜日・月名が出るため、
+        # 完全一致テストだけでは実装を戻しても気づけない。RSS の生成中だけ
+        # ロケール依存 API を禁止して、経路そのものを固定する。
+        #
+        # 囲む範囲は create_rss の呼び出しに限る — cutoff 計算や
+        # Repository の未来日検査も Time::Piece->strftime を使うが、そちらは
+        # '%Y-%m-%d %H:%M:%S' でロケールに依存しないので対象ではない
+        in_tempdir sub {
+            no warnings qw/redefine once/;
+            local *Time::Piece::strftime = sub {
+                die 'locale-sensitive strftime must not be used while building the feed';
+            };
+            ok lives { main::create_rss(\@updates) }, 'Time::Piece::strftime を呼ばずに書き出せる';
+            $check->('strftime 禁止下');
+        };
+    };
+
+    subtest 'ja_JP.UTF-8 でも英語表記になる' => sub {
+        # setlocale はプロセス全体に効き local では戻らないので、
+        # 元の LC_TIME を保存して成否によらず復元する。
+        # そのロケールが無い環境では skip されるため、部分的な検出器
+        my $orig = POSIX::setlocale(POSIX::LC_TIME());
+        skip_all 'ja_JP.UTF-8 is not available'
+            unless defined POSIX::setlocale(POSIX::LC_TIME(), 'ja_JP.UTF-8');
+        my $guard = Guard->new(sub { POSIX::setlocale(POSIX::LC_TIME(), $orig) });
+
+        in_tempdir sub {
+            main::create_rss(\@updates);
+            $check->('ja_JP.UTF-8');
+        };
+    };
 };
 
 done_testing;
