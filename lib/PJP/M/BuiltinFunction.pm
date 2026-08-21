@@ -100,7 +100,13 @@ sub generate {
                 $_encoding = $1 and next if !defined $_encoding && m{^=encoding\s+(.+)$};
                 s{E<sol>}{/}g;
                 my @names = m{C<(\-?[a-zA-Z0-9_]+)(?:[^>]+)?>}g;
-                push @_candidate, map {s{^($OPS_REGEXP)(?:/+|/STRING/)$}{$1}; $_} @names;
+                # @names は反復ごとの lexical なので現状は無害だが、
+                # BuiltinVariable と同じくコピーしてから置換する形に揃える
+                push @_candidate, map {
+                    my $name = $_;
+                    $name =~ s{^($OPS_REGEXP)(?:/+|/STRING/)$}{$1};
+                    $name;
+                } @names;
             }
             close $fh;
             my %tmp;
