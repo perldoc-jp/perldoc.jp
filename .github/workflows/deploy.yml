@@ -119,9 +119,14 @@ jobs:
       # 書いた registry buildcache を明示的に参照するため、builder のローカル状態
       # (GC 等) に関わらず databuild が再実行されることはない
       - name: Export data/years.pl
+        # 外部 Git リモートから実行時に得た値を shell のソース本文へ埋め込まない。
+        # step の env 経由なら、値は shell 変数として渡り、構文として
+        # 再解釈されない
+        env:
+          TRANSLATION_SHA: ${{ steps.translation.outputs.sha }}
         run: |
           docker buildx build --target years-export \
-            --build-arg TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }} \
+            --build-arg "TRANSLATION_COMMIT=$TRANSLATION_SHA" \
             --cache-from type=registry,ref=$IMAGE:buildcache \
             --output type=local,dest=years-out .
 
