@@ -16,8 +16,6 @@ Makefile
 docker-compose.yml
 terraform/
 worker/
-crontab
-postinstall
 inc/
 config.rb
 scss/

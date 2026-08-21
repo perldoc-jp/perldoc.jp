@@ -767,9 +767,8 @@ repository_dispatch で受けるため、翻訳がマージされてから数分
 
 ### `static/docs.json` は外部から参照されている
 
-旧 crontab のコメントにある通り、`static/docs.json` は Chrome 拡張と
-Firefox アドオンが参照している。移行後もパスと JSON 構造 (`{パッケージ名: パス}`)
-を変えないこと。
+`static/docs.json` は Chrome 拡張と Firefox アドオンが参照している。
+移行後もパスと JSON 構造 (`{パッケージ名: パス}`) を変えないこと。
 
 - <https://chrome.google.com/webstore/detail/iedgkpbokcjamkpoglfbefmdmclkljhc>
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
