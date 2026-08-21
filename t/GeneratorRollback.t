@@ -203,4 +203,28 @@ subtest '「見つからない」だけなら止まらない' => sub {
     };
 };
 
+subtest 'PodFile の repository は assets_dir 直下の checkout 名になる' => sub {
+    # assets_dir の祖先にも 'assets' component がある場合。文字列置換で
+    # assets/ より前を削る方式だと、削りすぎたり (祖先が assets/) 一文字も
+    # 削れなかったり (assets component が無い tempdir) して、repository 欄に
+    # 一時ディレクトリの絶対 path がそのまま入っていた
+    my $root   = tempdir(CLEANUP => 1);
+    my $assets = "$root/assets/work/assets";
+    my $dir    = "$assets/translation/docs/modules/Ccc-1.00";
+    make_path($dir);
+    open my $fh, '>', "$dir/Ccc.pod" or die $!;
+    print $fh "=encoding utf-8\n\n=head1 NAME\n\nCcc - test\n";
+    close $fh;
+
+    with_fresh_db $assets, sub {
+        my ($dbh) = @_;
+        local @PJP::M::BuiltinFunction::REGEXP = ('chomp');
+        PJP::M::PodFile->generate($context);
+
+        my $rows = $dbh->selectall_arrayref(
+            q{SELECT DISTINCT repository FROM pod WHERE path LIKE 'modules/Ccc%'});
+        is $rows, [['translation']], 'repository は translation';
+    };
+};
+
 done_testing;

@@ -13,6 +13,7 @@ use URI::Escape qw/uri_escape/;
 use JSON;
 use File::Spec::Functions qw/catfile/;
 use File::Find::Rule;
+use File::Spec;
 use version;
 use autodie;
 use PJP::M::Pod;
@@ -46,33 +47,40 @@ sub generate {
     } @articles;
 }
 
+# 1 ファイルにつき 3 つの path を返す。
+#
+#   raw  読み書きに使う path。readdir/File::Find の生バイトのまま持ち、
+#        Perl の再エンコード挙動に依存させない
+#   rel  $base からの相対 path を decode したもの。distvname の素になり、
+#        script/create_data.pl で decode 済みの翻訳イベント path と
+#        突き合わせられる (生バイトのままだと非 ASCII のファイル名だけ
+#        更新日時が付かない)
+#   repository  assets_dir 直下のどの checkout に属するか
 sub _get_files {
     my ($class, $c, $base) = @_;
 
-    my $repository = do {
-        local $_ = $base;
-        s!^.+?assets/!!;
-        s!^([\w\-.]+)/.+!$1!;
-        $_;
-    };
+    my $repository = PJP::M::Repository::repository_of($c, $base);
 
     opendir(my $dh, $base);
-    my @all_files;
+    my @raw_files;
     while (defined(my $e = readdir $dh)) {
         next if $e =~ /^\./;
         next if $e =~ /^CVS$/;
 
-        # readdir/File::Find の生バイトのままだと、ここから導出する distvname が
-        # script/create_data.pl で decode 済みの翻訳イベント path と突き合わせ
-        # られず、非 ASCII のファイル名だけ更新日時が付かない。git 側と同じ
-        # 写像 (PJP::M::Repository::decode_path) を通す
-        my (@files) = map { PJP::M::Repository::decode_path($_) }
-            File::Find::Rule->file()
+        push @raw_files, File::Find::Rule->file()
             ->name(PJP::M::Repository::TRANSLATION_FILE_RE)
             ->in("$base/$e");
-        push @all_files, @files;
     }
-    map {[$repository, $_]} @all_files;
+    closedir $dh;
+
+    return map {
+        +{
+            repository => $repository,
+            raw        => $_,
+            rel        => PJP::M::Repository::decode_path(
+                              File::Spec->abs2rel($_, $base)),
+        }
+    } @raw_files;
 }
 
 sub _generate {
@@ -85,21 +93,22 @@ sub _generate {
     # checkout 時刻に潰れて「更新が新しい順」の意味を失い、同時刻どうしの並びが
     # 環境依存の readdir 順に落ちて生成物が非決定的になるため
     my @mods;
-    foreach my $repo_file (sort { $a->[1] cmp $b->[1] } @$files) {
-        my ($repository, $file) = @$repo_file;
+    foreach my $entry (sort { $a->{rel} cmp $b->{rel} } @$files) {
+        my ($repository, $raw_file, $distvname) =
+            @{$entry}{qw/repository raw rel/};
         my $is_pod;
-        my ($row, $package, $dist, $distvname, $abstract);
-        $distvname = $file;
-        $distvname =~ s{^.*?articles/}{};
-        if ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
+        my ($row, $package, $dist, $abstract);
+        # 読み出しは生バイトの path で行い、構造の解釈は decode 済みの
+        # 相対 path で行う
+        if ($distvname =~ m{^([^/]+)/(?:.*?/)?([^/]+)\.html$}) {
             $is_pod = 0;
             ($package, $dist) = ($1, $2);
-            ($dist, $abstract) = $c->abstract_title_description(scalar slurp($file));
-        } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+)\.md$}) {
+            ($dist, $abstract) = $c->abstract_title_description(scalar slurp($raw_file));
+        } elsif ($distvname =~ m{^([^/]+)/(?:.*?/)?([^/]+)\.md$}) {
             $is_pod  = 0;
             ($package, $dist) = ($1, $2);
-            ($dist, $abstract) = $c->abstract_title_description_from_md(scalar slurp($file));
-        } elsif ($file =~ m{^.*?articles/([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
+            ($dist, $abstract) = $c->abstract_title_description_from_md(scalar slurp($raw_file));
+        } elsif ($distvname =~ m{^([^/]+)/(?:.*?/)?([^/]+?)\.pod$}) {
             $is_pod  = 1;
             ($package, $dist) = ($1, $2);
         }
@@ -113,8 +122,8 @@ sub _generate {
                };
 
         if ($is_pod) {
-            debugf("parsing %s", $file);
-            my ($name, $desc) = PJP::M::Pod->parse_name_section($file);
+            debugf("parsing %s", $distvname);
+            my ($name, $desc) = PJP::M::Pod->parse_name_section($raw_file);
             if ($desc) {
                 debugf("Japanese Description: %s, %s", $name, $desc);
                 $row->{abstract} = $desc;

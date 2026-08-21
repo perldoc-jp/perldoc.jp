@@ -12,6 +12,7 @@ use File::Find::Rule;
 use version;
 use autodie;
 use PJP::M::Pod;
+use PJP::M::Repository ();
 
 sub generate {
     my ($class, $c) = @_;
@@ -60,12 +61,7 @@ sub generate {
 sub _generate {
     my ($class, $c, $base) = @_;
 
-    my $repository = do {
-        local $_ = $base;
-        s!^.+?assets/!!;
-        s!^([\w\-.]+)/.+!$1!;
-        $_;
-    };
+    my $repository = PJP::M::Repository::repository_of($c, $base);
 
     my @mods;
     opendir(my $dh, $base);

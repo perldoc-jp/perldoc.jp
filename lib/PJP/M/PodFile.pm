@@ -194,16 +194,14 @@ sub generate {
         $c->dbh_master->do(q{DELETE FROM pod});
         my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')));
         for my $base (@bases) {
-                my $repository = $base;
-                my $extention_exp;
-                if ($repository =~ s{^.+?/assets/}{}) {
-                    # 何を翻訳文書として配信するかは、イベント観測・現ツリー列挙と
-                    # 同じ述語 (PJP::M::Repository) を通す
-                    $extention_exp = PJP::M::Repository::TRANSLATION_FILE_RE;
-                } else {
-                    $extention_exp = '*.pod';
-                }
-                $repository =~ s{^([\w\-.]+)/.+}{$1};
+                # @bases は assets_dir 直下から glob しているので、必ず
+                # assets_dir の中にある。文字列置換の成否で分岐していた頃は、
+                # assets_dir の path に 'assets' component が無い環境
+                # (テストの tempdir 等) だけ別の拡張子規則に落ちていた
+                my $repository = PJP::M::Repository::repository_of($c, $base);
+                # 何を翻訳文書として配信するかは、イベント観測・現ツリー列挙と
+                # 同じ述語 (PJP::M::Repository) を通す
+                my $extention_exp = PJP::M::Repository::TRANSLATION_FILE_RE;
 
                 # 列挙順はファイルシステムに依存する。pod テーブルへの挿入順が
                 # そのまま DB のバイト列に出るので、並べ替えて決定的にする

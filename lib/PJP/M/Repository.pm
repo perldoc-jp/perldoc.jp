@@ -46,6 +46,31 @@ sub format_rfc822_jst {
         $t->sec, $t->min, $t->hour, $t->mday, $t->mon - 1, $t->year - 1900);
 }
 
+# assets_dir からの相対 path。ファイルとディレクトリの両方を受ける。
+#
+# 文字列置換で assets/ より前を削る方式 (s!^.+?assets/!!) は、祖先の
+# ディレクトリ名にも assets/ があると切りすぎる。~/assets/assets/translation を
+# checkout にすると 'assets/translation/...' ではなく 'translation/...' になり、
+# repository 名が 1 つずれる。逆に assets_dir の path 自体に 'assets' という
+# component が無い環境 (テストの tempdir 等) では 1 文字も削れない
+sub assets_rel {
+  my ($c, $path) = @_;
+  my $rel = File::Spec->abs2rel($path, $c->assets_dir);
+  # assets_dir の外を指していたら止める。/^\.\./ で見ると '..foo' のような
+  # 合法な名前まで拒否するので、path component がちょうど '..' かを見る。
+  # これは字面上の包含で、symlink を解決した実体の包含までは保証しない
+  my ($first) = File::Spec->splitdir($rel);
+  die "path is outside of assets_dir: $path"
+    if defined $first && $first eq File::Spec->updir;
+  return $rel;
+}
+
+# assets_dir 直下のどの checkout に属するか (= 生成物の repository 欄)
+sub repository_of {
+  my ($c, $path) = @_;
+  return (File::Spec->splitdir(assets_rel($c, $path)))[0];
+}
+
 # このモジュールが返す path と author は decode 済みの文字列。git の出力と
 # readdir という別々の入口の生バイトを同じ文字列空間に写すため、境界の decode は
 # commit_events / current_paths と、path を突き合わせる他の消費者

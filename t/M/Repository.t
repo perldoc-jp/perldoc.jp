@@ -4,6 +4,7 @@ use Test2::V0;
 
 use File::Temp qw/tempdir/;
 use File::Path qw/make_path/;
+use File::Spec;
 use File::Basename qw/dirname/;
 use Encode ();
 use File::Find::Rule;
@@ -27,7 +28,7 @@ use Test::FakeBin qw/fake_bin/;
 sub new_repo {
     my $assets = tempdir(CLEANUP => 1) . '/assets/';
     my $repo   = "${assets}translation";
-    make_path($repo);
+    File::Path::make_path($repo);
 
     my $r = Test::Repo->new(dir => $repo);
     $r->git('init', '-q', '.');
@@ -578,5 +579,55 @@ sub _jst_epoch {
     my ($wall) = @_;
     return Time::Piece->strptime($wall, '%Y-%m-%d %H:%M:%S')->epoch - 9 * 3600;
 }
+
+{
+    # assets_dir だけを返す最小のダブル
+    package FakeContext;
+    sub new { my ($class, $dir) = @_; bless { dir => $dir }, $class }
+    sub assets_dir { $_[0]{dir} }
+}
+
+subtest 'assets_dir からの相対化' => sub {
+    # 文字列置換で assets/ より前を削る方式は、祖先のディレクトリ名にも
+    # assets/ があると切りすぎる。abs2rel なら祖先の名前に依存しない
+    my $root = tempdir(CLEANUP => 1);
+    my $assets = "$root/assets/work/assets";     # 祖先にも assets/ がある
+    my $docs   = "$assets/translation/docs";
+    File::Path::make_path("$docs/articles");
+    open my $fh, '>', "$docs/articles/x.pod" or die $!;
+    close $fh;
+
+    my $c = FakeContext->new($assets);
+
+    is PJP::M::Repository::assets_rel($c, "$assets/translation/docs"),
+       File::Spec->catdir(qw/translation docs/), 'ディレクトリを受ける';
+    is PJP::M::Repository::assets_rel($c, "$docs/articles/x.pod"),
+       File::Spec->catfile(qw/translation docs articles x.pod/), 'ファイルを受ける';
+    is PJP::M::Repository::assets_rel($c, $assets),
+       File::Spec->curdir, 'assets root 自体は . になる';
+
+    is PJP::M::Repository::repository_of($c, "$assets/translation/docs/modules"),
+       'translation', '直下の checkout 名を返す';
+
+    # 祖先の assets/ に引きずられていないこと (文字列置換だと 'work/assets/...' を
+    # 切って別の repository 名になる)
+    isnt PJP::M::Repository::repository_of($c, "$assets/translation/docs"), 'work',
+        '祖先のディレクトリ名を拾わない';
+
+    subtest 'assets_dir の外は止める' => sub {
+        like dies { PJP::M::Repository::assets_rel($c, "$root/assets/work/outside") },
+             qr/outside of assets_dir/, '1 段上';
+        like dies { PJP::M::Repository::assets_rel($c, "$root/outside") },
+             qr/outside of assets_dir/, '複数段上';
+
+        # '..foo' は合法なディレクトリ名。/^\.\./ で見ると誤って弾く
+        my $odd = "$assets/..foo";
+        File::Path::make_path("$odd/inner");
+        is PJP::M::Repository::assets_rel($c, "$odd/inner"),
+           File::Spec->catdir('..foo', 'inner'), "'..foo' で始まる名前は通す";
+        is PJP::M::Repository::repository_of($c, "$odd/inner"), '..foo',
+           "'..foo' が repository 名になる";
+    };
+};
 
 done_testing;
