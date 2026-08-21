@@ -224,7 +224,7 @@ subtest '日付の TZ は呼び出し元の環境に依存しない' => sub {
 
 subtest '年境界のコミットが JST の年に落ちる' => sub {
     # JST 元旦 00:00〜09:00 のコミット。UTC 解釈だと前年扱いになり、年次統計の
-    # 集計年と create_year_data.pl が導出する対象年の両方がずれる
+    # 集計年と create_data.pl が導出する対象年の両方がずれる
     local $ENV{TZ} = 'UTC';
     my ($c, $r) = new_repo();
     $r->write_file('docs/modules/Qux-1.00/Qux.pod', "=head1 Qux\n");
