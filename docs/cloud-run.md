@@ -28,7 +28,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   壁時計・ファイルの mtime・DB の行順 (インデックスの走査順で変わる) を
   結果に混ぜない。同じ入力からのビルドが同じバイト列になることで、アプリ
   だけの変更やベースイメージ更新で公開 JSON や feed の中身が動かない。
-  版の選択は `PJP::M::PodFile` の `_compare_version` / `get_latest` に一本化
+  版の選択は `PJP::M::PodFile` の `compare_version` / `get_latest` に一本化
   されていて、`static/docs.json` もこれに従う (= アプリが表示する版と常に
   一致する)。feed と年次統計の入力になる翻訳イベントは
   `PJP::M::Repository->commit_events` が git log の全走査 1 回で列挙する。

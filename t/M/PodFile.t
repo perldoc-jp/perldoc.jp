@@ -250,4 +250,23 @@ subtest '版として解析できない distvname は 0 扱いのまま選べる
     };
 };
 
+subtest 'compare_version は公開 API のプレーン関数' => sub {
+    # 完全修飾のプレーン関数として直接呼べること。->compare_version と書くと
+    # クラス名が第 1 引数に入って第 2 引数が落ちるので、その形は使わない
+    is PJP::M::PodFile::compare_version('Foo-2.0', 'Foo-1.9'), 1, '数値版で比較する';
+    is PJP::M::PodFile::compare_version('Foo-1.9', 'Foo-2.0'), -1, '向きが逆でも整合する';
+    is PJP::M::PodFile::compare_version('Foo-1.2', 'Foo-1.2-RC1'), 1,
+        '同じ数値版では final release が新しい';
+
+    subtest '版が同値なら 0 を返す (全順序は呼び出し元が締める)' => sub {
+        # 別 dist の同じ数値版
+        is PJP::M::PodFile::compare_version('Foo-1.2', 'Bar-1.2'), 0, '別 dist の同じ版';
+        is PJP::M::PodFile::compare_version('Bar-1.2', 'Foo-1.2'), 0, '向きを変えても 0';
+
+        # 版として解析できない名前どうし
+        is PJP::M::PodFile::compare_version('perl', 'python'), 0, '解析できない名前どうし';
+        is PJP::M::PodFile::compare_version('python', 'perl'), 0, '向きを変えても 0';
+    };
+};
+
 done_testing;

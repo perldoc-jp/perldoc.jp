@@ -9,10 +9,10 @@ package PJP::M::Index::Module;
 use CPAN::DistnameInfo;
 use Log::Minimal;
 use File::Find::Rule;
-use version;
 use autodie;
 use PJP::M::Pod;
 use PJP::M::Repository ();
+use PJP::M::PodFile ();
 
 sub generate {
     my ($class, $c) = @_;
@@ -31,16 +31,7 @@ sub generate {
         push @{$module2versions{$_->{name}}}, $_;
     }
     for my $module ( keys %module2versions ) {
-        # 版が同値になる組 (解析できない版どうしを含む) の並びを readdir の
-        # 列挙順に委ねると、versions の順序も先頭から採る abstract も環境に
-        # 依存するので、distvname で締めて全順序にする
-        $module2versions{$module} = [
-            map            { $_->[0] }
-              reverse sort { $a->[1] <=> $b->[1] || $a->[0]{distvname} cmp $b->[0]{distvname} }
-              map {
-                [ $_, eval { version->new( $_->{version} ) } || 0 ]
-              } @{ $module2versions{$module} }
-        ];
+        $module2versions{$module} = [ $class->_sort_versions($module2versions{$module}) ];
     }
 
     my @sorted = (
@@ -57,6 +48,24 @@ sub generate {
     );
     return @sorted;
 }
+
+# 同じモジュールの版を新しい順に並べる。
+#
+# 版の比較規則は PJP::M::PodFile に一本化されている (get_latest /
+# other_versions と同じ選択になる)。compare_version は版が同値だと 0 を返すので
+# (別 dist の同じ数値版や、版として解析できない名前どうしを含む)、そのままだと
+# 並びが入力順 = readdir の列挙順に落ちて、versions の順序も先頭から採る
+# abstract も環境依存になる。distvname で締めて全順序にする。
+#
+# 入力順に依存しないことをテストできるように、この規則だけを関数にしてある
+sub _sort_versions {
+    my ($class, $rows) = @_;
+    return sort {
+        PJP::M::PodFile::compare_version($b->{distvname}, $a->{distvname})
+            || $b->{distvname} cmp $a->{distvname}
+    } @$rows;
+}
+
 
 sub _generate {
     my ($class, $c, $base) = @_;

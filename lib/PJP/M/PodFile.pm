@@ -64,10 +64,19 @@ sub _is_stable {
 }
 
 # distvname 同士の版比較 ($x の方が新しければ正)。版の比較はこの関数に
-# 一本化する (other_versions / get_latest / script/create_data.pl が
+# 一本化する (other_versions / get_latest / PJP::M::Index::Module が
 # 同じ選択をする)。同じ数値版では final release がプレリリースより新しい側に
-# 来る (Foo-1.2-RC1 より Foo-1.2 が新しい)
-sub _compare_version {
+# 来る (Foo-1.2-RC1 より Foo-1.2 が新しい)。
+#
+# decode_path 等と同じくプレーン関数なので、外からは
+# PJP::M::PodFile::compare_version($x, $y) と完全修飾で呼ぶこと。
+# ->compare_version($x, $y) と書くとクラス名が第 1 引数に入って $y が落ちる。
+#
+# 版と stable/pre-release しか見ないので、別 dist の同じ数値版 (Foo-1.2 と
+# Bar-1.2) や、版として解析できない名前どうしでは 0 を返す。全順序が要る
+# 呼び出し元は 0 のときのタイブレークを自分で足すこと (pick_latest は
+# distvname / package / path で締めている)
+sub compare_version {
     my ($x, $y) = @_;
     state (%version, %stable);
     return ($version{$x} //= _version($x)) <=> ($version{$y} //= _version($y))
@@ -87,7 +96,7 @@ sub pick_latest {
     my ($class, $rows) = @_;
     my ($latest) =
       sort  {
-               _compare_version($b->{distvname}, $a->{distvname})
+               compare_version($b->{distvname}, $a->{distvname})
             || $b->{distvname} cmp $a->{distvname}
             || $b->{package} cmp $a->{package}
             || $a->{path} cmp $b->{path}
@@ -101,11 +110,11 @@ sub other_versions {
         # 同値の版は path (PRIMARY KEY) でタイブレークし、並びを行順に依存させない
         # (昇順なのは get_latest の主文書の選択規則と同じ向きに揃えるため)
         if ($package =~ m{^perl.*?delta$}) {
-            sort { _compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
+            sort { compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
               grep {$_->{package} =~ m{^perl.*?delta$}}
                 @{$c->dbh->selectall_arrayref(q{SELECT distvname, path, package FROM pod WHERE package like 'perl%delta'}, {Slice => {}})};
         } else {
-            sort { _compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
+            sort { compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
               @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
         }
 }
