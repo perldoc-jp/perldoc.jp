@@ -22,7 +22,16 @@ concurrency:
 env:
   REGION: asia-northeast1
   SERVICE: perldoc-jp
+  # service は (project, region, service) で識別される。片方でも省くと
+  # gcloud の設定 (core/project・run/region) から解決され、別 project や
+  # 別 region の同名 service を操作しうる。docs/cloud-run.md の手動手順は
+  # 既に両方を渡している
+  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
   IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/perldoc-jp/app
+  # Starlet のワーカー数。Cloud Run の container concurrency と一致させる
+  # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
+  # 渡すことで、一致がコメント頼みでなくなる
+  STARLET_MAX_WORKERS: '4'
   # イメージのタグは run ごとに一意にする。schedule / repository_dispatch では
   # github.sha が変わらないまま中身の異なるイメージ (translation 更新分) が
   # 作られるため、sha だけのタグはビルドを特定できない
@@ -94,19 +103,24 @@ jobs:
         run: ./script/smoke-test.sh "$IMAGE:$TAG"
 
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず
-      # self-correcting にする。特に concurrency は Starlet の
-      # --max-workers 4 と一致させる (デフォルト 80 では 4 ワーカーに
-      # 大量のリクエストが詰まる)。
+      # self-correcting にする。
+      #
+      # --update-env-vars は指定した名前だけを更新する非破壊操作で、列挙外の
+      # 変数は消さない (--set-env-vars は消す)。ここで STARLET_MAX_WORKERS を
+      # 渡すのは、Dockerfile の CMD にある ${STARLET_MAX_WORKERS:-4} と
+      # --concurrency の一致を、同じ 1 つの値から導くため
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
+            --project "$GCP_PROJECT_ID" \
             --image "$IMAGE:$TAG" \
             --region "$REGION" \
-            --service-account "perldoc-jp-run@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --service-account "perldoc-jp-run@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
             --execution-environment gen2 \
             --memory 1Gi --cpu 1 \
             --min-instances 0 --max-instances 3 \
-            --concurrency 4 --cpu-boost \
+            --concurrency "$STARLET_MAX_WORKERS" --cpu-boost \
+            --update-env-vars "STARLET_MAX_WORKERS=$STARLET_MAX_WORKERS" \
             --timeout 60 --port 8080 \
             --allow-unauthenticated \
             --quiet

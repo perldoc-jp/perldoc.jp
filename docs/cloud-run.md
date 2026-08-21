@@ -158,15 +158,19 @@ gcloud run deploy perldoc-jp \
   --memory 1Gi --cpu 1 \
   --min-instances 0 --max-instances 3 \
   --concurrency 4 \
+  --update-env-vars STARLET_MAX_WORKERS=4 \
   --cpu-boost \
   --timeout 60 \
   --port 8080 \
   --allow-unauthenticated
 ```
 
-- `--concurrency 4` は Starlet のワーカー数 (`STARLET_MAX_WORKERS`、既定 4) に
-  合わせている。変える場合は両方を揃えること。デフォルトの 80 のままだと
-  4 ワーカーに大量のリクエストが詰まりタイムアウトの原因になる。
+- `--concurrency` と `--update-env-vars STARLET_MAX_WORKERS=` は同じ値を渡す。
+  Starlet のワーカー数と container concurrency が食い違うと、デフォルトの 80 の
+  ままなら 4 ワーカーに大量のリクエストが詰まりタイムアウトの原因になる。
+  Deploy workflow は `STARLET_MAX_WORKERS` を 1 つ持ち、両方へ渡している。
+  `--update-env-vars` は指定した名前だけを更新する非破壊操作で、列挙外の
+  変数は消さない (`--set-env-vars` は消す)。
 - deploy.yml も `--image` 以外は同じフラグ一式を毎回指定しているため、この初回コマンドと
   デプロイの実行順序に関わらずサービス設定は self-correcting になる。
   設定を変えるときは deploy.yml 側も合わせて更新すること。
@@ -384,6 +388,7 @@ gcloud run deploy perldoc-jp \
   --memory 1Gi --cpu 1 \
   --min-instances 0 --max-instances 3 \
   --concurrency 4 \
+  --update-env-vars STARLET_MAX_WORKERS=4 \
   --cpu-boost \
   --timeout 60 \
   --port 8080 \

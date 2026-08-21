@@ -189,4 +189,8 @@ COPY --from=test /tests-passed /tmp/
 # exec 形式 + exec で plackup を PID 1 にし、Cloud Run が送る SIGTERM を
 # 直接受けてグレースフルにシャットダウンできるようにする。
 # sh -c は ${PORT} 等の環境変数展開のために挟んでいる。
+#
+# STARLET_MAX_WORKERS の既定 4 は、smoke-test / docker run / compose の経路で
+# 使われる値。Cloud Run では deploy.yml が container concurrency と同じ値を
+# --update-env-vars で渡すので、そちらが優先される
 CMD ["sh", "-c", "exec ./local/bin/plackup -s Starlet --port ${PORT:-8080} --max-workers ${STARLET_MAX_WORKERS:-4} -Ilib app.psgi"]
