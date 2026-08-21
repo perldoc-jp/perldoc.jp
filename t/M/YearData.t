@@ -325,20 +325,20 @@ subtest 'seed が原本として欠けていないか検査する' => sub {
     my $entry = entry(date => '2002-05-01 00:00:00', path => 'docs/modules/Old-1.00/Old.pod', in => 'Old');
     my $seed  = { 2002 => seed_year([$entry], { alice => 1 }) };
 
-    ok lives { PJP::M::YearData->assert_seed_is_complete($seed, 2003) },
+    ok lives { PJP::M::YearData->assert_seed_is_complete($seed, 2003, 2003) },
         '対象年の前年まで揃っていれば通る';
 
-    like dies { PJP::M::YearData->assert_seed_is_complete(undef, 2003) },
+    like dies { PJP::M::YearData->assert_seed_is_complete(undef, 2003, 2003) },
         qr/no seed given/, 'seed が無ければ die する';
-    like dies { PJP::M::YearData->assert_seed_is_complete({}, 2003) },
+    like dies { PJP::M::YearData->assert_seed_is_complete({}, 2003, 2003) },
         qr/no seed given/, '空の seed でも die する';
 
-    like dies { PJP::M::YearData->assert_seed_is_complete($seed, 2005) },
+    like dies { PJP::M::YearData->assert_seed_is_complete($seed, 2005, 2005) },
         qr/missing these years:\n  2003\n  2004/, '間の年が欠けていたら die する';
 
-    like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, 'recent' => {} }, 2003) },
+    like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, q{recent} => {} }, 2003, 2003) },
         qr/not plausible years/, '年でないキーがあれば die する';
-    like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, 3000 => {} }, 2003) },
+    like dies { PJP::M::YearData->assert_seed_is_complete({ %$seed, 3000 => {} }, 2003, 2003) },
         qr/not plausible years/, '現在年より後のキーがあれば die する';
 };
 
@@ -379,6 +379,24 @@ subtest '凍結年の commit_count の行順も固定する' => sub {
     @{$by_count->{commit_count}} = reverse @{$by_count->{commit_count}};
     ok lives { PJP::M::YearData->build([], { 2010 => $by_count }, 2025) },
         '件数の降順に並べ直せば通る (違いは行順だけ)';
+};
+
+subtest 'seed のキーの上限は最新イベントの年から取る' => sub {
+    # 壁時計 (_now_jst) を読んでいた頃は、同じ translation からのビルドでも
+    # 実行日によって seed の可否が変わりえた
+    my $seed = { map { $_ => { modules => [], commit_count => {} } }
+                 PJP::M::YearData::SEED_SINCE .. 2024 };
+
+    ok lives { PJP::M::YearData->assert_seed_is_complete($seed, 2025, 2025) },
+        '最新イベント年までのキーは通る';
+
+    like dies { PJP::M::YearData->assert_seed_is_complete($seed, 2025, 2023) },
+        qr/not plausible years/,
+        '最新イベント年より後のキーは弾く (壁時計ではなくイベントが基準)';
+
+    like dies { PJP::M::YearData->assert_seed_is_complete($seed, 2025, undef) },
+        qr/newest event year must be a 4-digit year/,
+        '最新イベント年が無ければ止める';
 };
 
 done_testing;

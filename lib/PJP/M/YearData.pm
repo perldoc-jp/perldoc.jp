@@ -4,7 +4,6 @@ use utf8;
 
 package PJP::M::YearData;
 use Storable ();
-use PJP::M::Repository ();
 
 # data/years.pl の中身を組み立てる。ファイル入出力は script/create_data.pl
 # 側に残し、ここは (翻訳イベント列, seed, 対象年) から年ごとの統計を作る
@@ -193,15 +192,23 @@ sub _deep_equal {
 # いて、GIT_DERIVABLE_SINCE より前は git 履歴から再現できない唯一の原本なので、
 # 欠けたファイルを黙って通すと復元できないまま自動コミットで上書きされる。
 # その前提を知っているのは呼び出し側 (databuild) なので、検査もそこから呼ぶ。
+# $newest_year : 最新の翻訳イベントの年。seed のキーの上限に使う。
+#
+# ここで壁時計 (_now_jst) を読んでいた頃は、同じ translation からのビルドでも
+# 実行日によって seed の可否が変わりえた。上限は呼び出し元が既に持っている値
+# なので、引数で渡して越境を消す
 sub assert_seed_is_complete {
-    my ($class, $seed, $target_year) = @_;
+    my ($class, $seed, $target_year, $newest_year) = @_;
 
     die "no seed given; data/years.pl holds the only copy of the pre-"
         . GIT_DERIVABLE_SINCE . " statistics (restore it with: git restore data/years.pl)\n"
         unless $seed && %$seed;
 
-    my $this_year = PJP::M::Repository->_now_jst()->year;
-    my @bad_keys = sort grep { !/^[0-9]{4}$/ || $_ < SEED_SINCE || $_ > $this_year } keys %$seed;
+    die "newest event year must be a 4-digit year (got: "
+        . ($newest_year // 'undef') . ")\n"
+        unless defined $newest_year && $newest_year =~ /^[0-9]{4}$/;
+
+    my @bad_keys = sort grep { !/^[0-9]{4}$/ || $_ < SEED_SINCE || $_ > $newest_year } keys %$seed;
     die "data/years.pl has keys that are not plausible years:\n"
         . join('', map { "  $_\n" } @bad_keys)
         if @bad_keys;

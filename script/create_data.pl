@@ -131,14 +131,15 @@ sub create_year_data {
     # 当年ターゲットだと年をまたいだ瞬間に前年分が data/years.pl のシード
     # (最終コミット時点) で凍結され、シード更新から年末までの統計が
     # サイレントに欠落するため、前年以降を毎ビルド再導出する
-    $target_year //= (maxstr(map { $_->{date} } @$events) =~ m{^(\d+)})[0] - 1;
+    my ($newest_year) = maxstr(map { $_->{date} } @$events) =~ m{^(\d+)};
+    $target_year //= $newest_year - 1;
 
     # data/years.pl は PJP::M::YearData::GIT_DERIVABLE_SINCE より前の統計の唯一の
     # 原本で、git 管理下にあるので常に存在する。読めない場合は config_do が croak し、中身が再利用に耐えるかは
     # build が検査する (結果はデプロイ成功後に master へ自動コミットされて
     # 次回ビルドの seed になるため、壊れたまま通すと復元できない)
     my $seed = scalar config_do('data/years.pl');
-    PJP::M::YearData->assert_seed_is_complete($seed, $target_year);
+    PJP::M::YearData->assert_seed_is_complete($seed, $target_year, $newest_year);
     my $year = PJP::M::YearData->build($events, $seed, $target_year);
 
     write_data_pl('data/years.pl', $year);
