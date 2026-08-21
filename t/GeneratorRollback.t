@@ -5,6 +5,7 @@ use Test2::V0;
 use Cwd ();
 use File::Path qw/make_path/;
 use File::Temp qw/tempdir/;
+use Encode ();
 use Pod::Perldoc;
 use PJP;
 use PJP::DBI;
@@ -224,6 +225,45 @@ subtest 'PodFile の repository は assets_dir 直下の checkout 名になる' 
         my $rows = $dbh->selectall_arrayref(
             q{SELECT DISTINCT repository FROM pod WHERE path LIKE 'modules/Ccc%'});
         is $rows, [['translation']], 'repository は translation';
+    };
+};
+
+subtest 'pod テーブルの path は境界で decode される' => sub {
+    my $root   = tempdir(CLEANUP => 1);
+    my $assets = "$root/assets";
+    my $dir    = "$assets/translation/docs/modules/Acme-日本語-1.00";
+    make_path(Encode::encode_utf8($dir));
+    open my $fh, '>:raw', Encode::encode_utf8("$dir/日本語.pod") or die $!;
+    print $fh "=encoding utf-8\n\n=head1 NAME\n\nAcme::Sample - test\n";
+    close $fh;
+
+    with_fresh_db $assets, sub {
+        my ($dbh) = @_;
+        local @PJP::M::BuiltinFunction::REGEXP = ('chomp');
+        PJP::M::PodFile->generate($context);
+
+        my ($path) = $dbh->selectrow_array(
+            q{SELECT path FROM pod WHERE path LIKE 'modules/Acme%'});
+        ok utf8::is_utf8($path), 'path は decode 済みの文字列';
+        is $path, 'modules/Acme-日本語-1.00/日本語.pod', '非 ASCII のまま復元できる';
+    };
+};
+
+subtest '不正な UTF-8 のファイル名は止める' => sub {
+    my $root   = tempdir(CLEANUP => 1);
+    my $assets = "$root/assets";
+    my $dir    = "$assets/translation/docs/modules/Bad-1.00";
+    make_path($dir);
+    # \xFF は単独では正しい UTF-8 にならない
+    my $bad = "$dir/\xFF.pod";
+    my $ok = eval { open my $fh, '>:raw', $bad or die $!; print $fh "=head1 NAME\n\nBad\n"; close $fh; 1 };
+    skip_all 'cannot create a file with invalid UTF-8 name on this filesystem' unless $ok;
+
+    with_fresh_db $assets, sub {
+        local @PJP::M::BuiltinFunction::REGEXP = ('chomp');
+        like dies { PJP::M::PodFile->generate($context) },
+             qr/cannot generate these documents/,
+             '置換文字に倒さず失敗として集める';
     };
 };
 

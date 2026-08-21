@@ -6,6 +6,7 @@ use feature qw(state);
 package PJP::M::PodFile;
 use Amon2::Declare;
 use File::Spec::Functions qw/abs2rel catfile catdir/;
+use PJP::Util ();
 use File::Find::Rule;
 use PJP::M::Pod;
 use Log::Minimal;
@@ -253,7 +254,11 @@ sub generate_one_file {
                     if ($file =~ m{/perlfunc\.pod$}) {
                         $html = PJP::M::BuiltinFunction->linkify_functions($html);
                     }
-                    my $relpath = abs2rel( $file, $base );
+                    # DB に入る値だけを decode する。@files の一覧と
+                    # 読み出しに使う $file は readdir の生バイトのまま扱い、
+                    # git 側の path (decode 済み) と突き合わせられるのは
+                    # ここから作る path / package / distvname の方
+                    my $relpath = PJP::M::Repository::decode_path(abs2rel($file, $base));
                     my ( $package, $description ) =
                       PJP::M::Pod->parse_name_section($file);
                     if ( !defined $package ) {
@@ -292,8 +297,12 @@ sub generate_one_file_html {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
         my $args = do {
-                    my $html = PJP::M::Index::Article::slurp($file);
-                    my $relpath = abs2rel( $file, $base );
+                    my $html = PJP::Util::slurp($file);
+                    # DB に入る値だけを decode する。@files の一覧と
+                    # 読み出しに使う $file は readdir の生バイトのまま扱い、
+                    # git 側の path (decode 済み) と突き合わせられるのは
+                    # ここから作る path / package / distvname の方
+                    my $relpath = PJP::M::Repository::decode_path(abs2rel($file, $base));
                     my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.html$};
 
                     $package or die "cannot get package name: $relpath";
@@ -319,8 +328,12 @@ sub generate_one_file_md {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
         my $args = do {
-                    my $md_src = PJP::M::Index::Article::slurp($file);
-                    my $relpath = abs2rel( $file, $base );
+                    my $md_src = PJP::Util::slurp($file);
+                    # DB に入る値だけを decode する。@files の一覧と
+                    # 読み出しに使う $file は readdir の生バイトのまま扱い、
+                    # git 側の path (decode 済み) と突き合わせられるのは
+                    # ここから作る path / package / distvname の方
+                    my $relpath = PJP::M::Repository::decode_path(abs2rel($file, $base));
                     my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.md$};
 
                     $package or die "cannot get package name: $relpath";
