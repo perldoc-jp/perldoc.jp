@@ -5,6 +5,7 @@ use Test2::V0;
 use Cwd ();
 use Encode ();
 use File::Temp qw/tempdir/;
+use Data::Dumper ();
 use JSON::XS ();
 use XML::RSS;
 
@@ -102,6 +103,37 @@ subtest 'RSS は非 ASCII の author/name/path を壊さずに書き出す' => s
         like $item->{description}, qr/José 翻訳者/, 'description に翻訳者が残る';
         like $item->{link}, qr{Acme-日本語-1\.00}, 'link に path が残る';
     };
+};
+
+subtest 'write_data_pl の書き出しは呼び出し元の Dumper 設定に依らない' => sub {
+    # 設定をファイルスコープの local に置いていた頃は、require が終わった
+    # 時点で巻き戻るため、生成の各段を直接呼ぶこのテストからは効いていなかった。
+    # 呼び出し前に 4 つを意図と逆の値へ倒しておく — 既定値のまま呼ぶと、
+    # 関数内の local を 1 つ削っても環境次第で通ってしまう
+    local $Data::Dumper::Terse    = 0;
+    local $Data::Dumper::Sortkeys = 0;
+    local $Data::Dumper::Useqq    = 0;
+    local $Data::Dumper::Indent   = 0;
+
+    in_tempdir(sub {
+        # Indent の 1 と 2 は平坦なハッシュだと同じ見た目になるので、
+        # 入れ子を持たせて違いが出るようにする
+        my $data = { b => 'あ', a => { inner => [1, 2] } };
+
+        write_data_pl('out.pl', $data);
+        my $default = Encode::decode_utf8(slurp_bytes('out.pl'));
+        like $default, qr{\A\+\{\n},    'Terse=1 で $VAR1 が付かない';
+        like $default, qr{"b" => "},    'Useqq=1 でキーも値もダブルクォートになる';
+        like $default, qr{\\x\{3042\}}, '非 ASCII は \x{} にエスケープされる';
+        ok index($default, '"a" =>') < index($default, '"b" =>'),
+            'Sortkeys=1 でキーが整列する';
+        like $default, qr{"inner" => \[\n\s{20,}1,}, 'Indent=2 で入れ子が深く揃う';
+
+        write_data_pl('out1.pl', $data, indent => 1);
+        my $indent1 = Encode::decode_utf8(slurp_bytes('out1.pl'));
+        like $indent1, qr{"inner" => \[\n\s{6}1,}, 'indent => 1 では固定幅で下がる';
+        isnt $indent1, $default, 'indent の指定で書き出しが変わる';
+    });
 };
 
 done_testing;

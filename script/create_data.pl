@@ -24,15 +24,6 @@ use Module::Find qw/useall/;
 
 useall 'PJP::M';
 
-local $Data::Dumper::Terse    = 1;
-local $Data::Dumper::Sortkeys = 1;
-# author 名や abstract など git・pod 由来の文字列が非 ASCII になっても読み手側の
-# エンコーディング解釈に依存しないよう、\x{} 等でエスケープした純 ASCII で
-# 出力する。ファイルに use utf8 ヘッダを書く方式は、読み手の config_do が
-# do 時に @INC を cwd に限定するため「利用側プロセスが utf8.pm をロード済みか」
-# に成否が依存してしまい使えない
-local $Data::Dumper::Useqq    = 1;
-
 # require されたとき (t/CreateData.t が生成の各段を直接呼ぶ) は実行しない
 main() unless caller;
 
@@ -231,9 +222,22 @@ sub sort_by_updated_at {
 }
 
 # 先頭の + は do がブロックと誤解釈しないための明示。
-# indent は生成物ごとに違う (目次データだけ従来の Indent=1 を保つ) ため引数で受ける
+#
+# Dumper の設定はこの関数の中で完結させる。ファイルスコープの local は
+# require が終わった時点で巻き戻るので、生成の各段を直接呼ぶ利用者
+# (t/CreateData.t) からは効かず、書き出しの形が呼び出し元の設定次第になる
 sub write_data_pl {
     my ($path, $data, %opts) = @_;
-    local $Data::Dumper::Indent = $opts{indent} if defined $opts{indent};
+    local $Data::Dumper::Terse    = 1;
+    local $Data::Dumper::Sortkeys = 1;
+    # author 名や abstract など git・pod 由来の文字列が非 ASCII になっても
+    # 読み手側のエンコーディング解釈に依存しないよう、\x{} 等でエスケープした
+    # 純 ASCII で出力する。ファイルに use utf8 ヘッダを書く方式は、読み手の
+    # config_do が do 時に @INC を cwd に限定するため「利用側プロセスが
+    # utf8.pm をロード済みか」に成否が依存してしまい使えない
+    local $Data::Dumper::Useqq    = 1;
+    # indent は生成物ごとに違う (目次データだけ従来の Indent=1 を保つ)。
+    # 既定の 2 も明示する — 呼び出し元の設定に依存させない
+    local $Data::Dumper::Indent   = $opts{indent} // 2;
     write_file_atomic($path, sub { print {$_[0]} '+', Dumper($data) });
 }
