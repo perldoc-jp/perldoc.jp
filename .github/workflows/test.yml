@@ -91,7 +91,7 @@ jobs:
     - name: Resolve translation HEAD
       id: translation
       run: |
-        sha=$(./script/resolve-translation-head.sh)
+        sha=$(./script/translation.sh head)
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
     # キャッシュの scope を app イメージと分け、mode=max の書き込みが互いの

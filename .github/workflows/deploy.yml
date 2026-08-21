@@ -65,7 +65,7 @@ jobs:
       - name: Resolve translation HEAD
         id: translation
         run: |
-          sha=$(./script/resolve-translation-head.sh)
+          sha=$(./script/translation.sh head)
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image

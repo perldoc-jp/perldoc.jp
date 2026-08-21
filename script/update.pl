@@ -37,19 +37,13 @@ if (! -d $assets_dir) {
 
 # 以下の外部コマンドは、失敗しても後続がそれらしく動いてしまう。translation の
 # 取得に失敗すれば「翻訳が 1 件も無い」生成物ができ、DB の初期化に失敗すれば
-# 空のテーブルに書き込むだけになるので、その場で止める
-if (! -d $assets_dir . '/translation/') {
-    system(qq{git clone https://github.com/perldoc-jp/translation.git $assets_dir/translation/}) == 0
-        or die "Cannot clone translation repository";
-}
-
-if (! $ENV{SKIP_ASSETS_UPDATE}) {
-    # cd と ; で繋ぐと、cd が失敗しても現在のリポジトリで git pull が走り、
-    # それが成功すると「更新できた」ことになってしまう (パスに空白が
-    # 含まれる場合に起きる)。-C でリポジトリを指定し、shell も挟まない
-    system('git', '-C', "$assets_dir/translation", 'pull', 'origin', 'master') == 0
-        or die "Cannot update translation repository";
-}
+# 空のテーブルに書き込むだけになるので、その場で止める。
+#
+# 取得の規則 (URL・ref・取得したものが生成の入力として完全かの検査) は
+# script/translation.sh に一本化されている。SKIP_ASSETS_UPDATE の扱いも
+# そちらが持つ
+system("$code_dir/script/translation.sh", 'fetch', "$assets_dir/translation") == 0
+    or die "Cannot fetch translation repository";
 
 # code_dir が誤っていても、たまたま正しい cwd から起動していれば以降は
 # 成功してしまうので、設定の誤りをここで顕在化させる

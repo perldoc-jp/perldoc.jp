@@ -346,7 +346,7 @@ TAG=manual-$(date +%Y%m%d%H%M%S)
 gcloud auth configure-docker "${REGION}-docker.pkg.dev"
 
 # translation の HEAD に固定する (deploy.yml / test.yml と同じ pin 規則)
-TRANSLATION_COMMIT=$(./script/resolve-translation-head.sh)
+TRANSLATION_COMMIT=$(./script/translation.sh head)
 
 # Cloud Run は linux/amd64 のみ対応。Apple Silicon ではエミュレーションで動くため、
 # 初回は CPAN 依存の XS ビルドを含めて時間がかかる
