@@ -107,6 +107,13 @@ subtest '静的ファイルの Cache-Control' => sub {
     # HTML はエッジにもブラウザにもキャッシュさせない
     $mech->get('/');
     is $mech->response->header('Cache-Control'), undef, 'HTML has no Cache-Control';
+
+    # path だけを見てヘッダを付けると、デプロイ直前の 404 が max-age つきで
+    # ブラウザとエッジに最大 4 時間残り続ける
+    $mech->get('/static/this-file-does-not-exist.css');
+    is $mech->status, 404, 'missing static file is 404';
+    is $mech->response->header('Cache-Control'), undef,
+        'missing static file has no Cache-Control';
 };
 
 subtest 'GET /index/core' => sub {

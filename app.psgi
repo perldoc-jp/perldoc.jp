@@ -11,15 +11,36 @@ use Log::Minimal;
 my $STATIC_MAX_AGE    = 14400;
 my $GENERATED_MAX_AGE = 7200;
 
-# 対象は下の Plack::Middleware::Static 2 つが配信する path 全体。
-# ここに漏れた path はヘッダ無しで配信されるので、Static の path を
-# 変えるときはこの関数も揃えること
+# 配信する path と Cache-Control を 1 つの表から導く。Static の path と
+# max-age の対象を別々に書いていた頃は、片方だけ変えるとヘッダ無しで
+# 配信される path ができた
+my @STATIC = (
+    {
+        path    => qr{^/static/},
+        root    => './',
+        max_age => sub {
+            my $path = shift;
+            return $GENERATED_MAX_AGE
+                if $path eq '/static/docs.json' or $path =~ m{\A/static/rss/};
+            return $STATIC_MAX_AGE;
+        },
+    },
+    {
+        # ルート直下で配信するファイル。実体は static/ に置くので root を分ける。
+        # 本番の robots.txt は Cloudflare のゾーン管理 (Content Signals) がエッジで
+        # 配信しており、この実体はエッジ管理を無効化した場合に origin が 404 を
+        # 返さないためのもの
+        path    => qr{^/(?:favicon\.ico|robots\.txt)$},
+        root    => './static/',
+        max_age => sub { $STATIC_MAX_AGE },
+    },
+);
+
 sub static_max_age {
     my $path = shift;
-    return $GENERATED_MAX_AGE if $path eq '/static/docs.json';
-    return $GENERATED_MAX_AGE if $path =~ m{\A/static/rss/};
-    return $STATIC_MAX_AGE    if $path =~ m{\A/static/}
-        or $path eq '/favicon.ico' or $path eq '/robots.txt';
+    for my $rule (@STATIC) {
+        return $rule->{max_age}->($path) if $path =~ $rule->{path};
+    }
     return undef;
 }
 
@@ -33,21 +54,19 @@ builder {
             return $app->($env) unless defined $max_age;
             Plack::Util::response_cb($app->($env), sub {
                 my $res = shift;
+                # 200 以外にはヘッダを付けない。path だけを見て付けると、
+                # デプロイ直前の /static/new.css の 404 が max-age つきで
+                # ブラウザとエッジに最大 4 時間残り続ける
                 return unless $res->[0] == 200;
                 Plack::Util::header_set($res->[1], 'Cache-Control', "public, max-age=$max_age");
             });
         };
     };
-    enable 'Plack::Middleware::Static',
-        path => qr{^/static/},
-        root => './';
-    # ルート直下で配信するファイル。実体は static/ に置くので root を分ける。
-    # 本番の robots.txt は Cloudflare のゾーン管理 (Content Signals) がエッジで
-    # 配信しており、この実体はエッジ管理を無効化した場合に origin が 404 を
-    # 返さないためのもの
-    enable 'Plack::Middleware::Static',
-        path => qr{^/(?:favicon\.ico|robots\.txt)$},
-        root => './static/';
+    for my $rule (@STATIC) {
+        enable 'Plack::Middleware::Static',
+            path => $rule->{path},
+            root => $rule->{root};
+    }
     enable 'Plack::Middleware::ReverseProxy';
     enable sub {
         my $app = shift;
