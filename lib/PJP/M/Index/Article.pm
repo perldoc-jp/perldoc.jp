@@ -136,4 +136,13 @@ sub _generate {
     return @mods;
 }
 
+# この行が commit_events / latest_events_by_path のどの path に対応するか。
+# distvname の作り方 (articles/ からの相対 path) を知っているのはこのモジュール
+# なので、結合キーの組み立てもここに置く。script/create_data.pl 側に
+# 'docs/articles/' . $row->{distvname} と書くと、distvname の定義を変えた
+# ときに結合が黙って外れる
+sub event_path {
+    return 'docs/articles/' . $_[1]->{distvname};
+}
+
 1;

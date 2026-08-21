@@ -75,4 +75,17 @@ subtest 'assets_dir の外は止める' => sub {
     }, qr/outside of assets_dir/, 'assets_dir の外の base は拒否する';
 };
 
+subtest 'event_path は commit_events の path 形式を返す' => sub {
+    my ($assets, $base) = build_assets();
+    write_bytes(Encode::encode_utf8("$base/Sample/日本語.md"),
+                Encode::encode_utf8("# 日本語のタイトル\n\n説明文\n\n# 次の節\n"));
+
+    local $context->config->{assets_dir} = $assets;
+    my @out = PJP::M::Index::Article->generate($context);
+
+    is PJP::M::Index::Article->event_path($out[0]),
+       'docs/articles/Sample/日本語.md',
+       'distvname に docs/articles/ を足した形';
+};
+
 done_testing;

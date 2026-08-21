@@ -197,8 +197,8 @@ sub create_index_data {
 # 「更新が新しい順」を表さなくなった (全ファイルが checkout 時刻に潰れ、
 # 同時刻どうしは readdir 順 = 環境依存)。
 #
-# distvname は articles/ 以下の相対 path なので、docs/ を足すと commit_events が
-# 返す path 形式になる。イベントの無い path (履歴が翻訳文書の構成に合わない等) は
+# 結合キーの組み立ては PJP::M::Index::Article->event_path が持つ (distvname の
+# 定義側)。イベントの無い path (履歴が翻訳文書の構成に合わない等) は
 # 日付なしとして末尾に送り、同順は distvname で締めて全順序にする。
 sub sort_by_updated_at {
     my ($events, $articles) = @_;
@@ -206,7 +206,7 @@ sub sort_by_updated_at {
     my $latest_events = PJP::M::Repository->latest_events_by_path($events);
 
     my @keyed = map {
-        my $event = $latest_events->{"docs/articles/$_->{distvname}"};
+        my $event = $latest_events->{ PJP::M::Index::Article->event_path($_) };
         [ $event ? $event->{date} : '', $_ ]
     } @$articles;
 
