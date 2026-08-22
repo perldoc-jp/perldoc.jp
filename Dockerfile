@@ -70,12 +70,10 @@ ENV TZ=Asia/Tokyo
 # 再実行されない。
 ARG TRANSLATION_COMMIT=master
 
-# 取得の規則 (URL・ref・取得したものが生成の入力として完全かの検査) は
-# script/translation.sh に一本化されている。clone より前にこのファイル 1 つだけを
-# COPY するのは、アプリのソース全体を持ち込むとソースだけの変更で取得層が
-# 無効化されるため
-COPY script/translation.sh ./script/translation.sh
-RUN ./script/translation.sh fetch assets/translation "${TRANSLATION_COMMIT}"
+# create_data.pl が全履歴の git log を使うため、コミット履歴付き
+# (blob は checkout 分のみ) で取得する
+RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git assets/translation && \
+  git -C assets/translation checkout --quiet "${TRANSLATION_COMMIT}"
 
 # 生成に要るものだけを持ち込む。COPY . . にすると、データ生成が一切読まない
 # ファイル (tmpl/ の 1 行、CSS、t/ のテスト) を触っただけでこのレイヤが

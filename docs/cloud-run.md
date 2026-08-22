@@ -349,8 +349,8 @@ TAG=manual-$(date +%Y%m%d%H%M%S)
 # 一度だけ: docker が Artifact Registry へ push できるようにする
 gcloud auth configure-docker "${REGION}-docker.pkg.dev"
 
-# translation の HEAD に固定する (deploy.yml / test.yml と同じ pin 規則)
-TRANSLATION_COMMIT=$(./script/translation.sh head)
+# translation の HEAD に固定する (deploy.yml / test.yml と同じ)
+TRANSLATION_COMMIT=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
 
 # Cloud Run は linux/amd64 のみ対応。Apple Silicon ではエミュレーションで動くため、
 # 初回は CPAN 依存の XS ビルドを含めて時間がかかる

@@ -88,12 +88,12 @@ jobs:
 
     - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
-    # pin の規則は deploy.yml と共有のスクリプトに一本化されている。ここが
-    # deploy と食い違うと、PR が deploy の作るものと違うイメージを検証してしまう
+    # deploy.yml と同じ translation commit でイメージを作る
     - name: Resolve translation HEAD
       id: translation
       run: |
-        sha=$(./script/translation.sh head)
+        sha=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
+        test -n "$sha"
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
     # キャッシュの scope を app イメージと分け、mode=max の書き込みが互いの
