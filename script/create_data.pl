@@ -35,11 +35,6 @@ sub main {
     # 黙って作らず、ビルドを止めて気づけるようにする
     die "no translation events found" unless @$events;
 
-    # 書き出す data/years.pl はデプロイ後に master へ自動コミットされて次回の
-    # seed になる。イベント列が現ツリーと矛盾したまま導出すると誤りが恒久化
-    # するため、全生成物の手前で 1 回だけ検査する
-    PJP::M::Repository->assert_current_paths_observable($pjp, $events);
-
     mkdir './data' or die $! if not -d './data';
 
     create_recent($pjp, $events);

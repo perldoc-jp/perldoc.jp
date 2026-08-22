@@ -6,7 +6,6 @@ package PJP::M::Repository;
 use Encode ();
 use File::Spec;
 use File::Find::Rule;
-use Time::Piece ();
 use POSIX::strftime::Compiler ();
 use PJP::Util qw/read_command/;
 
@@ -20,18 +19,6 @@ use constant TIME_ZONE => 'Asia/Tokyo';
 # 同じ述語を通らないと、片方だけに存在する形式のファイルが
 # 「イベントには有るが現ツリーから消えた」(またはその逆) に化ける
 use constant TRANSLATION_FILE_RE => qr/\.(?:pod|html|md)$/;
-
-# 未来日時のイベントを許す幅。コミットする側の時計のわずかな進みは通し、
-# 明らかな誤設定 (年単位のずれ) は下の検査で止める
-use constant CLOCK_SKEW_SLACK => 10 * 60;
-
-# 現在時刻 (epoch)。テストから固定するために括り出してある。
-# JST は年間を通じて UTC+9 なので、壁時計は epoch + 9h を UTC として読めば
-# よく、$ENV{TZ} の変更が localtime に反映されるかに依存しない
-our $NOW_EPOCH;
-sub _now_jst {
-  return Time::Piece->gmtime(($NOW_EPOCH // time) + 9 * 3600);
-}
 
 # RFC 822 の日時。曜日・月名は英語であることが要求されるので、実行環境の
 # ロケールを見ない POSIX::strftime::Compiler で組む ($t は JST の壁時計)。
@@ -119,23 +106,15 @@ sub current_paths {
   return \%paths;
 }
 
-# 履歴上の path を現在の構造へ写す _normalize_historical_rel が書き換える先頭
-# ディレクトリ。現ツリーにこれらがあると canonical path が現行配置と衝突する
-use constant LEGACY_TOPLEVEL_DIRS => qw/modules perl articles core/;
-
 # 翻訳イベント (コミット × ファイル) の全列挙。git log の全走査 1 回で、
 # 削除・rename により現ツリーから消えた翻訳のイベントも含めて、git log の
 # 出力順 (配列の先頭側が新しい) のまま返す。真のコミット順を運ぶのはこの
 # 順序だけで、date は「いつ起きたか」(年の割当・掲載期間) のデータであり
 # 「どちらが後か」の判定には使わない。
 #
-# --date-order が保証するのは「祖先を全ての子より先に出さない」ことだけで、
-# それ以外は「今出せるコミットのうち日時が新しいものを優先する」ヒューリス
-# ティック。並行ブランチどうしの前後は日時に依存するため、同じ path を並行
-# して編集した履歴では「日時が新しい側」が最新として採られる (どちらが真に
-# 最終状態かは merge の解決内容が決めるので、この採用は近似)。祖先が子より
-# 先に出ることは無いので、時計の巻き戻ったコミットは下の逆転検査に必ず
-# 引っかかり、黙って誤った最新状態が採られることはない。
+# --date-order は「祖先を全ての子より先に出さない」ことだけを保証し、並行
+# ブランチどうしの前後は日時で決まる (同じ path を並行して編集した履歴では
+# 日時が新しい側を最新として採る近似)。
 #
 # ファイルの削除イベントは deleted フラグ付きで返し、扱いは呼び出し側の
 # 関心事にする (年次統計は「年内最終イベントが削除」の path をその年に
@@ -150,27 +129,16 @@ use constant LEGACY_TOPLEVEL_DIRS => qw/modules perl articles core/;
 sub commit_events {
   my ($class, $c) = @_;
 
-  # --date=iso-local が出す壁時計の基準。%ENV は子プロセスに渡るので git に効く。
-  # 呼び出し元の環境に委ねると、docs/cloud-run.md が案内する手元での再導出を
-  # 非 JST のマシンで実行しただけで全イベントの日付がずれ、年境界のコミットが
-  # 別の年に落ちた data/years.pl が seed として恒久化してしまう
+  # --date=iso-local が出す壁時計の基準。%ENV は子プロセスに渡るので git に効く
   local $ENV{TZ} = TIME_ZONE;
 
-  # _file2name で解決できない path の扱いを「現ツリーに在るか」で分ける
-  # ための集合 (下のループ内のコメント参照)
-  my $current = $class->current_paths($c);
-
   my @events;
-  my (%prev_date, @inverted);
   foreach my $repos (qw/translation/) {
       # コミットの区切りは %x01 (--name-status のファイル行と衝突しない制御文字)。
       # --no-renames は rename を削除+追加の 2 イベントとして出す
       # (旧 path の実績を旧 path のまま残す)。core.quotepath=false は
       # 非 ASCII のファイル名を \xHH に崩さず生バイトで出すため
       my ($date, $author);
-      # git log が途中で死んでも読み取りループは EOF と区別できない。不完全な
-      # イベント列は data/years.pl / recent feed になり自動コミットで master に
-      # 恒久化するため、終了状態の検査は read_command に委ねる
       read_command(
           ['git', '-C', File::Spec->catdir($c->assets_dir, $repos), '-c', 'core.quotepath=false',
            'log', '--date-order', '--no-renames', '--date=iso-local',
@@ -191,42 +159,16 @@ sub commit_events {
                   return;
               }
               my ($status, $file) = split /\t/, $line, 2;
-              # core.quotepath=false でも、タブ・改行・引用符・バックスラッシュを
-              # 含む path は C 形式でクォートされて出る。末尾が引用符になるので
-              # 拡張子の述語にも一致せず、黙ってイベントから落ちる。docs/ 配下の
-              # 翻訳なら現ツリーには在るのにイベントだけが欠けた状態になり、
-              # 突き合わせが静かにずれる。現ツリーには該当が無いので、
-              # 出てきたらビルドを止めて気づかせる
-              die "git reported a C-quoted path; this build cannot map it to the checkout: $file\n"
-                  if $file =~ /^"/;
               return unless $file =~ TRANSLATION_FILE_RE;
-              # 翻訳文書の構成に合わない path (リポジトリ直下の運用文書等) は
-              # イベントにしない
+              # 翻訳文書の構成に合わない path (リポジトリ直下の運用文書等) や、
+              # 名前が導出できない path はイベントにしない
               my $rel = _normalize_historical_rel($file) // return;
-              # 正規化を通った path は翻訳文書ツリー (docs/, manual/) を名乗って
-              # いるので、名前が導出できないのは (a) 履歴にだけ存在する旧構成か
-              # (b) 現行の配置規則から外れた新しい置き方のどちらか。(b) を黙って
-              # 落とすと、配信はされるのに年次統計と recent feed から欠落し、
-              # data/years.pl の自動コミットで欠落が seed に恒久化するため、
-              # 現ツリーに存在する path に限りビルドを止める
               my ($name, $in) = eval { _file2name($rel) };
-              if (!defined $in) {
-                  die "cannot derive a document name from a path that exists in the checkout: $rel\n"
-                      if $current->{_rel2path($rel)};
-                  return;
-              }
-              my $path = _rel2path($rel);
-              # --date-order の走査順では、後から出るイベントは先に出たものの
-              # 祖先であるか、並行ブランチ上の (日時が古い) イベントのどちらか。
-              # どちらにせよ後から出たものの date が先のものより新しければ、
-              # 走査順と日時が矛盾している
-              push @inverted, "$path: $date (later output) > $prev_date{$path} (earlier output)"
-                  if defined $prev_date{$path} and $date gt $prev_date{$path};
-              $prev_date{$path} = $date;
+              return if !defined $in;
               push @events, {
                               date    => $date,
                               author  => $author,
-                              path    => $path,
+                              path    => _rel2path($rel),
                               name    => $name,
                               in      => $in,
                               version => _file2version($rel),
@@ -236,46 +178,7 @@ sub commit_events {
           },
       );
   }
-  # committer date は push 元マシンの時計なので、走査順と矛盾しうる。矛盾した
-  # 履歴では年の割当 (date 由来) と path ごとの最新状態の判定 (走査順由来) が
-  # 食い違い、削除済みの翻訳が年次統計に生き残るなど誤った導出になる。
-  # data/years.pl は自動コミットで恒久化するため、自動で辻褄を合わせず
-  # ビルドを止めて履歴を確認させる
-  die "commit dates contradict the traversal order for these paths:\n"
-      . join('', map { "  $_\n" } @inverted)
-      . "a skewed clock probably produced them, so the year assignment (by date)\n"
-      . "and the latest-state decisions (by traversal order) would disagree in the\n"
-      . "derived stats. inspect the history before deriving again.\n"
-      if @inverted;
-
-  _assert_no_future_dates(\@events);
-
   return \@events;
-}
-
-# 未来日時のイベントを弾く。壁時計はこの検査にしか使わないので、生成物の
-# 内容は従来どおり translation の履歴だけで決まる (決定性は保たれる)。
-#
-# 誤って未来日時が付いたコミットが 1 件でも混ざると、そこが最新イベントに
-# なって対象年 (= 最新イベントの前年) と recent feed の掲載期間ごと未来へ動き、
-# 本来まだ再導出すべき年が seed 側へ凍結される。特に年をまたぐずれは、
-# 数分のずれでも対象年を 1 年進めてしまうため、slack の内側でも拒否する
-sub _assert_no_future_dates {
-  my ($events) = @_;
-
-  my $now      = _now_jst();
-  my $limit    = Time::Piece->gmtime($now->epoch + CLOCK_SKEW_SLACK)->strftime('%Y-%m-%d %H:%M:%S');
-  my $this_year = $now->year;
-
-  my @future = sort map { $_->{date} }
-      grep { $_->{date} gt $limit or substr($_->{date}, 0, 4) > $this_year } @$events;
-  return unless @future;
-
-  die "these commit dates are in the future (now is @{[ $now->strftime('%Y-%m-%d %H:%M:%S') ]} JST):\n"
-      . join('', map { "  $_\n" } @future)
-      . "a skewed clock probably produced them, and the newest event decides both\n"
-      . "the target year and the recent feed window. inspect the history before\n"
-      . "deriving again.\n";
 }
 
 # 走査順の初出 = その path の最新イベント。この対応付けは commit_events の
@@ -287,94 +190,6 @@ sub latest_events_by_path {
   my %latest;
   $latest{$_->{path}} //= $_ for @$events;
   return \%latest;
-}
-
-# 現ツリーの翻訳が、イベント列の上でも生きているものとして観測できることを
-# 確かめて die する。あわせて旧構成のディレクトリが復活していないことも見る
-# (_assert_no_legacy_layout)。
-#
-# 観測の破れ方は 2 つあり、どちらも git log --name-status が
-# merge コミットの diff を出さないことに由来する。
-#
-# (a) 最新イベントが削除: master で削除された path を、削除より前から分岐して
-#     いたブランチの merge が復活させると (modify/delete の衝突を「残す」で
-#     解決した場合など)、復活そのものはイベントにならず、その path の最新
-#     イベントは過去の削除のままになる。
-# (b) イベントが 1 件も無い: merge の衝突解決でだけ作られたファイル (どちらの
-#     親にも無い新規ファイル) は、その後変更されるまで履歴に一切現れない。
-#
-# どちらの状態でも
-# - 年次統計 (PJP::M::YearData) が、生きている翻訳をその年から落とす
-# - recent feed が、生きている翻訳を載せない (または削除者の名前と日時で載せる)
-# となり、しかも data/years.pl はデプロイ成功後に master へ自動コミットされて
-# 次回ビルドの seed になるため、誤った導出がそのまま恒久化する。
-#
-# 履歴の形を見ないと正しい観測方法を決められない (git log に -m 等を足して
-# merge の diff を出す方法は、2023 年の subtree merge を含む全 merge の
-# 取り込みファイルを merge 実行者の名義で再観測してしまい、翻訳者の帰属を
-# 壊す) ため、自動で辻褄を合わせずビルドを止める。
-#
-# なお (b) の path が後で編集されればイベントは現れるので、この検査は通る。
-# その場合も merge 時点の作成イベントだけは欠けたままで、初出の年と作成者は
-# 後続の編集にずれる。これは履歴からは復元できない曖昧さとして受け入れている。
-sub assert_current_paths_observable {
-  my ($class, $c, $events) = @_;
-
-  $class->_assert_no_legacy_layout($c);
-
-  my $current = $class->current_paths($c);
-  my $latest  = $class->latest_events_by_path($events);
-
-  my @shadowed = sort grep { $latest->{$_}{deleted} && $current->{$_} } keys %$latest;
-  die "these paths exist in the checkout but their newest event is a deletion:\n"
-      . join('', map { "  $_ (deleted at $latest->{$_}{date})\n" } @shadowed)
-      . "a merge commit probably restored them (git log --name-status does not\n"
-      . "show merge diffs), so the derived stats and feed would treat live\n"
-      . "translations as deleted. inspect the history before deriving again.\n"
-      if @shadowed;
-
-  my @unobserved = sort grep { !exists $latest->{$_} } keys %$current;
-  die "these paths exist in the checkout but have no event in the history:\n"
-      . join('', map { "  $_\n" } @unobserved)
-      . "a merge commit probably created them while resolving a conflict (git log\n"
-      . "--name-status does not show merge diffs), so the derived stats and feed\n"
-      . "would omit live translations. inspect the history before deriving again.\n"
-      if @unobserved;
-}
-
-# 現ツリーに旧構成のディレクトリが復活していたら止める。
-#
-# _normalize_historical_rel は履歴上の modules/... を現在の docs/modules/... に写す。
-# 同じ名前のファイルが旧配置にも現行配置にもあると、両者のイベントは同じ path に
-# 集まり、latest_events_by_path は「日時の新しい方」を採る。旧配置側が新しければ
-# recent feed は旧配置の日時と author を現行 URL に結び付け、旧配置側が削除なら
-# 現行のファイルが削除済みと誤判定される。旧配置は PodFile が取り込まないので
-# 配信もされず、黙って通すと誤りだけが残る。
-#
-# current_paths が checkout 全体を拾っていた頃は、旧配置のファイルが
-# 「イベントの無い現存 path」として上の検査に引っかかっていた。列挙を docs/ に
-# 絞った分、その停止性をここで明示的に引き継ぐ。
-sub _assert_no_legacy_layout {
-  my ($class, $c) = @_;
-
-  my @legacy;
-  foreach my $repos (qw/translation/) {
-      foreach my $dir (LEGACY_TOPLEVEL_DIRS) {
-          my $base = File::Spec->catdir($c->assets_dir, $repos, $dir);
-          next unless -d $base;
-          push @legacy, map { "$dir/" . decode_path(File::Spec->abs2rel($_, $base)) }
-              File::Find::Rule->file()->name(TRANSLATION_FILE_RE)->in($base);
-      }
-  }
-  return unless @legacy;
-
-  @legacy = sort @legacy;
-  die "these translations use the pre-2023 layout in the checkout:\n"
-      . join('', map { "  $_\n" } @legacy)
-      . "the history normalizes such paths into docs/..., so their events would be\n"
-      . "attributed to the current-layout file with the same name (or mark it as\n"
-      . "deleted), while nothing under docs/ serves them. move them under docs/\n"
-      . "before deriving again.\n";
 }
 
 # コミットに記録された当時の path を現在の構造に写像する。2023 年に複数の

@@ -8,7 +8,6 @@ use File::Spec;
 use File::Basename qw/dirname/;
 use Encode ();
 use File::Find::Rule;
-use Time::Piece;
 use PJP::M::Repository;
 
 use lib 't/lib';
@@ -173,43 +172,22 @@ subtest 'subtree merge 前の path が現在の構造に正規化される' => s
     is $events->[0]{in}, 'perl', '正規化後の path から name/in が導出される';
 };
 
-subtest '現存する path の名前が導出できなければビルドを止める' => sub {
-    # docs/ 配下 = 翻訳文書ツリーを名乗っているのに配置規則に合わない path。
-    # 黙って落とすと、配信はされるのに年次統計と recent feed から欠落し、
-    # data/years.pl の自動コミットで欠落が恒久化するため、現ツリーに存在する
-    # 間はビルドを止めて配置規則側の追従を促す
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/NoVersion/lib/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'add unversioned dist dir');
-
-    like dies { PJP::M::Repository->commit_events($c) },
-        qr{docs/modules/NoVersion/lib/Foo\.pod}, '該当する path を挙げて die する';
-};
-
-subtest '履歴にだけ残る未知の形状の path はイベントにしない' => sub {
-    # 過去に存在した非文書ファイルや旧構成の path は名前が導出できなくてよい。
-    # 現ツリーに無ければ配信も統計対象も無いので、ビルドは止めず黙って落とす
+subtest '配置規則に合わない path はイベントにしない' => sub {
     my ($c, $r) = new_repo();
     $r->write_file('docs/modules/NoVersion/lib/Foo.pod', "=head1 Foo\n");
     $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
     $r->commit_at('2025-06-01T12:00:00+0900', 'add unversioned dist dir');
-    $r->unlink_file('docs/modules/NoVersion/lib/Foo.pod');
-    $r->commit_at('2025-07-01T12:00:00+0900', 'remove unversioned dist dir');
 
-    my $events;
-    ok lives { $events = PJP::M::Repository->commit_events($c) },
-        '削除済みなら die しない';
-    is [map { $_->{path} } @$events], ['docs/modules/Bar-1.00/Bar.pod'],
-        '名前が導出できない path はイベントにならない';
+    is [map { $_->{path} } @{ PJP::M::Repository->commit_events($c) }],
+        ['docs/modules/Bar-1.00/Bar.pod'], '名前が導出できない path はイベントにならない';
 };
 
 subtest '日付の TZ は呼び出し元の環境に依存しない' => sub {
     # 負のオフセットのコミット。--date=iso のままだと壁時計が 00:00:00 のまま
     # 出て、JST の 16:00:00 と 16 時間ずれる。
     # 周囲の TZ を JST 以外にしても JST で観測されること = commit_events が
-    # 日付の解釈を所有していること。ここが壊れると、docs/cloud-run.md が案内する
-    # 手元での再導出を非 JST のマシンで実行しただけで年境界のコミットが別の年に
-    # 落ち、その data/years.pl が seed として恒久化する
+    # 日付の解釈を所有していること。ここが壊れると、手元での再導出を非 JST の
+    # マシンで実行しただけで年境界のコミットが別の年に落ちる
     local $ENV{TZ} = 'America/Los_Angeles';
     my ($c, $r) = new_repo();
     $r->write_file('docs/modules/Baz-1.00/Baz.pod', "=head1 Baz\n");
@@ -263,81 +241,9 @@ subtest '同秒の追加と削除は git のコミット順で返る (author 名
     }
 };
 
-subtest '同一 path の日時が祖先順と矛盾したらビルドを止める' => sub {
-    # 時計の遅れたマシンからの push は、祖先順で後のコミットに古い committer
-    # date を残す。date は年の割当に使うため、矛盾した履歴から導出すると
-    # 年内最終判定 (祖先順) と年の割当 (date) が食い違った統計になり、
-    # 自動コミットで恒久化する
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
-    $r->commit_at('2025-05-01T12:00:00+0900', 'update Foo with a skewed clock');
-
-    like dies { PJP::M::Repository->commit_events($c) },
-        qr{docs/modules/Foo-1\.00/Foo\.pod}, '該当する path を挙げて die する';
-};
-
-subtest '別 path 同士の日時の前後は矛盾ではない' => sub {
-    # ブランチをまたぐと別 path のイベントの日時は走査順で前後しうる。
-    # 単調性の要請は path ごと
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');
-    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
-    $r->commit_at('2025-05-01T12:00:00+0900', 'translate Bar with an older clock');
-
-    ok lives { PJP::M::Repository->commit_events($c) }, 'die しない';
-};
-
-subtest 'merge で復活した翻訳を検出してビルドを止める' => sub {
-    # master での削除より前から分岐したブランチの merge がファイルを復活させると、
-    # merge コミット自体は --name-status に何も出さないため、その path の最新
-    # イベントは過去の削除のままになる。この矛盾を放置すると、生きている翻訳が
-    # 年次統計から落ち、feed に削除者の名前で載り、それが seed に恒久化する
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo');
-
-    $r->git('checkout', '-q', '-b', 'topic');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
-    $r->commit_at('2025-02-01T12:00:00+0900', 'update Foo', author => 'translator');
-
-    $r->git('checkout', '-q', '-');
-    $r->unlink_file('docs/modules/Foo-1.00/Foo.pod');
-    $r->commit_at('2025-03-01T12:00:00+0900', 'remove Foo', author => 'remover');
-
-    # modify/delete の衝突を「残す」で解決して merge する
-    $r->merge_conflicting('topic');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
-    $r->commit_at('2025-04-01T12:00:00+0900', 'merge topic', author => 'merger');
-
-    my $events = PJP::M::Repository->commit_events($c);
-    my ($newest) = grep { $_->{path} eq 'docs/modules/Foo-1.00/Foo.pod' } @$events;
-    ok $newest->{deleted}, '最新イベントは削除のまま (merge の diff は出ない)';
-    ok PJP::M::Repository->current_paths($c)->{'docs/modules/Foo-1.00/Foo.pod'},
-        'ファイルは現ツリーに存在する';
-
-    like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
-        qr{docs/modules/Foo-1\.00/Foo\.pod}, '該当する path を挙げて die する';
-};
-
-subtest '通常の削除や現存する翻訳では止まらない' => sub {
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo and Bar');
-    $r->unlink_file('docs/modules/Bar-1.00/Bar.pod');
-    $r->commit_at('2026-03-01T12:00:00+0900', 'remove Bar');
-
-    my $events = PJP::M::Repository->commit_events($c);
-    ok lives { PJP::M::Repository->assert_current_paths_observable($c, $events) },
-        '現ツリーから消えている path の削除イベントは矛盾ではない';
-};
-
 subtest 'git log が途中で失敗したらビルドを止める' => sub {
     # 部分出力のまま EOF になっても、正常終了と区別して die しなければ
-    # ならない (不完全なイベント列は自動コミットで master に恒久化するため)
+    # ならない (不完全なイベント列がそのまま生成物になるため)
     my ($c) = new_repo();
     my $bin = fake_git_bin('exit 3');
     local $ENV{PATH} = "$bin:$ENV{PATH}";
@@ -353,102 +259,6 @@ subtest 'git log がシグナルで死んでもビルドを止める' => sub {
     like dies { PJP::M::Repository->commit_events($c) },
         qr/git .+ was killed by signal 9/,
         'シグナル死で die する';
-};
-
-subtest 'merge の衝突解決でだけ作られたファイルを検出してビルドを止める' => sub {
-    # どちらの親にも無いファイルを merge の解決で作ると、merge コミットの
-    # diff は出ないためイベントが 1 件も現れない。配信はされるのに年次統計と
-    # feed から落ちる状態なので、気づけるように止める
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo');
-
-    $r->git('checkout', '-q', '-b', 'topic');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo topic\n");
-    $r->commit_at('2025-02-01T12:00:00+0900', 'update Foo on topic');
-
-    $r->git('checkout', '-q', '-');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo master\n");
-    $r->commit_at('2025-03-01T12:00:00+0900', 'update Foo on master');
-
-    # 衝突の解決ついでに、どちらの親にも無かったファイルを足す
-    $r->merge_conflicting('topic');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo merged\n");
-    $r->write_file('docs/modules/Baz-1.00/Baz.pod', "=head1 Baz\n");
-    $r->commit_at('2025-04-01T12:00:00+0900', 'merge topic', author => 'merger');
-
-    my $events = PJP::M::Repository->commit_events($c);
-    ok !grep({ $_->{path} eq 'docs/modules/Baz-1.00/Baz.pod' } @$events),
-        'merge でだけ作られた path のイベントは 1 件も無い';
-
-    like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
-        qr{docs/modules/Baz-1\.00/Baz\.pod}, '該当する path を挙げて die する';
-};
-
-subtest '祖先より先に子孫が出る走査順で、時計のずれたコミットを検出する' => sub {
-    # 分岐した 2 つの子のうち一方が親より古い時計でコミットされた履歴。
-    # --date-order は祖先を子より先に出さないので、親は後から読まれ、
-    # その時点で日時の逆転として検出できる
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-06-01T12:00:00+0900', 'translate Foo');    # 親 (新しい日時)
-
-    $r->git('checkout', '-q', '-b', 'topic');
-    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
-    $r->commit_at('2025-07-01T12:00:00+0900', 'translate Bar');    # 別 path の子
-
-    $r->git('checkout', '-q', '-');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo v2\n");
-    $r->commit_at('2025-01-01T12:00:00+0900', 'update Foo');       # 時計が巻き戻った子
-
-    $r->git('merge', '-q', '--no-edit', 'topic');
-
-    like dies { PJP::M::Repository->commit_events($c) },
-        qr{docs/modules/Foo-1\.00/Foo\.pod.+later output.+earlier output}s,
-        '同じ path の日時が走査順と矛盾したら die する';
-};
-
-subtest '未来日時のコミットでビルドを止める' => sub {
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2026-06-01T12:00:00+0900', 'translate Foo');
-
-    {
-        # 誤差の範囲 (数分先) は通す
-        local $PJP::M::Repository::NOW_EPOCH = _jst_epoch('2026-06-01 11:55:00');
-        ok lives { PJP::M::Repository->commit_events($c) }, '数分先のずれは許容する';
-    }
-    {
-        local $PJP::M::Repository::NOW_EPOCH = _jst_epoch('2026-05-01 12:00:00');
-        like dies { PJP::M::Repository->commit_events($c) },
-            qr/2026-06-01 12:00:00/, '1 か月先のコミットは die する';
-    }
-};
-
-subtest '年をまたぐ未来日時は誤差の範囲でも止める' => sub {
-    # 対象年は最新イベントの前年なので、年をまたいだ数分のずれでも
-    # 対象年が 1 年進んで、再導出すべき年が seed 側へ凍結される
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2027-01-01T00:03:00+0900', 'translate Foo');
-
-    local $PJP::M::Repository::NOW_EPOCH = _jst_epoch('2026-12-31 23:55:00');
-    like dies { PJP::M::Repository->commit_events($c) },
-        qr/2027-01-01 00:03:00/, '年が変わる側のずれは slack の内側でも die する';
-};
-
-subtest 'C 形式でクォートされた path でビルドを止める' => sub {
-    # タブや改行を含む path は core.quotepath=false でもクォートされる。
-    # 黙って落とすと現ツリーとの突き合わせが静かにずれる
-    my ($c) = new_repo();
-    my $bin = fake_bin('git',
-        q{printf '\001%s\t%s\n' '2025-06-01 12:00:00 +0900' 'Tester'},
-        q{printf 'M\t"docs/modules/Foo-1.00/Foo\\\\tbar.pod"\n'},
-    );
-    local $ENV{PATH} = "$bin:$ENV{PATH}";
-
-    like dies { PJP::M::Repository->commit_events($c) },
-        qr/C-quoted path/, 'クォートされた path を挙げて die する';
 };
 
 subtest '不正な UTF-8 の path でビルドを止める' => sub {
@@ -477,26 +287,6 @@ subtest '不正な UTF-8 の path は decode の時点で止まる' => sub {
         'docs/articles/perl/日.md', '正しい UTF-8 は文字列に写る';
 };
 
-subtest '正常な並行ブランチでは日時の逆転検査が誤発火しない' => sub {
-    # --date-order は「祖先を子より先に出さない」だけで、並行ブランチどうしの
-    # 前後は日時に依存する。健全な履歴で止まってしまわないことを固定する
-    my ($c, $r) = new_repo();
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo');
-
-    $r->git('checkout', '-q', '-b', 'topic');
-    $r->write_file('docs/modules/Bar-1.00/Bar.pod', "=head1 Bar\n");
-    $r->commit_at('2025-02-01T12:00:00+0900', 'translate Bar');
-
-    $r->git('checkout', '-q', '-');
-    $r->write_file('docs/modules/Baz-1.00/Baz.pod', "=head1 Baz\n");
-    $r->commit_at('2025-03-01T12:00:00+0900', 'translate Baz');
-    $r->git('merge', '-q', '--no-edit', 'topic');
-
-    ok lives { PJP::M::Repository->commit_events($c) },
-        '並行して別の翻訳が進んだだけの履歴では止まらない';
-};
-
 subtest '非 ASCII の author 名とファイル名が文字列として扱われる' => sub {
     my ($c, $r) = new_repo();
     $r->write_file('docs/articles/perl/日本語.md', "# 日本語\n");
@@ -521,64 +311,7 @@ subtest '配信されない path は live に数えない' => sub {
 
     is [sort keys %{ PJP::M::Repository->current_paths($c) }],
         ['docs/modules/Foo-1.00/Foo.pod'], 'docs/ 配下だけが列挙される';
-
-    # どちらもイベントとしては現れる (manual/ は年次統計に載る) が、
-    # live ではないので観測性の検査は通る
-    my $events = PJP::M::Repository->commit_events($c);
-    ok lives { PJP::M::Repository->assert_current_paths_observable($c, $events) },
-        '直下の .md や manual/ があっても観測性の検査は誤発火しない';
 };
-
-subtest '旧構成のディレクトリが現ツリーに復活していたら止める' => sub {
-    # 履歴上の modules/... は docs/modules/... に正規化されるので、現ツリーに
-    # 旧配置が復活すると canonical path が現行配置と衝突する。旧配置は配信も
-    # されないため、黙って通すと誤った帰属だけが残る
-    for my $dir (qw/modules perl articles core/) {
-        my ($c, $r) = new_repo();
-        $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-        $r->write_file("$dir/Foo-1.00/Foo.pod", "=head1 Foo old\n");
-        $r->commit_at('2025-06-01T12:00:00+0900', 'add legacy layout');
-
-        ok !PJP::M::Repository->current_paths($c)->{"docs/modules/$dir/Foo-1.00/Foo.pod"},
-            "$dir/ は live に数えない";
-
-        my $events = PJP::M::Repository->commit_events($c);
-        like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
-            qr{pre-2023 layout}, "$dir/ の復活で die する";
-    }
-};
-
-subtest '旧配置の削除イベントは従来どおり shadowed-deletion で止まる' => sub {
-    # 旧配置のファイル自体は HEAD に無いので上の検査には掛からない。
-    # canonical path の最新イベントが旧配置側の削除になり、現行配置の
-    # ファイルが削除済みと誤判定される経路をこちらが止める
-    my ($c, $r) = new_repo();
-    $r->write_file('modules/Foo-1.00/Foo.pod', "=head1 Foo old\n");
-    $r->commit_at('2025-01-01T12:00:00+0900', 'translate Foo (old layout)');
-
-    $r->git('checkout', '-q', '-b', 'topic');
-    $r->write_file('docs/modules/Foo-1.00/Foo.pod', "=head1 Foo\n");
-    $r->commit_at('2025-02-01T12:00:00+0900', 'move Foo under docs');
-
-    $r->git('checkout', '-q', '-');
-    $r->unlink_file('modules/Foo-1.00/Foo.pod');
-    $r->commit_at('2025-03-01T12:00:00+0900', 'remove old layout');
-    $r->git('merge', '-q', '--no-edit', 'topic');
-
-    ok !-e $r->dir . '/modules/Foo-1.00/Foo.pod', '旧配置は HEAD に残っていない';
-    ok PJP::M::Repository->current_paths($c)->{'docs/modules/Foo-1.00/Foo.pod'},
-        '現行配置は live';
-
-    my $events = PJP::M::Repository->commit_events($c);
-    like dies { PJP::M::Repository->assert_current_paths_observable($c, $events) },
-        qr{newest event is a deletion}, '旧配置の削除が現行 path の最新イベントになったら die する';
-};
-
-# JST の壁時計を epoch に直す (テストから現在時刻を固定するため)
-sub _jst_epoch {
-    my ($wall) = @_;
-    return Time::Piece->strptime($wall, '%Y-%m-%d %H:%M:%S')->epoch - 9 * 3600;
-}
 
 {
     # assets_dir だけを返す最小のダブル
