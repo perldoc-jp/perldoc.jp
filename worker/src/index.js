@@ -1,7 +1,8 @@
 import { assertValidOrigin } from './origin.js';
 
 // perldoc.jp のリクエストを Cloud Run (<service>.run.app) にリバースプロキシする。
-// ORIGIN は wrangler deploy の --var で注入する (.github/workflows/deploy-worker.yml)。
+// ORIGIN は scripts/deploy.sh が Worker の secret として注入する
+// (--secrets-file。.github/workflows/deploy-worker.yml)。
 export default {
   async fetch(request, env) {
     // origin 側の障害や設定ミスをそのまま例外にすると、利用者には Cloudflare の
@@ -80,7 +81,7 @@ async function proxy(request, env, url) {
 
   // staging (docs/cloud-run.md §10 の動作確認) が検索結果に出ると本番と
   // 重複するため、staging のデプロイではクロール除けを足す。
-  // --var は常に文字列を渡すので、'0' や 'false' を truthy と読まないよう
+  // vars は常に文字列を渡すので、'0' や 'false' を truthy と読まないよう
   // '1' との完全一致で判定する
   const tagged = new Response(response.body, response);
   tagged.headers.set('X-Robots-Tag', 'noindex, nofollow');

@@ -7,8 +7,8 @@
 #   deploy.sh production --dry-run <outdir>  受け入れ検査
 #   deploy.sh staging    --dry-run <outdir>  同上
 #
-# 手順が workflow と手元 (docs/cloud-run.md) に分かれていると、--var の
-# 付け忘れのような差が無症状で通る。--dry-run を残すのは、受け入れ検査が
+# 手順が workflow と手元 (docs/cloud-run.md) に分かれていると、ORIGIN の
+# 渡し忘れのような差が無症状で通る。--dry-run を残すのは、受け入れ検査が
 # 使う argv と本番が使う argv を同じ 1 本の生成器から出すため。
 set -Eeuo pipefail
 
