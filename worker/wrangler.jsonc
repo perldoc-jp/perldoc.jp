@@ -30,7 +30,7 @@
 
   // 本番の Custom Domain (perldoc.jp) は routes に書かない。deploy が DNS の
   // 切り替えを伴うと事故になるため、cutover は Cloudflare 側の操作として分けている
-  // (docs/cloud-run.md §9)。staging は壊れても影響がないので宣言的に作る
+  // (docs/cloud-run.md §10)。staging は壊れても影響がないので宣言的に作る
   "env": {
     "staging": {
       "name": "perldoc-jp-staging",

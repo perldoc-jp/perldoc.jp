@@ -2,7 +2,7 @@
 //
 // Worker 本体とデプロイ手順の両方から呼ぶ。空でないことだけを見ていると、
 // 値の設定ミスがデプロイでは通り、その後の全リクエストが例外になるまで
-// 気づけない。手元からの手動デプロイ (docs/cloud-run.md §9) は workflow の
+// 気づけない。手元からの手動デプロイ (docs/cloud-run.md §10) は workflow の
 // ガードを通らないので、同じ検証をここに置いて両方から使う。
 export function assertValidOrigin(origin) {
   const error = validateOrigin(origin);

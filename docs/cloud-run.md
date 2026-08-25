@@ -43,9 +43,11 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   レートリミットルールを設定しておくことを推奨する。
   ただし `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は
   公開のままであり、Cloudflare を経由しない直アクセスにはレートリミットは
-  効かない。直アクセス側の実質的な上限装置は max-instances (=3) で、
-  コスト暴走はしない前提の設計になっている (完全に塞ぐには LB + ingress
-  制限が必要で、本構成のコスト方針とは釣り合わない)。
+  効かない。直アクセス側の実質的な上限装置は max-instances (=3)。ただし
+  Cloud Run はトラフィックスパイクやリビジョン切替中の新旧重複などで設定値を
+  一時的に超えることがあるため、絶対的なコスト上限ではなく主要な緩和策として
+  扱う (完全に塞ぐには LB + ingress 制限が必要で、本構成のコスト方針とは
+  釣り合わない)。
 - 同じ理由で、**アプリは `X-Forwarded-*` を誰からでも信用する状態にある**。
   app.psgi は `Plack::Middleware::ReverseProxy` を無条件で有効にしているため、
   run.app へ直接 `X-Forwarded-Host: evil.example` を送れば Location をその
@@ -135,7 +137,8 @@ RUNTIME_SA=perldoc-jp-run@${PROJECT_ID}.iam.gserviceaccount.com
 ```
 
 デフォルトの Compute Engine SA (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`)
-はプロジェクトレベルの `roles/editor` を持つため使わない。
+は、組織ポリシーで自動付与が無効化されていない環境ではプロジェクトレベルの
+`roles/editor` を持つ。いずれの場合も使わず、ロールを持たない専用 SA に固定する。
 
 Artifact Registry からイメージを pull するのは Cloud Run のサービスエージェント
 (`service-<PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`) で、これは
@@ -643,17 +646,33 @@ exact な devDependency で、`worker/package-lock.json` が依存グラフ全�
 バージョンを変えるときは lockfile も一緒に更新すること。
 
 **インストールはトークンを渡さない状態で行う** (`npm ci` を実行してから
-`CLOUDFLARE_API_TOKEN` を export する)。依存の install フックはインストール時の
+`CLOUDFLARE_API_TOKEN` を読み込む)。依存の install フックはインストール時の
 環境変数を読めるため、トークンを置いたまま入れると依存の乗っ取りがそのまま
-トークンの奪取になる:
+トークンの奪取になる。以下は **bash** で実行する (read の挙動が shell で
+異なる)。subshell に閉じているので、成功・失敗のどちらでも token と ORIGIN は
+親 shell に残らない:
 
-```sh
-cd worker
-npm ci
-export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-ORIGIN=$(gcloud run services describe perldoc-jp \
-  --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
-./scripts/deploy.sh production
+```bash
+(
+  set -euo pipefail
+  cd worker
+  npm ci   # トークンを読み込む前に入れる (install フックに読ませない)
+
+  export CLOUDFLARE_ACCOUNT_ID=...   # 非機密 (§7)
+
+  # トークンは実値をコマンドラインに書かない (shell history に残る)。
+  # パスワードマネージャから取得し、echo なしで貼り付ける
+  printf 'CLOUDFLARE_API_TOKEN: ' >&2
+  IFS= read -r -s CLOUDFLARE_API_TOKEN
+  printf '\n' >&2
+  export CLOUDFLARE_API_TOKEN
+
+  ORIGIN=$(gcloud run services describe perldoc-jp \
+    --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
+  export ORIGIN
+
+  ./scripts/deploy.sh production
+)
 ```
 
 `scripts/deploy.sh` が wrangler の argv (絶対 `--config`・environment selector・
@@ -771,20 +790,30 @@ Custom Domain にすれば、Cache Rules の式がパスベースなのでその
 後の挙動を事前に確かめられる。`workers.dev` のサブドメインだけではゾーンの Cache
 Rules も Redirect Rules も適用されないためキャッシュの確認には足りない。
 
-1. Cloud Run にデプロイし (§8)、URL を取っておく:
-   ```sh
-   ORIGIN=$(gcloud run services describe perldoc-jp \
-     --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
-   ```
+1. Cloud Run にデプロイしておく (§8)
 2. staging の Worker をデプロイする。`wrangler.jsonc` の `env.staging` が
    `staging.perldoc.jp` を Custom Domain として作り、`NOINDEX` も設定ファイル側で
    与える (Worker が `X-Robots-Tag: noindex, nofollow` を足し、本番と重複した内容が
-   検索結果に出るのを防ぐ):
-   ```sh
-   cd worker
-   npm ci   # トークンを export する前に入れる (§10 の手元デプロイ参照)
-   export CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
-   ./scripts/deploy.sh staging
+   検索結果に出るのを防ぐ)。**bash** で実行する (§10 の手元デプロイ参照):
+   ```bash
+   (
+     set -euo pipefail
+     cd worker
+     npm ci   # トークンを読み込む前に入れる (§10 の手元デプロイ参照)
+
+     export CLOUDFLARE_ACCOUNT_ID=...
+
+     printf 'CLOUDFLARE_API_TOKEN: ' >&2
+     IFS= read -r -s CLOUDFLARE_API_TOKEN
+     printf '\n' >&2
+     export CLOUDFLARE_API_TOKEN
+
+     ORIGIN=$(gcloud run services describe perldoc-jp \
+       --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
+     export ORIGIN
+
+     ./scripts/deploy.sh staging
+   )
    ```
 3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
 4. 確認する:
@@ -830,10 +859,26 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
      Edge TTL のいずれか)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
      古い (Worker や Cloudflare の設定ではない)
-5. cutover 後に片付ける (残すと Workers の枠を無駄に使う)。Custom Domain が
-   Cloudflare 側に残っていたら合わせて外す:
-   ```sh
-   npm exec --offline --no -- wrangler delete --env staging
+5. cutover 後に片付ける (残すと staging.perldoc.jp という公開入口と Workers の
+   枠を無駄に使う)。削除も Cloudflare の認証情報と worker ディレクトリを要する
+   ため、デプロイと同じ形の bash subshell で自己完結させる。削除後、Custom
+   Domain が Cloudflare 側に残っていたら合わせて外す:
+   ```bash
+   (
+     set -euo pipefail
+     cd worker
+
+     export CLOUDFLARE_ACCOUNT_ID=...
+
+     printf 'CLOUDFLARE_API_TOKEN: ' >&2
+     IFS= read -r -s CLOUDFLARE_API_TOKEN
+     printf '\n' >&2
+     export CLOUDFLARE_API_TOKEN
+
+     export WRANGLER_SEND_METRICS=false
+     npm exec --offline --no -- wrangler delete \
+       --config "$PWD/wrangler.jsonc" --env staging
+   )
    ```
 
 www/new の Redirect Rule は本番のホスト名にしか書けないため、この段階では確認できない。
@@ -844,11 +889,9 @@ cutover 時に確かめる。
 1. Cloud Run にデプロイし、`status.url` を確認する
 2. 「動作確認」のとおり staging で構成を検証する。Cache Rules・SSL/TLS・Browser Cache
    TTL はゾーン単位の設定なので、ここで入れたものが cutover 後の本番にもそのまま効く
-3. 本番の Worker をデプロイする:
-   ```sh
-   cd worker
-   ./scripts/deploy.sh production
-   ```
+3. 本番の Worker をデプロイする。トークンと ORIGIN の読み込みを含む実行形は
+   「手元からデプロイする場合」の bash ブロックのとおり
+   (`./scripts/deploy.sh production` まで一式)
 4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
    登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる
 5. Redirect Rule を入れてから、www/new を **proxied (オレンジ雲)** に切り替える。
@@ -875,6 +918,14 @@ cutover 時に確かめる。
 任意の値にできる。Cloudflare のキャッシュには入らない経路なのでキャッシュ汚染には
 繋がらず、攻撃者が自分自身をリダイレクトさせられるだけ。塞ぐなら Worker が共有
 シークレットのヘッダを付け、アプリ側で一致しないリクエストを 403 にするのが最も安い。
+
+この直アクセス経路は、構成の単純さとコストを優先して**受容している残存リスク**
+(完全に塞ぐには LB + ingress 制限が必要)。補助として、Cloud Run の URL と
+その構成要素 (project number / ID) は §7 の分類で secret に置き、偶発的な
+発見と無差別探索の可能性を下げる。これは認証ではないため、URL が第三者に
+知られた時点で効果を失う。知られた後に取れる手は、サービス名や project を
+変えて URL を変えるか、Worker とオリジンの間に実際の認証 (共有シークレット
+ヘッダ) を足すこと。
 
 #### workers.dev と Preview URLs
 

@@ -78,7 +78,7 @@ async function proxy(request, env, url) {
   });
   if (env.NOINDEX !== '1') return response;
 
-  // staging (docs/cloud-run.md §9 の動作確認) が検索結果に出ると本番と
+  // staging (docs/cloud-run.md §10 の動作確認) が検索結果に出ると本番と
   // 重複するため、staging のデプロイではクロール除けを足す。
   // --var は常に文字列を渡すので、'0' や 'false' を truthy と読まないよう
   // '1' との完全一致で判定する

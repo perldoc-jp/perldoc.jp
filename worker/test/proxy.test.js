@@ -163,7 +163,7 @@ describe('オリジンの応答の素通し', () => {
   });
 });
 
-// staging (docs/cloud-run.md §9) だけがクロール除けを足す。付け足しのために
+// staging (docs/cloud-run.md §10) だけがクロール除けを足す。付け足しのために
 // レスポンスを組み直すので、status や他のヘッダを落とさないことを固定する
 describe('NOINDEX', () => {
   it('既定では X-Robots-Tag を足さない', async () => {
