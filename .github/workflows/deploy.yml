@@ -123,6 +123,12 @@ jobs:
       # 変数は消さない (--set-env-vars は消す)。ここで STARLET_MAX_WORKERS を
       # 渡すのは、Dockerfile の CMD にある ${STARLET_MAX_WORKERS:-4} と
       # --concurrency の一致を、同じ 1 つの値から導くため
+      #
+      # --allow-unauthenticated は付けない。公開 IAM (allUsers の run.invoker) は
+      # §4 の初回作成時に一度だけ設定し、デプロイ用 SA には IAM を書き換えられる
+      # run.admin ではなく run.developer だけを与えている (§5)。
+      # 公開設定はデプロイでは自己修復されないため、消えていれば §8 の
+      # get-iam-policy 確認で気づく
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
@@ -136,7 +142,6 @@ jobs:
             --concurrency "$STARLET_MAX_WORKERS" --cpu-boost \
             --update-env-vars "STARLET_MAX_WORKERS=$STARLET_MAX_WORKERS" \
             --timeout 60 --port 8080 \
-            --allow-unauthenticated \
             --quiet
 
       # ビルドで再導出された data/years.pl を取り出し、commit-years-data ジョブが

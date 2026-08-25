@@ -171,9 +171,13 @@ gcloud run deploy perldoc-jp \
   Deploy workflow は `STARLET_MAX_WORKERS` を 1 つ持ち、両方へ渡している。
   `--update-env-vars` は指定した名前だけを更新する非破壊操作で、列挙外の
   変数は消さない (`--set-env-vars` は消す)。
-- deploy.yml も `--image` 以外は同じフラグ一式を毎回指定しているため、この初回コマンドと
-  デプロイの実行順序に関わらずサービス設定は self-correcting になる。
-  設定を変えるときは deploy.yml 側も合わせて更新すること。
+- deploy.yml も `--image` と `--allow-unauthenticated` 以外は同じフラグ一式を毎回
+  指定しているため、サービス設定はデプロイの実行順序に関わらず self-correcting に
+  なる。`--allow-unauthenticated` (= allUsers への run.invoker 付与) だけは
+  この初回作成時のみで、以後のデプロイは IAM に触れない。デプロイ用 SA (§5) が
+  IAM を書き換えられる権限を持たないためで、公開設定が消えた場合は自己修復
+  されず §8 の確認で検出する。設定を変えるときは deploy.yml 側も合わせて
+  更新すること。
 
 ### 5. デプロイ用サービスアカウントと Workload Identity Federation
 
@@ -189,10 +193,12 @@ gcloud iam service-accounts create perldoc-jp-deployer \
 PROJECT_NUMBER=$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')
 SA=perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com
 
-# リビジョンの作成・トラフィック切替・IAM ポリシー設定 (--allow-unauthenticated)
+# リビジョンの作成・トラフィック切替。IAM ポリシーの変更 (setIamPolicy) は
+# 含まない。公開設定 (allUsers の run.invoker) は §4 の初回作成時に一度だけ
+# 設定され、デプロイはそれに触れない
 gcloud run services add-iam-policy-binding perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" \
-  --member="serviceAccount:$SA" --role=roles/run.admin
+  --member="serviceAccount:$SA" --role=roles/run.developer
 
 # イメージの push と buildcache の読み書き
 gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
@@ -406,7 +412,8 @@ smoke test と同じスクリプト):
 ./script/smoke-test.sh "$IMAGE:$TAG"
 ```
 
-デプロイする。フラグは §4 および deploy.yml と同一で、`--image` だけが変わる:
+デプロイする。フラグは §4 および deploy.yml と同一で、`--image` だけが変わる
+(`--allow-unauthenticated` は §4 の初回作成のみ):
 
 ```sh
 gcloud run deploy perldoc-jp \
@@ -421,8 +428,7 @@ gcloud run deploy perldoc-jp \
   --update-env-vars STARLET_MAX_WORKERS=4 \
   --cpu-boost \
   --timeout 60 \
-  --port 8080 \
-  --allow-unauthenticated
+  --port 8080
 ```
 
 デプロイ後の確認:
@@ -446,8 +452,9 @@ gcloud logging read \
   'resource.type="cloud_run_revision" AND resource.labels.service_name="perldoc-jp"' \
   --project="$PROJECT_ID" --limit=20 --freshness=10m
 
-# --allow-unauthenticated はサービスの IAM ポリシーを書き換える。allUsers の
-# run.invoker と、デプロイ用 SA の run.admin (§5) が両方残っていることを確認する
+# デプロイは IAM に触れないため、初回作成時 (§4) の allUsers run.invoker と、
+# デプロイ用 SA の run.developer (§5) が残っていることを確認する。
+# allUsers が消えていた場合は自己修復されない (§5 のコメント参照)
 gcloud run services get-iam-policy perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION"
 ```
