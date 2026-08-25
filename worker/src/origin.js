@@ -10,7 +10,8 @@ export function assertValidOrigin(origin) {
   return origin;
 }
 
-// 問題があればその説明を、無ければ null を返す
+// 問題があればその説明を、無ければ null を返す。メッセージに入力値は含めない
+// (§7: URL は機密 locator。このメッセージは CI ログや Workers Logs に残る)
 export function validateOrigin(origin) {
   if (typeof origin !== 'string' || origin === '') return 'not set';
 
@@ -18,20 +19,20 @@ export function validateOrigin(origin) {
   try {
     url = new URL(origin);
   } catch {
-    return `not a URL: ${origin}`;
+    return 'not a URL';
   }
 
-  if (url.protocol !== 'https:') return `not https: ${origin}`;
-  if (url.username || url.password) return `has credentials: ${origin}`;
-  if (url.port) return `has a port: ${origin}`;
+  if (url.protocol !== 'https:') return 'not https';
+  if (url.username || url.password) return 'has credentials';
+  if (url.port) return 'has a port';
   // URL は path 無しの入力も pathname を '/' にするため、'/' だけを許す
-  if (url.pathname !== '/') return `has a path: ${origin}`;
-  if (url.search || url.hash) return `has a query or fragment: ${origin}`;
+  if (url.pathname !== '/') return 'has a path';
+  if (url.search || url.hash) return 'has a query or fragment';
 
   const suffix = '.run.app';
-  if (!url.hostname.endsWith(suffix)) return `not a Cloud Run host: ${origin}`;
+  if (!url.hostname.endsWith(suffix)) return 'not a Cloud Run host';
   const labels = url.hostname.slice(0, -suffix.length).split('.');
-  if (labels.some((label) => label === '')) return `has an empty host label: ${origin}`;
+  if (labels.some((label) => label === '')) return 'has an empty host label';
 
   return null;
 }

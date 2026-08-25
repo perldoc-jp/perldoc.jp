@@ -251,4 +251,24 @@ describe('origin 障害時の応答', () => {
     assert.equal(res.status, 502);
     assert.equal(calls.length, 0);
   });
+
+  it('ログの error に run.app のホスト名を残さない', async () => {
+    // fetch の例外メッセージに接続先が含まれても、Workers Logs には
+    // 実ホスト名 (= 機密 locator) を書かない
+    const hostname = new URL(ORIGIN).hostname;
+    const logged = [];
+    const realError = console.error;
+    console.error = (entry) => logged.push(entry);
+    let res;
+    try {
+      globalThis.fetch = () => Promise.reject(new TypeError(`connect failed: ${hostname}`));
+      res = await proxy('https://perldoc.jp/');
+    } finally {
+      console.error = realError;
+    }
+    assert.equal(res.status, 502);
+    assert.equal(logged.length, 1);
+    assert.ok(!JSON.stringify(logged[0]).includes(hostname));
+    assert.match(logged[0].error, /<origin>/);
+  });
 });

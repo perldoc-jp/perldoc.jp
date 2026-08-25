@@ -31,4 +31,14 @@ describe('ORIGIN の検証', () => {
   for (const [name, origin] of Object.entries(invalid)) {
     it(`弾く: ${name}`, () => assert.notEqual(validateOrigin(origin), null));
   }
+
+  // ORIGIN は §7 の分類で機密 locator。検証エラーは deploy 時の CI ログや
+  // Workers Logs に残るため、入力値そのものを含めない
+  it('エラーメッセージに入力値を含めない', () => {
+    for (const origin of Object.values(invalid)) {
+      if (typeof origin !== 'string' || origin === '') continue;
+      const error = validateOrigin(origin);
+      assert.ok(!error.includes(origin), `"${error}" が入力値を含む`);
+    }
+  });
 });

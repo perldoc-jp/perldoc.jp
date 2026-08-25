@@ -96,12 +96,18 @@ function safeUrl(value) {
 }
 
 // Error 以外が投げられてもログの組み立てで落ちないようにする。
-// String() 自体が投げる値もある (Object.create(null) は toString を持たない)
+// String() 自体が投げる値もある (Object.create(null) は toString を持たない)。
+// run.app のホスト名は削る (§7: ORIGIN は機密 locator。ランタイムの fetch
+// エラーが接続先を含んでも Workers Logs に実ホスト名を残さない)
 function describe(error) {
   try {
-    if (error instanceof Error) return `${error.name}: ${error.message}`;
-    return `non-error thrown: ${String(error)}`;
+    if (error instanceof Error) return redact(`${error.name}: ${error.message}`);
+    return redact(`non-error thrown: ${String(error)}`);
   } catch {
     return 'non-error thrown: (not representable)';
   }
+}
+
+function redact(text) {
+  return text.replace(/[0-9a-z.-]+\.run\.app/gi, '<origin>');
 }
