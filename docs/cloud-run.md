@@ -312,55 +312,83 @@ deploy.yml が上記 2 つの secret から組み立てるため、個別には�
 (project number / ID の重複保存を避ける)。
 
 environment は workflow から参照されただけでも自動作成されるが、その場合は
-branch policy の無い素通しになる。**必ず先に作ってから** secret を置くこと:
+branch policy の無い素通しになり、environment に secret が無ければ同名の
+repository secret にフォールバックする。**必ず両方の environment を作って
+branch policy を付けてから secret を置くこと**。順序も固定で、environment の
+作成が先 (`gh secret set --env` は既存 environment の public key を取得して
+暗号化するため、environment が無ければ 404 で失敗する):
 
 ```sh
-# gcp-production (cloudflare-production の作成コマンドはこの節の後半)
-gh api --method PUT repos/perldoc-jp/perldoc.jp/environments/gcp-production \
-  -F 'deployment_branch_policy[protected_branches]=false' \
-  -F 'deployment_branch_policy[custom_branch_policies]=true'
-gh api --method POST \
-  repos/perldoc-jp/perldoc.jp/environments/gcp-production/deployment-branch-policies \
-  -f name=master -f type=branch
+# environment の作成。custom branch policy を使う (protected_branches=true は
+# 「保護ルールを持つ全ブランチを許可」の意味で、後からどこかのブランチに
+# 保護ルールを足すと許可範囲も一緒に広がってしまう)
+for env in gcp-production cloudflare-production; do
+  gh api --method PUT "repos/perldoc-jp/perldoc.jp/environments/$env" \
+    -F 'deployment_branch_policy[protected_branches]=false' \
+    -F 'deployment_branch_policy[custom_branch_policies]=true'
+  # master だけを許可する
+  gh api --method POST \
+    "repos/perldoc-jp/perldoc.jp/environments/$env/deployment-branch-policies" \
+    -f name=master -f type=branch
+done
 
+# environment secret を置く (値の入力を求められる)
 gh secret set GCP_PROJECT_ID --env gcp-production
 gh secret set GCP_PROJECT_NUMBER --env gcp-production
 gh secret set CLOUD_RUN_URL --env cloudflare-production
+gh secret set CLOUDFLARE_API_TOKEN --env cloudflare-production
+
+# 非機密の識別子は repository variable に置く
+# (deploy-worker.yml が vars.CLOUDFLARE_ACCOUNT_ID を読む)
+gh variable set CLOUDFLARE_ACCOUNT_ID
 ```
 
 GitHub の自動マスクは secret の完全一致に対して働く。変換・分割された値まで
 マスクされる保証はないため、「secret に置いたからログへ出してよい」とは
 しない (値そのものを出力しない設計を保つ)。
 
-`CLOUDFLARE_API_TOKEN` (権限に **Edit Cloudflare Workers** を持つ API トークン) は
-repository secret ではなく environment `cloudflare-production` の secret に置く。
-このトークンはアカウントスコープで、漏れると同一アカウントの全 Worker を
-書き換えられる。environment の deployment branch policy を master に限定する
-ことで、workflow_dispatch で他の ref を選んでもジョブ開始前に拒否される
+`CLOUDFLARE_API_TOKEN` は **Edit Cloudflare Workers テンプレートを使わず**、
+Custom Token で作る。テンプレートは Workers KV / R2 / Routes / Tail /
+Account Settings / User Details まで含み、この workflow に必要な範囲
+(Worker script のアップロード・secret の登録・デプロイ) を大きく超える。
+
+- Permissions: **Account / Workers Scripts / Edit** のみ
+- Account Resources: 対象アカウント 1 つのみ
+- account-owned token で作る (CI/CD 向けの service principal として公式に
+  案内されており、user のライフサイクルから切り離せる)
+- TTL (有効期限) を設定し、失効したら再発行する
+
+この権限は account スコープで Worker 単位には絞れないため、漏れると同一
+アカウントの全 Worker script を書き換えられる。environment
+`cloudflare-production` の secret に置き、deployment branch policy を master に
+限定することで、workflow_dispatch で他の ref を選んでもジョブ開始前に拒否される
 (yml 内の ref ガードは、workflow_dispatch では実行者が選んだ ref の yml ごと
 差し替えられるため防御にならない)。GCP 側で WIF の attribute-condition (§5) が
 担っている境界の Cloudflare 版にあたる。
 
-```sh
-# environment の作成。custom branch policy を使う (protected_branches=true は
-# 「保護ルールを持つ全ブランチを許可」の意味で、後からどこかのブランチに
-# 保護ルールを足すと許可範囲も一緒に広がってしまう)
-gh api --method PUT repos/perldoc-jp/perldoc.jp/environments/cloudflare-production \
-  -F 'deployment_branch_policy[protected_branches]=false' \
-  -F 'deployment_branch_policy[custom_branch_policies]=true'
+staging の Custom Domain の新規作成 (wrangler.jsonc の routes が使う
+Attach Domain API) も、公式 API リファレンス上の必要権限は同じ
+Workers Scripts Write とされる。cutover 前の初回 staging デプロイ (= 新規の
+Attach) がこのトークンで成功することを検証する。権限エラーになった場合も
+**より広い権限のトークンへは逃げず**、次の順で切り分ける:
 
-# master だけを許可する
-gh api --method POST \
-  repos/perldoc-jp/perldoc.jp/environments/cloudflare-production/deployment-branch-policies \
-  -f name=master -f type=branch
+1. トークンの Account Resources が対象アカウントを含むか
+2. `CLOUDFLARE_ACCOUNT_ID` が正しいか
+3. wrangler が呼んだ endpoint と 403 応答の内容
+4. account-owned token 起因が疑われるなら、同じ Workers Scripts のみの
+   user-owned token で試す
+5. それでも失敗するなら wrangler の不具合として扱い、Custom Domain は
+   ダッシュボードから作成する (トークンには権限を足さない)
 
-# トークンを environment secret に置く (値の入力を求められる)
-gh secret set CLOUDFLARE_API_TOKEN --env cloudflare-production
-```
+参考: <https://developers.cloudflare.com/fundamentals/api/reference/template/>
+(テンプレートの権限一覧)、
+<https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/update/>
+(Attach Domain の必要権限)、
+<https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/>
+(account-owned token の位置付け)
 
-environment は workflow から参照されただけでも自動作成されるが、その場合は
-branch policy の無い素通しになり、secret が無ければ同名の repository secret に
-フォールバックする。deploy-worker.yml が動く前にここまでを済ませておくこと。
+environment の作成と secret の登録はこの節冒頭のコマンドで行う。
+deploy-worker.yml が動く前にそこまでを済ませておくこと。
 
 WIF の attribute-condition と cloudflare-production の branch policy がどちらも
 master に固定されているため、master へ merge するまで GitHub Actions からは
