@@ -17,25 +17,6 @@ concurrency:
 
 # permissions はジョブレベルで宣言する。WIF の資格情報を扱う deploy ジョブには
 # contents: write を与えず、リポジトリへの書き込みは commit-years-data ジョブに分離する
-env:
-  REGION: asia-northeast1
-  SERVICE: perldoc-jp
-  # service は (project, region, service) で識別される。片方でも省くと
-  # gcloud の設定 (core/project・run/region) から解決され、別 project や
-  # 別 region の同名 service を操作しうる。docs/cloud-run.md の手動手順は
-  # 既に両方を渡している
-  GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-  IMAGE: asia-northeast1-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/perldoc-jp/app
-  # Starlet のワーカー数。Cloud Run の container concurrency と一致させる
-  # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
-  # 渡すことで、一致がコメント頼みでなくなる
-  STARLET_MAX_WORKERS: '4'
-  # イメージのタグは run ごとに一意にする。schedule / workflow_dispatch
-  # (translation 通知) では github.sha が変わらないまま中身の異なるイメージ
-  # (translation 更新分) が作られるため、sha だけのタグはビルドを特定できない
-  # (run_id は re-run で同一になるため run_attempt まで含める)
-  TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -43,6 +24,32 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    # GCP の識別子 (project ID / number) は deterministic URL の構成要素になる
+    # ため §7 の分類で secret に置く。environment の branch policy が master のみ
+    # を許可する (cloudflare-production と同じ境界)。secret にすると GitHub が
+    # ログ中の値 (gcloud が表示する service URL 内の project number を含む) を
+    # マスクする効果もある
+    environment: gcp-production
+    # env は deploy ジョブだけが使うためジョブレベルに置く
+    # (environment secret はこのジョブでしか解決できない)
+    env:
+      REGION: asia-northeast1
+      SERVICE: perldoc-jp
+      # service は (project, region, service) で識別される。片方でも省くと
+      # gcloud の設定 (core/project・run/region) から解決され、別 project や
+      # 別 region の同名 service を操作しうる。docs/cloud-run.md の手動手順は
+      # 既に両方を渡している
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      IMAGE: asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/perldoc-jp/app
+      # Starlet のワーカー数。Cloud Run の container concurrency と一致させる
+      # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
+      # 渡すことで、一致がコメント頼みでなくなる
+      STARLET_MAX_WORKERS: '4'
+      # イメージのタグは run ごとに一意にする。schedule / workflow_dispatch
+      # (translation 通知) では github.sha が変わらないまま中身の異なるイメージ
+      # (translation 更新分) が作られるため、sha だけのタグはビルドを特定できない
+      # (run_id は re-run で同一になるため run_attempt まで含める)
+      TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       # 外部 action はコミット SHA にピン留めする (この workflow は WIF の
@@ -56,8 +63,11 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          # WIF provider と SA email は secret から構築する。project number /
+          # project ID を variable として公開しないため (§7)。値を変えるときは
+          # docs/cloud-run.md §5 の作成コマンドと一致させること
+          workload_identity_provider: projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/perldoc-jp
+          service_account: perldoc-jp-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
           # Cloud Audit Logs に run_id / run_attempt を残し、WIF の監査ログから
           # どの GitHub Actions run が認証したか追跡できるようにする
           request_reason: gha:${{ github.run_id }}:${{ github.run_attempt }}
@@ -77,6 +87,12 @@ jobs:
 
       - name: Build and push image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        # build record artifact と job summary には build inputs (project ID 入りの
+        # image tag / cache 参照) がそのまま入る。§7 の分類ではどちらも出せない
+        # (artifact は公開リポジトリでは実質公開で、secret マスクも効かない)
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
         with:
           context: .
           target: runtime

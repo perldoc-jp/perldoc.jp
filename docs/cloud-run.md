@@ -283,17 +283,47 @@ Data Access ログは課金対象のため、有効化後にログ量を確認�
 
 ### 7. GitHub リポジトリの Variables と Secrets
 
-perldoc-jp/perldoc.jp の Settings → Secrets and variables → Actions → Variables に:
+認証情報 (Cloudflare API トークン) に加え、Cloud Run の deterministic URL
+(`https://<SERVICE>-<PROJECT_NUMBER>.<REGION>.run.app`) の構成要素・相関情報に
+なる識別子も secret として扱う。これは認証ではなく、公開 URL の発見可能性を
+下げる補助コントロール (§10 の「run.app への直アクセス」参照)。URL が第三者に
+知られた時点で効果を失うことは織り込んでおく。`SERVICE=perldoc-jp` と
+region は既にリポジトリ履歴で公開なので secret にしない (今から隠しても
+効果がない)。
 
-| 変数 | 値 |
+| 値 | 置き場所 |
 |---|---|
-| `GCP_PROJECT_ID` | プロジェクト ID |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | `projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp` |
-| `GCP_SERVICE_ACCOUNT` | `perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com` |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare のアカウント ID |
-| `CLOUD_RUN_URL` | Cloud Run のサービス URL (§10 の Worker のオリジン) |
+| `GCP_PROJECT_ID` | environment `gcp-production` の secret |
+| `GCP_PROJECT_NUMBER` | environment `gcp-production` の secret。ログに出る project number (service URL 内を含む) のマスクにも効く |
+| `CLOUDFLARE_ACCOUNT_ID` | repository variable (認証情報でも URL の構成要素でもない) |
+| `CLOUD_RUN_URL` | environment `cloudflare-production` の secret (§10 の Worker のオリジン) |
+| `CLOUDFLARE_API_TOKEN` | environment `cloudflare-production` の secret |
 
-いずれも秘匿情報ではないため repository variable でよい。
+WIF provider (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp`)
+と SA email (`perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com`) は
+deploy.yml が上記 2 つの secret から組み立てるため、個別には保存しない
+(project number / ID の重複保存を避ける)。
+
+environment は workflow から参照されただけでも自動作成されるが、その場合は
+branch policy の無い素通しになる。**必ず先に作ってから** secret を置くこと:
+
+```sh
+# gcp-production (cloudflare-production の作成コマンドはこの節の後半)
+gh api --method PUT repos/perldoc-jp/perldoc.jp/environments/gcp-production \
+  -F 'deployment_branch_policy[protected_branches]=false' \
+  -F 'deployment_branch_policy[custom_branch_policies]=true'
+gh api --method POST \
+  repos/perldoc-jp/perldoc.jp/environments/gcp-production/deployment-branch-policies \
+  -f name=master -f type=branch
+
+gh secret set GCP_PROJECT_ID --env gcp-production
+gh secret set GCP_PROJECT_NUMBER --env gcp-production
+gh secret set CLOUD_RUN_URL --env cloudflare-production
+```
+
+GitHub の自動マスクは secret の完全一致に対して働く。変換・分割された値まで
+マスクされる保証はないため、「secret に置いたからログへ出してよい」とは
+しない (値そのものを出力しない設計を保つ)。
 
 `CLOUDFLARE_API_TOKEN` (権限に **Edit Cloudflare Workers** を持つ API トークン) は
 repository secret ではなく environment `cloudflare-production` の secret に置く。
