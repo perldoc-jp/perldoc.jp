@@ -398,6 +398,40 @@ master に固定されているため、master へ merge するまで GitHub Act
 デプロイできない。cutover までは §8 (Cloud Run) と §10 (Worker) の手順で
 手元からビルドとデプロイを行う。
 
+#### master の保護 (server-side)
+
+WIF の attribute-condition (§5) と environment の branch policy (§7) は
+「master から実行された」ことしか保証しない。master そのものは ruleset で
+force push とブランチ削除を禁止する:
+
+```sh
+gh api --method POST repos/perldoc-jp/perldoc.jp/rulesets --input - <<'EOF'
+{
+  "name": "protect-master",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": ["refs/heads/master"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" }
+  ]
+}
+EOF
+
+# 確認 (master に効いているルールの一覧)
+gh api repos/perldoc-jp/perldoc.jp/rules/branches/master
+```
+
+pull request 必須ルールは入れていない。deploy.yml の commit-years-data が
+GITHUB_TOKEN で master へ直接 push するため、PR 必須にするには push の PR 化か
+bypass 用の専用 App が必要になり、単独メンテの merge も止まるため。
+したがって「write 権限を持つアカウントの侵害」に対する独立レビュー境界は
+現状存在しない (承認 0 の PR 必須を足してもこの境界にはならない)。
+メンテナが増えたときに required approvals + CODEOWNERS へ引き上げる。
+同じ ruleset を translation リポジトリの master にも適用する (GitHub App の
+private key を置くため。§9)。適用直後の Deploy workflow で commit-years-data の
+push が成功することを確認すること。
+
 ### 8. 手動でのビルドとデプロイ
 
 master へ merge する前の cutover はこの手順で行う。使うのは操作者自身の gcloud
