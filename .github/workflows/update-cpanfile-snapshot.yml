@@ -1,11 +1,15 @@
 name: Update cpanfile.snapshot
 
+# pull_request 専用。workflow_dispatch を置かない: この workflow は
+# contents: write を持つため、Actions: write しか持たない主体 (translation 通知用
+# GitHub App。docs/cloud-run.md §9) からの起動経路を作らない。
+# workflow_dispatch は checkout が github.head_ref 空で選択 ref を直接 checkout
+# するため、master への直接コミット経路にもなっていた
 on:
   pull_request:
     paths:
       - cpanfile
       - cpanfile.target
-  workflow_dispatch:
 
 jobs:
   update-cpanfile-snapshot:
