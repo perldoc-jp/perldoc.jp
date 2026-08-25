@@ -21,9 +21,12 @@
     }
   },
 
-  // ORIGIN (Cloud Run のサービス URL) はここには置かず、デプロイ時に
-  // --var で注入する。手元で wrangler dev するときは worker/.dev.vars に
-  // ORIGIN=https://... を書く
+  // ORIGIN (Cloud Run のサービス URL) は §7 の分類で機密 locator として扱う。
+  // 平文の vars ではなく secret として scripts/deploy.sh が --secrets-file で
+  // 毎デプロイ注入する。required 宣言により、secret の無い本番デプロイは
+  // 失敗する (fail-closed。dry-run では検査されない)。
+  // 手元で wrangler dev するときは worker/.dev.vars に ORIGIN=https://... を書く
+  "secrets": { "required": ["ORIGIN"] },
 
   // 本番の Custom Domain (perldoc.jp) は routes に書かない。deploy が DNS の
   // 切り替えを伴うと事故になるため、cutover は Cloudflare 側の操作として分けている
@@ -42,7 +45,9 @@
       // staging が検索結果に出る
       "vars": {
         "NOINDEX": "1"
-      }
+      },
+      // secrets.required は継承に頼らず staging にも明示する
+      "secrets": { "required": ["ORIGIN"] }
     }
   }
 }

@@ -553,8 +553,11 @@ Cache Rules) の条件は、ビルダーを使わず **Edit expression** に式�
   `REMOTE_ADDR` が実クライアント IP になるわけではない。Cloud Run のフロントエンドが
   受け取った値の末尾に自分から見た接続元 (= Cloudflare の egress IP) を足し、
   `ReverseProxy` は最後の値を採るため。実クライアント IP はヘッダの先頭に残るだけ
-- オリジンの URL は wrangler.jsonc に置かず、デプロイ時に `--var` で注入する。
-  値は GitHub Variables の `CLOUD_RUN_URL` (§7)。形式は `worker/src/origin.js` が
+- オリジンの URL は wrangler.jsonc に置かず、デプロイ時に `scripts/deploy.sh` が
+  Worker の secret として注入する (`--secrets-file`)。値は environment
+  `cloudflare-production` の secret `CLOUD_RUN_URL` (§7)。Cloudflare 側でも
+  暗号化 binding になり、dashboard や Wrangler から値は表示されない。
+  形式は `worker/src/origin.js` が
   検証する (https / `.run.app` のホスト名 / 資格情報・ポート・パス・クエリ無し)。
   Worker 本体とデプロイ手順の両方が同じ検証を通すので、設定ミスはデプロイの時点で
   落ちる
@@ -593,9 +596,9 @@ ORIGIN=$(gcloud run services describe perldoc-jp \
 `--env` を省くと `CLOUDFLARE_ENV` で環境が選ばれてしまうため、selector は
 必ず明示している。
 
-Worker の通常変数は `wrangler.jsonc` と `scripts/deploy.sh` が所有する。
-dashboard で追加した通常変数は次回のデプロイで消えるので、秘密は Wrangler の
-secret として別に管理する。
+Worker の通常変数は `wrangler.jsonc` が、secret (ORIGIN) は `scripts/deploy.sh` が
+所有する。dashboard で追加した通常変数は次回のデプロイで消える。secret は
+デプロイごとに `--secrets-file` で再登録され、列挙外の既存 secret は消えない。
 
 #### DNS
 

@@ -36,11 +36,19 @@ function fakeNpmDir(recordPath) {
   const npm = join(dir, 'npm');
   const recorder = join(dir, 'record.mjs');
   writeFileSync(recorder, [
-    "import { appendFileSync } from 'node:fs';",
+    "import { appendFileSync, readFileSync, statSync } from 'node:fs';",
+    'const argv = process.argv.slice(2);',
+    "const i = argv.indexOf('--secrets-file');",
+    '// secrets file は wrangler 呼び出し中しか存在しないので、この場で読む',
+    'const secretsFile = i === -1 ? null : {',
+    "  content: readFileSync(argv[i + 1], 'utf8'),",
+    '  mode: statSync(argv[i + 1]).mode,',
+    '};',
     `appendFileSync(${JSON.stringify(recordPath)}, JSON.stringify({`,
     '  cwd: process.cwd(),',
-    '  argv: process.argv.slice(2),',
+    '  argv,',
     '  metrics: process.env.WRANGLER_SEND_METRICS ?? null,',
+    '  secretsFile,',
     "}) + '\\n');",
   ].join('\n'));
   writeFileSync(npm, [
@@ -102,9 +110,16 @@ describe('deploy.sh の argv', () => {
       assert.equal(argv.filter((a) => a.startsWith('--env')).length, 1);
       assert.ok(argv.includes(selector));
 
-      // 検証済みの ORIGIN がちょうど 1 つ
-      assert.equal(count(argv, '--var'), 1);
-      assert.equal(argv[argv.indexOf('--var') + 1], 'ORIGIN:https://example.run.app');
+      // ORIGIN は平文の --var ではなく secrets file で渡す (§7 の分類。
+      // 値を dashboard の平文 Variable に置かない)
+      assert.equal(count(argv, '--var'), 0);
+      assert.equal(count(argv, '--secrets-file'), 1);
+      const secretsPath = argv[argv.indexOf('--secrets-file') + 1];
+      assert.equal(calls[0].secretsFile.content, 'ORIGIN=https://example.run.app\n');
+      // 0600 (wrangler 呼び出し中に他ユーザーから読ませない)
+      assert.equal(calls[0].secretsFile.mode & 0o777, 0o600);
+      // wrangler 終了後は残さない (EXIT trap)
+      assert.ok(!existsSync(secretsPath), 'secrets file が残っている');
 
       // dry-run 形式でなければ付かない
       assert.equal(count(argv, '--dry-run'), 0);
@@ -135,6 +150,7 @@ describe('deploy.sh が拒否する入力', () => {
     'モード無し': [],
     '未知のモード': ['prod'],
     'wrangler のオプション直指定': ['production', '--var', 'ORIGIN:https://x.run.app'],
+    'wrangler のオプション直指定 (--secrets-file)': ['production', '--secrets-file', '/tmp/x'],
     '--dry-run に outdir が無い': ['production', '--dry-run'],
     '--dry-run に引数が多い': ['production', '--dry-run', '/tmp/a', '/tmp/b'],
     '余分な引数': ['production', 'staging'],

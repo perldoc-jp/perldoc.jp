@@ -66,6 +66,16 @@ fi
 : "${ORIGIN:?ORIGIN is required}"
 node "$worker_dir/scripts/assert-origin.mjs" || die 'ORIGIN did not pass validation'
 
+# ORIGIN は平文の --var ではなく Worker の secret として渡す
+# (docs/cloud-run.md §7 の分類。dashboard の平文 Variable に値を出さない)。
+# --secrets-file は dry-run とも併用でき、offline で動く。
+# 一時ファイルは 0600 で作り、EXIT trap で消す (SIGKILL など trap が走らない
+# 終了では残り得るため、$TMPDIR 直下の一時名にとどめる)
+secrets_file=$(mktemp "${TMPDIR:-/tmp}/perldoc-jp-worker-secrets.XXXXXX")
+chmod 600 "$secrets_file"
+trap 'rm -f "$secrets_file"' EXIT
+printf 'ORIGIN=%s\n' "$ORIGIN" > "$secrets_file"
+
 # 使用状況の送信を止める。子プロセスへ渡すので export する
 export WRANGLER_SEND_METRICS=false
 
@@ -73,14 +83,15 @@ export WRANGLER_SEND_METRICS=false
 # リダイレクトは .gitignore で .wrangler 全体が無視されるため clean tree でも
 # 残りうる。
 #
-# --var は必ず 1 つだけ付ける。wrangler.jsonc の top-level に ORIGIN は無く、
-# これを落とすと 'No bindings found' になって全リクエストが 502 になる。
+# --secrets-file を落とした本番デプロイは wrangler.jsonc の secrets.required に
+# より失敗する (dry-run では検査されない)。
 #
 # npm exec 経由で呼ぶのは、直叩きでは node_modules/.bin が PATH に入らないため。
 # --offline はこの step がレジストリに触れない (= 追加のインストールが
-# 走らない) ことを保証する
-exec npm exec --offline --no -- wrangler deploy \
+# 走らない) ことを保証する。exec しないのは EXIT trap で secrets file を
+# 消すため (exec するとこのシェルが消えて trap が走らない)
+npm exec --offline --no -- wrangler deploy \
     --config "$worker_dir/wrangler.jsonc" \
     "$env_selector" \
-    --var "ORIGIN:$ORIGIN" \
+    --secrets-file "$secrets_file" \
     "${dry_run_args[@]}"

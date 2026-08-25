@@ -64,12 +64,14 @@ jobs:
 
       # デプロイの argv (絶対 --config・environment selector・ORIGIN の注入・
       # --offline) は worker/scripts/deploy.sh が組み立てる。手順が workflow と
-      # 手元 (docs/cloud-run.md) に分かれていると、--var の付け忘れのような差が
+      # 手元 (docs/cloud-run.md) に分かれていると、ORIGIN の渡し忘れのような差が
       # 無症状で通る
+      # CLOUD_RUN_URL は §7 の分類で機密 locator (cloudflare-production の
+      # environment secret)。ログに出ても GitHub が値をマスクする
       - name: Deploy
         working-directory: worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ORIGIN: ${{ vars.CLOUD_RUN_URL }}
+          ORIGIN: ${{ secrets.CLOUD_RUN_URL }}
         run: ./scripts/deploy.sh production
