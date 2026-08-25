@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - master
-  # perldoc-jp/translation の push を受けて再ビルドする
-  repository_dispatch:
-    types:
-      - translation-updated
-  # repository_dispatch の取りこぼし保険 (JST 4:00)
+  # translation 通知 (workflow_dispatch) の取りこぼし保険 (JST 4:00)
   schedule:
     - cron: '0 19 * * *'
+  # 手動実行と、perldoc-jp/translation からの通知 (専用 GitHub App の
+  # installation token による起動。docs/cloud-run.md §9) の両方が使う
   workflow_dispatch:
 
 concurrency:
@@ -32,9 +30,9 @@ env:
   # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
   # 渡すことで、一致がコメント頼みでなくなる
   STARLET_MAX_WORKERS: '4'
-  # イメージのタグは run ごとに一意にする。schedule / repository_dispatch では
-  # github.sha が変わらないまま中身の異なるイメージ (translation 更新分) が
-  # 作られるため、sha だけのタグはビルドを特定できない
+  # イメージのタグは run ごとに一意にする。schedule / workflow_dispatch
+  # (translation 通知) では github.sha が変わらないまま中身の異なるイメージ
+  # (translation 更新分) が作られるため、sha だけのタグはビルドを特定できない
   # (run_id は re-run で同一になるため run_attempt まで含める)
   TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -91,7 +89,7 @@ jobs:
           # PR の runtime-test のために書く (PR からは WIF が要る registry を
           # 読めない)。runtime-test は push では回らないので、gha の
           # scope=runtime を書けるのはこのジョブだけになる。schedule や
-          # repository_dispatch のビルドでも温まる
+          # translation 通知のビルドでも温まる
           cache-to: |
             type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
             type=gha,mode=max,scope=runtime

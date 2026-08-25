@@ -5,7 +5,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 ## 構成の概要
 
 ```
-[perldoc-jp/translation] --push--> repository_dispatch ─┐
+[perldoc-jp/translation] --push--> workflow_dispatch ─┐
 [perldoc-jp/perldoc.jp]  --push--------------------------┤
 [schedule: 日次保険]  ───────────────────────────────────┤
                                                          v
@@ -429,7 +429,28 @@ master へ merge すると以降は Deploy workflow が自動で回り、この�
 ### 9. translation リポジトリ側の workflow
 
 perldoc-jp/translation に以下を追加すると、翻訳の push で即座に再ビルドされる
-(なくても日次の schedule で反映される):
+(なくても日次の schedule で反映される)。通知は専用 GitHub App の installation
+access token で deploy.yml を workflow_dispatch 起動する。
+repository_dispatch + PAT を使わないのは、repository_dispatch が
+`Contents: write` (リポジトリ内容の書き換え権限) を要求するため。
+workflow_dispatch に必要なのは `Actions: write` だけで、これは workflow の
+起動・再実行・停止はできてもコードは書き換えられない。
+
+専用 GitHub App (perldoc-jp org で作成):
+
+- Repository permissions: **Actions: Read and write** のみ (`Metadata: Read` は暗黙)
+- Webhook: 無効
+- インストール先: **Selected repositories で perldoc-jp/perldoc.jp の 1 つだけ**。
+  private key が漏れたとき、その App の全 installation に対して token を
+  発行できるため、汎用 App を流用せず影響範囲をこの 1 リポジトリに限る
+
+translation 側の設定:
+
+- environment `perldoc-jp-notify` を作り、deployment branch policy を master のみに
+  する (§7 の cloudflare-production と同じ手順・同じ理由)
+- App の private key を同 environment の secret `PERLDOC_JP_APP_PRIVATE_KEY` に置く
+- App の Client ID (公開識別子) を同 environment の variable
+  `PERLDOC_JP_APP_CLIENT_ID` に置く
 
 ```yaml
 # .github/workflows/notify-perldoc-jp.yml
@@ -440,18 +461,66 @@ on:
     branches:
       - master
 
+# 組み込み GITHUB_TOKEN は使わないので全権限を落とす
+permissions: {}
+
 jobs:
   notify:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: perldoc-jp-notify
+
     steps:
-      - run: gh api repos/perldoc-jp/perldoc.jp/dispatches \
-               -f event_type=translation-updated
+      # private key を読む外部 action なのでコミット SHA にピン留めする
+      - name: Create installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PERLDOC_JP_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PERLDOC_JP_APP_PRIVATE_KEY }}
+          owner: perldoc-jp
+          repositories: perldoc.jp
+          permission-actions: write
+
+      # token は 1 時間で失効し、ジョブ終了時に action が revoke する。
+      # payload は渡さない (perldoc.jp 側は translation の HEAD を git ls-remote で
+      # 自分で解決するため、通知の中身を信用する必要がない)
+      - name: Dispatch perldoc.jp deployment
         env:
-          GH_TOKEN: ${{ secrets.PERLDOC_JP_DISPATCH_TOKEN }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh api --method POST \
+            repos/perldoc-jp/perldoc.jp/actions/workflows/deploy.yml/dispatches \
+            -f ref=master
 ```
 
-`PERLDOC_JP_DISPATCH_TOKEN` は perldoc-jp/perldoc.jp への Contents:
-Read and write 権限を持つ fine-grained PAT (または GitHub App トークン)。
+App token (`Actions: write`) が侵害されたときにできることは dispatch 専用では
+ない。正確には次のとおり:
+
+- deploy.yml / deploy-worker.yml の dispatch と、レビュー済み master の再デプロイ
+- 既存 run の再実行 (初回実行から 30 日以内。元の actor の権限・元の SHA/ref で
+  走る)・キャンセル、workflow の停止・再開、run / artifact の操作
+- deploy.yml 経由での commit-years-data の起動 (= レビュー済みコードが生成する
+  派生データ data/years.pl の master へのコミットまでは到達する)
+- `ref` は API 上 master 以外の**既存** ref も指定できる (`-f ref=master` は
+  呼び出し側の慣行であって token の制約ではない)。ただし別 ref への dispatch は、
+  GCP 側は WIF の attribute-condition が、GCP / Cloudflare の environment secret
+  は branch policy が master 限定のため拒否する。App は Contents 権限を
+  持たないので、ブランチもファイルも直接は作成・変更できない
+- update-cpanfile-snapshot (contents: write) は workflow_dispatch を持たないため
+  新規には起動できない
+
+private key は installation token と違い長期の資格情報。定期的にローテーション
+し (App 設定で新しい鍵を追加 → translation の secret を差し替え → 旧鍵を削除)、
+漏えい時は App 設定から鍵を即失効する。private key を置く translation
+リポジトリの master と `.github/workflows/` も、perldoc.jp と同じ ruleset
+(force-push / 削除禁止。§7) で保護する。
+
+根拠 (公式ドキュメント):
+
+- <https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/making-authenticated-api-requests-with-a-github-app-in-a-github-actions-workflow>
+- <https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event> (必要権限は `Actions: write`)
+- <https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs> (再実行の 30 日制限と元 actor / ref の再利用)
 
 ### 10. Cloudflare (Worker で Cloud Run にリバースプロキシする)
 
@@ -775,7 +844,7 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
 
 反映頻度は旧構成 (1日4回) より速くなる。translation の push を
-repository_dispatch で受けるため、翻訳がマージされてから数分で反映される。
+workflow_dispatch (§9) で受けるため、翻訳がマージされてから数分で反映される。
 
 ### `static/docs.json` は外部から参照されている
 
@@ -794,11 +863,11 @@ repository_dispatch で受けるため、翻訳がマージされてから数分
   Actions の Deploy workflow を workflow_dispatch で実行
 - **schedule の自動無効化に注意**: public リポジトリの scheduled workflow は、
   リポジトリに 60 日間アクティビティが無いと GitHub により自動で無効化される。
-  perldoc.jp 本体はコミット頻度が低く、translation の更新 (repository_dispatch)
+  perldoc.jp 本体はコミット頻度が低く、translation の更新 (workflow_dispatch)
   はこの判定のアクティビティにならないため、「日次保険」だけが黙って止まる
   ことがある (commit-years-data ジョブの自動コミットはアクティビティになるため、
   translation の更新が続いている限りは起きにくい)。Actions タブの Deploy workflow に無効化の告知が出ていたら
-  re-enable すること (repository_dispatch / workflow_dispatch 起動は無効化の
+  re-enable すること (workflow_dispatch 起動は無効化の
   対象外なので、translation 起点の反映は止まらない)
 - **翻訳者の帰属がおかしいとき (並行編集の調べ方)**: `commit_events` は
   git log の出力順の初出をその path の最新イベントとして扱う。`--date-order` に
