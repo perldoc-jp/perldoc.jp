@@ -157,6 +157,14 @@ RUN apt-get update && \
   apt-get install -y --no-install-recommends libexpat1 diffutils && \
   rm -rf /var/lib/apt/lists/*
 
+# Cloud Run はコンテナを任意 UID で強制しないため、既定では root で起動して
+# しまう。アプリの実行時書き込みは /tmp だけ (smoke-test が --read-only で
+# 検証) なので、専用の非 root ユーザーで動かし、イメージ内のファイル
+# (root 所有) を書き換えられないようにする
+RUN groupadd --system --gid 10001 app && \
+  useradd --system --uid 10001 --gid app --no-create-home \
+    --home-dir /nonexistent --shell /usr/sbin/nologin app
+
 WORKDIR /usr/src/app
 
 ENV PLACK_ENV=deployment
@@ -189,6 +197,9 @@ COPY --from=databuild /usr/src/app/db/perldocjp.db ./db/perldocjp.db
 # デプロイゲートそのもの。無意味なファイルコピーに見えても消さないこと
 # (実行時は /tmp に tmpfs がマウントされるため配信物への影響もない)。
 COPY --from=test /tests-passed /tmp/
+
+# COPY はすべて root で行った後に切り替える (app からは読み取り専用になる)
+USER app
 
 # exec 形式 + exec で plackup を PID 1 にし、Cloud Run が送る SIGTERM を
 # 直接受けてグレースフルにシャットダウンできるようにする。

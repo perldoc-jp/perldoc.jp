@@ -17,7 +17,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 [ユーザー] → Cloudflare (Worker) → Cloud Run (asia-northeast1)
                            - min-instances=0 (無アクセス時のコストほぼゼロ)
                            - イメージに read-only SQLite + translation docs を焼き込み
-                           - 実行時の書き込みは /tmp (tmpfs) のみ
+                           - 非 root (uid 10001) で実行。実行時の書き込みは /tmp (tmpfs) のみ
                              (Xslate キャッシュと diff 用の一時ファイル)
 ```
 

@@ -28,6 +28,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# 非 root で起動すること (Dockerfile の USER の退行検出)。Cloud Run は
+# 任意 UID を強制しないため、イメージ側で保証する。
+# 出力が空 (docker 自体の失敗) や非数値を成功と誤認しないよう先に検査する
+uid=$(docker run --rm --entrypoint id "$IMAGE" -u)
+case "$uid" in
+  ''|*[!0-9]*) echo "invalid uid: $uid" >&2; exit 1 ;;
+esac
+test "$uid" -ne 0
+
+# root 所有のアプリツリーへ Unix パーミッションとして書けないことも直接
+# 確かめる (--read-only mount の検査とは独立した保証。/tmp には書けること)
+docker run --rm --entrypoint sh "$IMAGE" -ceu '
+  test "$(id -u)" -ne 0
+  if touch /usr/src/app/.permission-test 2>/dev/null; then
+    echo "/usr/src/app is writable" >&2
+    exit 1
+  fi
+  touch /tmp/.permission-test
+'
+
 # ホスト側ポートは固定しない。8080 固定だと docker compose (make up) が
 # bind している最中や並行実行と衝突する。127.0.0.1 への bind なので
 # テスト中のコンテナが LAN に公開されることもない
