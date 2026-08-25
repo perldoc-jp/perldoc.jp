@@ -158,19 +158,20 @@ gcloud run deploy perldoc-jp \
   --memory 1Gi --cpu 1 \
   --min-instances 0 --max-instances 3 \
   --concurrency 4 \
-  --update-env-vars STARLET_MAX_WORKERS=4 \
+  --set-env-vars STARLET_MAX_WORKERS=4 \
   --cpu-boost \
   --timeout 60 \
   --port 8080 \
   --allow-unauthenticated
 ```
 
-- `--concurrency` と `--update-env-vars STARLET_MAX_WORKERS=` は同じ値を渡す。
+- `--concurrency` と `--set-env-vars STARLET_MAX_WORKERS=` は同じ値を渡す。
   Starlet のワーカー数と container concurrency が食い違うと、デフォルトの 80 の
   ままなら 4 ワーカーに大量のリクエストが詰まりタイムアウトの原因になる。
   Deploy workflow は `STARLET_MAX_WORKERS` を 1 つ持ち、両方へ渡している。
-  `--update-env-vars` は指定した名前だけを更新する非破壊操作で、列挙外の
-  変数は消さない (`--set-env-vars` は消す)。
+  `--set-env-vars` は列挙外の既存変数を消す。必要な環境変数はこの 1 つで
+  完全列挙なので、dashboard 等で一時的に足された変数がデプロイをまたいで
+  残らない (設定の情報源をこのコマンドに一本化する)。
 - deploy.yml も `--image` と `--allow-unauthenticated` 以外は同じフラグ一式を毎回
   指定しているため、サービス設定はデプロイの実行順序に関わらず self-correcting に
   なる。`--allow-unauthenticated` (= allUsers への run.invoker 付与) だけは
@@ -425,7 +426,7 @@ gcloud run deploy perldoc-jp \
   --memory 1Gi --cpu 1 \
   --min-instances 0 --max-instances 3 \
   --concurrency 4 \
-  --update-env-vars STARLET_MAX_WORKERS=4 \
+  --set-env-vars STARLET_MAX_WORKERS=4 \
   --cpu-boost \
   --timeout 60 \
   --port 8080
