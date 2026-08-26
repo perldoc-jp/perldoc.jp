@@ -64,7 +64,11 @@ function run(args, { origin = 'https://example.run.app', env = {}, cwd = tmpdir(
   let status = 0;
   let stderr = '';
   try {
-    execFileSync('bash', [script, ...args], {
+    // shebang (#!/bin/bash) で実行する。PATH の bash を明示すると、macOS で
+    // /bin/bash (3.2) と Homebrew の新しい bash の挙動差 (例: set -u と
+    // 空配列展開の組み合わせ) をテストが素通しし、手元の
+    // ./scripts/deploy.sh 実行だけが壊れる
+    execFileSync(script, args, {
       cwd,
       env: {
         ...process.env,

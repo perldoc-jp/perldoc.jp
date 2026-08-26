@@ -90,8 +90,11 @@ export WRANGLER_SEND_METRICS=false
 # --offline はこの step がレジストリに触れない (= 追加のインストールが
 # 走らない) ことを保証する。exec しないのは EXIT trap で secrets file を
 # 消すため (exec するとこのシェルが消えて trap が走らない)
+# dry_run_args の展開は ${arr[@]+...} の形にする。macOS の /bin/bash (3.2) は
+# set -u で空配列の "${arr[@]}" を unbound variable と誤検知し、非 dry-run の
+# デプロイがここで止まる (bash 4.4 で修正された挙動)
 npm exec --offline --no -- wrangler deploy \
     --config "$worker_dir/wrangler.jsonc" \
     "$env_selector" \
     --secrets-file "$secrets_file" \
-    "${dry_run_args[@]}"
+    ${dry_run_args[@]+"${dry_run_args[@]}"}
