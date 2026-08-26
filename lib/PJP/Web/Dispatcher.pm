@@ -10,11 +10,13 @@ use Log::Minimal;
 use File::stat;
 use Try::Tiny;
 use Text::Xslate::Util qw/mark_raw/;
+# config_do は @INC を cwd と呼び出し元のディレクトリに限定し、
+# ファイルが見つからない/壊れている場合に croak する。
+# 素の do はどちらも黙って undef を返すため、生成物の欠損に気づけない。
+use Config::PL;
 
 use PJP::Util qw(markdown_to_html);
 use PJP::M::TOC;
-use PJP::M::Index::Module;
-use PJP::M::Index::Article;
 use PJP::M::Pod;
 use PJP::M::PodFile;
 use Regexp::Common qw/URI/;
@@ -24,9 +26,13 @@ use Encode qw(decode_utf8);
 get '/' => sub {
     my $c = shift;
 
-    return $c->render('index.tt', {
-                                   recent => do "data/recent.pl"
-                                  });
+    # data/recent.pl はデプロイ単位で不変なので、リクエスト毎に parse せず
+    # プロセス内にメモ化する (data/years.pl と同じ扱い)
+    my $recent = $c->cache->get_or_set('recent', sub {
+        config_do('data/recent.pl')->{recent};
+    });
+
+    return $c->render('index.tt', {recent => $recent});
 };
 
 get '/about' => sub {
@@ -36,37 +42,14 @@ get '/about' => sub {
 
 get '/translators' => sub {
     my $c = shift;
-    return $c->render('translators.tt', {years => do 'data/years.pl'});
-};
 
-# NOTE: 2021/12/27: search.cpan.orgからmetacpan.orgへの移行に伴い意味不明な分類になっていたので廃止
-# get '/category' => sub {
-#     my $c = shift;
-#
-#     return $c->render('category.tt', {
-#                                    en2ja               => do "data/category_en2ja.pl",
-#                                    categorized_modules => do "data/category_data.pl",
-#                                   });
-# };
-#
-# get '/category/:name' => sub {
-#     my ($c, $args) = @_;
-#     my $modules =  do "data/category_data.pl";
-#     return $c->render('category/index.tt', {
-#                                       en2ja    => do "data/category_en2ja.pl",
-#                                       category => $args->{name},
-#                                       modules  => $modules->{category_modules}->{$args->{name}},
-#                                      });
-# };
+    # data/years.pl は 800KB 超あり毎年成長するため、リクエスト毎に parse
+    # せずプロセス内にメモ化する (コンテンツはデプロイ単位で不変)
+    my $years = $c->cache->get_or_set('translators', sub {
+        scalar config_do('data/years.pl');
+    });
 
-get '/category/:name/:name2' => sub {
-    my ($c, $args) = @_;
-    my $modules =  do "data/category_data.pl";
-    my $name = $args->{name} . '/' . $args->{name2};
-    return $c->render('category/index.tt', {
-                                      category  => $name,
-                                      modules   => $modules->{category_modules}->{$name},
-                                     });
+    return $c->render('translators.tt', {years => $years});
 };
 
 get '/index/core' => sub {
@@ -111,11 +94,15 @@ get '/index/variable' => sub {
 get '/index/module' => sub {
     my $c = shift;
 
+    # 目次データは script/create_data.pl がビルド時に生成する。
+    # index/module.tt は versions.shift() で index データを破壊するため、
+    # メモ化は必ずレンダリング済み HTML に対して行うこと (データの方を
+    # キャッシュして使い回すと 2 回目以降の描画が壊れる)
     my $content = $c->cache->get_or_set('index/module', sub {
-        my @data = PJP::M::Index::Module->generate($c);
+        my $index = config_do('data/index-module.pl')->{index};
         $c->create_view->render(
             'index/module.tt' => {
-                index => \@data,
+                index => $index,
             }
         );
     });
@@ -134,11 +121,12 @@ get '/index/module' => sub {
 get '/index/article' => sub {
     my $c = shift;
 
+    # 目次データは script/create_data.pl がビルド時に生成する
     my $content = $c->cache->get_or_set('index/article', sub {
-        my @index = PJP::M::Index::Article->generate($c);
+        my $index = config_do('data/index-article.pl')->{index};
         $c->create_view->render(
             'index/article.tt' => {
-                index => \@index,
+                index => $index,
             }
         );
     });
@@ -240,8 +228,11 @@ get '/docs/modules/{distvname:[A-Za-z0-9._-]+}{trailingslash:/?}' => sub {
     if (not @rows) {
         my $package = $distvname;
         $package =~s{-}{::}g;
-        if (@rows = PJP::M::PodFile->search_by_packages([$package])) {
-            @rows = PJP::M::PodFile->search_by_distvname($rows[0]->{distvname});
+        # search_by_packages の並び (distvname の文字列降順) は版の新旧を
+        # 表さないため、この package の最新の dist は pick_latest で選ぶ
+        if (my @cands = PJP::M::PodFile->search_by_packages([$package])) {
+            my $latest = PJP::M::PodFile->pick_latest(\@cands);
+            @rows = PJP::M::PodFile->search_by_distvname($latest->{distvname});
         }
         if (not @rows) {
             warnf("Unknonwn distvname: $distvname");
@@ -282,42 +273,21 @@ get '/docs/{path:(?:modules|perl)/.+\.pod}/diff' => sub {
     my ($c, $p) = @_;
     my $origin = $p->{path};
     my $target = $c->req->param('target');
-    my $heavy_diff = PJP::M::Pod->select_heavy_diff($origin, $target);
-    my $diff_info = {};
-    my $diff_cost;
-    if ($heavy_diff) {
-	$diff_info = PJP::M::PodFile->retrieve($origin);
-	if ($heavy_diff->{is_cached}) {
-	    $diff_info->{diff} = $heavy_diff->{diff};
-	} else {
-	    $diff_info->{error} = 'timeout';
-	}
-    } else {
-	$diff_cost = time;
-	$diff_info = PJP::M::Pod->diff($origin, $target, {timeout => 6});
-	$diff_cost = time - $diff_cost;
-    }
+    my $diff_info = PJP::M::Pod->diff($origin, $target);
 
     $diff_info->{origin} = $origin;
     $diff_info->{target} = $target;
 
     if (my $error = $diff_info->{error}) {
-	my $status = 404;
-	if ($error eq 'timeout') {
-	    $status = 503;
-	    PJP::M::Pod->save_as_heavy_diff($origin, $target);
-	}
-	return $c->render_with_status($status, 'diff.tt', $diff_info);
+        my $status = $error eq 'timeout' ? 503 : 404;
+        return $c->render_with_status($status, 'diff.tt', $diff_info);
     } else {
-	if ($diff_cost > 3) {
-	    PJP::M::Pod->save_as_heavy_diff($origin, $target, $diff_info->{diff});
-	}
-	$diff_info->{diff} = mark_raw($diff_info->{diff});
-	return $c->render('diff.tt', {
-				      %$diff_info,
-				      title        => "$origin と $target の差分",
-				      header_title => "$origin と $target の翻訳の差分",
-				     });
+        $diff_info->{diff} = mark_raw($diff_info->{diff});
+        return $c->render('diff.tt', {
+            %$diff_info,
+            title        => "$origin と $target の差分",
+            header_title => "$origin と $target の翻訳の差分",
+        });
     }
 };
 

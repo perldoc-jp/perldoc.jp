@@ -22,22 +22,13 @@ create table pod (
         path        varchar(255) not null PRIMARY KEY,
         distvname   varchar(255) not null,
         repository  varchar(255) not null,
-        html        text,
-        update_time integer
+        html        text
 );
-CREAte INDEX if not exists package on pod (package);
-CREAte INDEX if not exists distvname on pod (distvname);
-
-create table heavy_diff (
-        id INTEGER PRIMARY KEY,
-        origin      varchar(255),
-        target      varchar(255),
-	is_cached   bool,
-        time        integer,
-        diff        text
-);
-
-CREAte INDEX if not exists heavy_diff_origin    on heavy_diff (origin);
-CREAte INDEX if not exists heavy_diff_target    on heavy_diff (target);
-CREAte INDEX if not exists heavy_diff_is_cached on heavy_diff (is_cached);
-
+-- SELECT 対象の列をすべてキーに含めた covering index にしている。
+-- メタデータ系クエリ (一覧・バージョン解決) が巨大な html 列を持つ
+-- テーブル本体に触れずインデックスだけで完結する。
+CREAte INDEX if not exists pod_package_cover   on pod (package, distvname, path, description);
+CREAte INDEX if not exists pod_distvname_cover on pod (distvname, package, path, description);
+-- path への後方一致 LIKE (get_latest の '%/Foo.pod' 等) をテーブル全走査でなく
+-- インデックス全走査で済ませるための index
+CREAte INDEX if not exists pod_path_cover      on pod (path, package, distvname);

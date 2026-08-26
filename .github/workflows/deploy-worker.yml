@@ -1,0 +1,77 @@
+name: Deploy Worker
+
+# Worker のコードは Cloud Run のイメージとは独立しているので、
+# worker/ が変わったときだけデプロイする
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'worker/**'
+      - '.github/workflows/deploy-worker.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-worker
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # CLOUDFLARE_API_TOKEN はこの environment の secret に置く (docs/cloud-run.md §7)。
+    # environment の deployment branch policy が master のみを許可するため、
+    # workflow_dispatch で他の ref を選んでもジョブ開始前に拒否される。
+    # yml 内の ref ガードは、workflow_dispatch では実行者が選んだ ref の
+    # yml ごと差し替えられるため防御にならない。GCP 側 (deploy.yml) を WIF の
+    # attribute-condition で master に固定しているのと同じ境界
+    environment: cloudflare-production
+
+    steps:
+      # 外部 action はコミット SHA にピン留めする (この workflow は Cloudflare の
+      # API トークンを扱うため)。更新時は SHA とコメントのバージョンを両方書き換えること
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # wrangler は Node 22 以上を要求する。runner の既定バージョンに任せると
+      # 更新で足元が変わるので固定する
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      # cloudflare/wrangler-action は使わず npm で入れて呼ぶ。ピン留めが必要な
+      # 外部 action を増やさないため。
+      #
+      # インストールは Cloudflare API トークンを持たない step で行う。
+      # npx --yes wrangler@<ver> の形はトップレベルしか固定できず、依存グラフの
+      # 奥 (wrangler → miniflare → sharp → detect-libc / semver) には semver
+      # range が残る。sharp は install フックでその range 越しのコードを実行する
+      # ため、トークンを env に置いたまま install すると、依存の乗っ取りが
+      # そのままトークンの奪取になる。この workflow が外部 action を
+      # コミット SHA に固定しているのと同じ理由。
+      - name: Install wrangler
+        working-directory: worker
+        run: npm ci
+
+      # test.yml の worker-test と同じゲートをデプロイ直前にも置く
+      # (workflow_dispatch は PR を経由しないため)。実 workerd を使うテストが
+      # あるので npm ci の後に置く
+      - name: Run tests
+        working-directory: worker
+        run: npm test
+
+      # デプロイの argv (絶対 --config・environment selector・ORIGIN の注入・
+      # --offline) は worker/scripts/deploy.sh が組み立てる。手順が workflow と
+      # 手元 (docs/cloud-run.md) に分かれていると、ORIGIN の渡し忘れのような差が
+      # 無症状で通る
+      # CLOUD_RUN_URL は §7 の分類で機密 locator (cloudflare-production の
+      # environment secret)。ログに出ても GitHub が値をマスクする
+      - name: Deploy
+        working-directory: worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ORIGIN: ${{ secrets.CLOUD_RUN_URL }}
+        run: ./scripts/deploy.sh production

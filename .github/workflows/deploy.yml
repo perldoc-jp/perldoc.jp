@@ -1,0 +1,240 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - master
+  # translation 通知 (workflow_dispatch) の取りこぼし保険 (JST 4:00)
+  schedule:
+    - cron: '0 19 * * *'
+  # 手動実行と、perldoc-jp/translation からの通知 (専用 GitHub App の
+  # installation token による起動。docs/cloud-run.md §9) の両方が使う
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+# permissions はジョブレベルで宣言する。WIF の資格情報を扱う deploy ジョブには
+# contents: write を与えず、リポジトリへの書き込みは commit-years-data ジョブに分離する
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    # GCP の識別子 (project ID / number) は deterministic URL の構成要素になる
+    # ため §7 の分類で secret に置く。environment の branch policy が master のみ
+    # を許可する (cloudflare-production と同じ境界)。secret にすると GitHub が
+    # ログ中の値 (gcloud が表示する service URL 内の project number を含む) を
+    # マスクする効果もある
+    environment: gcp-production
+    # env は deploy ジョブだけが使うためジョブレベルに置く
+    # (environment secret はこのジョブでしか解決できない)
+    env:
+      REGION: asia-northeast1
+      SERVICE: perldoc-jp
+      # service は (project, region, service) で識別される。片方でも省くと
+      # gcloud の設定 (core/project・run/region) から解決され、別 project や
+      # 別 region の同名 service を操作しうる。docs/cloud-run.md の手動手順は
+      # 既に両方を渡している
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      IMAGE: asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/perldoc-jp/app
+      # Starlet のワーカー数。Cloud Run の container concurrency と一致させる
+      # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
+      # 渡すことで、一致がコメント頼みでなくなる
+      STARLET_MAX_WORKERS: '4'
+      # イメージのタグは run ごとに一意にする。schedule / workflow_dispatch
+      # (translation 通知) では github.sha が変わらないまま中身の異なるイメージ
+      # (translation 更新分) が作られるため、sha だけのタグはビルドを特定できない
+      # (run_id は re-run で同一になるため run_attempt まで含める)
+      TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      # 外部 action はコミット SHA にピン留めする (この workflow は WIF の
+      # デプロイ資格情報を扱うため、タグの付け替えによる改竄の影響を受けない
+      # ようにする)。更新時は SHA とコメントのバージョンを両方書き換えること
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          # WIF provider と SA email は secret から構築する。project number /
+          # project ID を variable として公開しないため (§7)。値を変えるときは
+          # docs/cloud-run.md §5 の作成コマンドと一致させること
+          workload_identity_provider: projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github/providers/perldoc-jp
+          service_account: perldoc-jp-deployer@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+          # Cloud Audit Logs に run_id / run_attempt を残し、WIF の監査ログから
+          # どの GitHub Actions run が認証したか追跡できるようにする
+          request_reason: gha:${{ github.run_id }}:${{ github.run_attempt }}
+
+      - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+
+      - run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+      # translation の HEAD を build-arg に渡し、translation が更新された
+      # ときだけ databuild ステージのキャッシュを無効化する
+      - name: Resolve translation HEAD
+        id: translation
+        run: |
+          sha=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        # build record artifact と job summary には build inputs (project ID 入りの
+        # image tag / cache 参照) がそのまま入る。§7 の分類ではどちらも出せない
+        # (artifact は公開リポジトリでは実質公開で、secret マスクも効かない)
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
+          build-args: |
+            TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          # registry cache は次のデプロイと years-export のため、gha cache は
+          # PR の runtime-test のために書く (PR からは WIF が要る registry を
+          # 読めない)。runtime-test は push では回らないので、gha の
+          # scope=runtime を書けるのはこのジョブだけになる。schedule や
+          # translation 通知のビルドでも温まる
+          cache-to: |
+            type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+            type=gha,mode=max,scope=runtime
+
+      # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
+      # databuild の prove (PLACK_ENV=build) では検証されないため、push した
+      # イメージを Cloud Run 相当の FS 制約で起動して開通確認してからデプロイする
+      - name: Smoke test image
+        run: ./script/smoke-test.sh "$IMAGE:$TAG"
+
+      # サービス設定を毎回明示し、デプロイの実行順序に依存せず
+      # self-correcting にする。
+      #
+      # --set-env-vars は列挙外の既存変数を消す。アプリが必要とする環境変数は
+      # STARLET_MAX_WORKERS の 1 つで完全列挙なので、dashboard 等で足された
+      # 変数が残らない宣言的な動作にする (Worker の通常変数と同じ方針)。
+      # ここで STARLET_MAX_WORKERS を渡すのは、Dockerfile の CMD にある
+      # ${STARLET_MAX_WORKERS:-4} と --concurrency の一致を、同じ 1 つの値から
+      # 導くため
+      #
+      # --allow-unauthenticated は付けない。公開 IAM (allUsers の run.invoker) は
+      # §4 の初回作成時に一度だけ設定し、デプロイ用 SA には IAM を書き換えられる
+      # run.admin ではなく run.developer だけを与えている (§5)。
+      # 公開設定はデプロイでは自己修復されないため、消えていれば §8 の
+      # get-iam-policy 確認で気づく
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --project "$GCP_PROJECT_ID" \
+            --image "$IMAGE:$TAG" \
+            --region "$REGION" \
+            --service-account "perldoc-jp-run@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
+            --execution-environment gen2 \
+            --memory 1Gi --cpu 1 \
+            --min-instances 0 --max-instances 3 \
+            --concurrency "$STARLET_MAX_WORKERS" --cpu-boost \
+            --set-env-vars "STARLET_MAX_WORKERS=$STARLET_MAX_WORKERS" \
+            --timeout 60 --port 8080 \
+            --quiet
+
+      # ビルドで再導出された data/years.pl を取り出し、commit-years-data ジョブが
+      # master へ書き戻せるよう artifact に置く。デプロイ成功後に置いているのは、
+      # smoke test やデプロイで失敗した run に artifact を残さないため (v4 の
+      # artifact は immutable なので、残っていると失敗ジョブの re-run が同名
+      # artifact への upload で衝突して二重に失敗する)。Build and push image が
+      # 書いた registry buildcache を明示的に参照するため、builder のローカル状態
+      # (GC 等) に関わらず databuild が再実行されることはない
+      - name: Export data/years.pl
+        # 外部 Git リモートから実行時に得た値を shell のソース本文へ埋め込まない。
+        # step の env 経由なら、値は shell 変数として渡り、構文として
+        # 再解釈されない
+        env:
+          TRANSLATION_SHA: ${{ steps.translation.outputs.sha }}
+        run: |
+          docker buildx build --target years-export \
+            --build-arg "TRANSLATION_COMMIT=$TRANSLATION_SHA" \
+            --cache-from type=registry,ref=$IMAGE:buildcache \
+            --output type=local,dest=years-out .
+
+      - name: Upload data/years.pl
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: years-data
+          path: years-out/years.pl
+          retention-days: 1
+          # 「Re-run all jobs」ではデプロイ成功済み run の artifact が残っている
+          overwrite: true
+
+  # デプロイ成功後、ビルドで再導出された data/years.pl に変更があれば master へ
+  # 自動コミットする。
+  #
+  # databuild が git から再導出するのは前年+当年だけなので、この書き戻しが
+  # 無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されて
+  # しまう (docs/cloud-run.md の「運用」参照)。
+  #
+  # GITHUB_TOKEN による push は GitHub の再帰防止によりワークフローを
+  # 再トリガーしないため、デプロイのループは起きない。その代わり translation の
+  # 更新が連続すると、seed は次の更新か日次 schedule まで古いままになりうる。
+  # デプロイ済みのイメージは各 run が再導出した正しい内容なので、この遅延は受容する。
+  commit-years-data:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # artifact の生成元と commit の親を一致させる。最新の master に
+          # 対してコミットすると、この run が生成した years.pl を、別の
+          # コミットのコードから導出したかのように載せることになる
+          ref: ${{ github.sha }}
+
+      # deploy ジョブが同一 run に upload した artifact を受け取る
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: years-data
+          path: years-out
+
+      - name: Commit data/years.pl if changed
+        run: |
+          cp years-out/years.pl data/years.pl
+          if git diff --quiet -- data/years.pl; then
+            echo 'data/years.pl: no changes'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/years.pl
+          git commit -m 'data/years.pl を最新の再導出結果で更新する'
+
+          # if 複合コマンドの直後の $? は if 自身の終了状態 (0) になるので、
+          # push の終了状態は || で明示的に捕まえる
+          push_status=0
+          git push origin HEAD:master || push_status=$?
+          if [ "$push_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          # push の失敗をすべて競合として扱うと、権限不足・branch protection・
+          # 通信障害まで成功扱いになる。remote が生成元から動いたことを
+          # 確かめられたときだけ捨てる
+          git fetch --no-tags origin master || exit "$push_status"
+          remote=$(git rev-parse FETCH_HEAD)
+          if [ "$remote" != "$GITHUB_SHA" ]; then
+            echo "master has moved to $remote; dropping this run's artifact"
+            exit 0
+          fi
+          echo 'push failed although master did not advance' >&2
+          exit "$push_status"

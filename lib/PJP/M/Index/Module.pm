@@ -3,19 +3,16 @@ use warnings;
 use utf8;
 use 5.10.0;
 
-# perl -Ilib -e 'use PJP::M::Index::Module; use PJP; my $c = PJP->bootstrap; PJP::M::Index::Module->generate_and_save($c)'
+# 目次データは script/create_data.pl がビルド時に data/index-module.pl へ生成する
 
 package PJP::M::Index::Module;
-use LWP::UserAgent;
 use CPAN::DistnameInfo;
 use Log::Minimal;
-use URI::Escape qw/uri_escape/;
-use JSON;
-use File::Spec::Functions qw/catfile/;
 use File::Find::Rule;
-use version;
 use autodie;
 use PJP::M::Pod;
+use PJP::M::Repository ();
+use PJP::M::PodFile ();
 
 sub generate {
     my ($class, $c) = @_;
@@ -34,13 +31,7 @@ sub generate {
         push @{$module2versions{$_->{name}}}, $_;
     }
     for my $module ( keys %module2versions ) {
-        $module2versions{$module} = [
-            map            { $_->[0] }
-              reverse sort { $a->[1] <=> $b->[1] }
-              map {
-                [ $_, eval { version->new( $_->{version} ) } || 0 ]
-              } @{ $module2versions{$module} }
-        ];
+        $module2versions{$module} = [ $class->_sort_versions($module2versions{$module}) ];
     }
 
     my @sorted = (
@@ -58,16 +49,28 @@ sub generate {
     return @sorted;
 }
 
+# 同じモジュールの版を新しい順に並べる。
+#
+# 版の比較規則は PJP::M::PodFile に一本化されている (get_latest /
+# other_versions と同じ選択になる)。compare_version は版が同値だと 0 を返すので
+# (別 dist の同じ数値版や、版として解析できない名前どうしを含む)、そのままだと
+# 並びが入力順 = readdir の列挙順に落ちて、versions の順序も先頭から採る
+# abstract も環境依存になる。distvname で締めて全順序にする。
+#
+# 入力順に依存しないことをテストできるように、この規則だけを関数にしてある
+sub _sort_versions {
+    my ($class, $rows) = @_;
+    return sort {
+        PJP::M::PodFile::compare_version($b->{distvname}, $a->{distvname})
+            || $b->{distvname} cmp $a->{distvname}
+    } @$rows;
+}
+
+
 sub _generate {
     my ($class, $c, $base) = @_;
-    state $ua = LWP::UserAgent->new(agent => 'PJP', timeout => 1);
 
-    my $repository = do {
-        local $_ = $base;
-        s!^.+?assets/!!;
-        s!^([\w\-.]+)/.+!$1!;
-        $_;
-    };
+    my $repository = PJP::M::Repository::repository_of($c, $base);
 
     my @mods;
     opendir(my $dh, $base);
@@ -75,40 +78,13 @@ sub _generate {
         next if $e =~ /^\./;
         next if $e =~ /^CVS$/;
 
-        my ($dist, $version);
-
-        if ($e =~ m{^Moose} and -e $base . '/META.yml') {
-            open my $fh, $base . '/META.yml' or die $!;
-            chomp($version = <$fh>);
-            close $fh;
-            $version =~s{^version: }{};
-            $dist = $e;
-        } else {
-            ($dist, $version) = CPAN::DistnameInfo::distname_info($e);
-        }
+        my ($dist, $version) = CPAN::DistnameInfo::distname_info($e);
         my $row = {distvname => $e, name => $dist, version => $version};
 
-        # get information from FrePAN
-=pod
-        my $data = $c->cache->get_or_set("frepanapi:1:$e", sub {
-            my $res = $ua->get('http://frepan.org/api/v1/dist/show.json?dist_name=' . uri_escape($dist));
-            if ($res->is_success) {
-                my $data = JSON::decode_json($res->content);
-                infof("api response: %s", ddf($data));
-                $data;
-            } else {
-                warnf("Cannot get latest version info from frepan API: %s, %s", $res->status_line, $res->content);
-                undef;
-            }
-        });
-        if ($data) {
-            $row->{latest_version} = $data->{version};
-            $row->{abstract}       = $data->{abstract};
-        }
-=cut
-
-        # ファイル名のいちばん短い pod ファイルが代表格といえる
-        my ($pod_file) = sort { length($a) <=> length($b) }
+        # ファイル名のいちばん短い pod ファイルが代表格といえる。
+        # 同じ長さの候補を持つ dist が実在するので、path で締めて
+        # 代表 (= 一覧に出る abstract) を環境に依存させない
+        my ($pod_file) = sort { length($a) <=> length($b) || $a cmp $b }
             File::Find::Rule->file()
                             ->name('*.pod')
                             ->in("$base/$e");

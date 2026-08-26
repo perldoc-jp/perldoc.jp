@@ -28,6 +28,7 @@ use Test2::V0;
 
 use Test::WWW::Mechanize::PSGI;
 use Plack::Util;
+use JSON::XS qw/decode_json/;
 
 my $app = Plack::Util::load_psgi 'app.psgi';
 my $mech = Test::WWW::Mechanize::PSGI->new(app => $app);
@@ -36,6 +37,11 @@ subtest 'GET /' => sub {
     $mech->get('/');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'perldoc.jp';
+
+    # data/recent.pl の読み込みに失敗しても 200 とタイトルは返ってしまうので、
+    # 「最近の更新」の各エントリ (日付から始まる li) が実際に描画されている
+    # ことまで確認する
+    like $mech->content, qr{<li>\d{4}-\d{2}-\d{2}}, 'recent updates are rendered';
 };
 
 subtest 'GET /about' => sub {
@@ -48,11 +54,67 @@ subtest 'GET /translators' => sub {
     $mech->get('/translators');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'Perlドキュメントの翻訳者一覧 - perldoc.jp';
+
+    # data/years.pl の読み込みに失敗しても 200 とタイトルは返ってしまうので、
+    # 年ごとの見出しが実際に描画されていることまで確認する
+    like $mech->content, qr{<h2>\d{4}年</h2>}, 'yearly sections are rendered';
 };
 
-# TODO: カテゴリは現在コメントアウトされて、利用されてなさそうなので該当コードを削除してよさそう
-# subtest 'GET /category/:name/:name2' => sub {
-# }
+subtest 'GET /static/docs.json' => sub {
+    $mech->get('/static/docs.json');
+    is $mech->status, 200, 'status is 200';
+
+    # docs.json は Chrome 拡張 / Firefox アドオンが参照する外部契約
+    # (docs/cloud-run.md 参照)。生成手順の不整合で空の JSON になっても
+    # ビルド自体は成功してしまうため、中身までここでゲートする
+    my $docs = decode_json($mech->response->content);
+    cmp_ok scalar(keys %$docs), '>', 500, 'has enough entries';
+    like $docs->{'Acme::Bleach'}, qr{^modules/Acme-Bleach-}, 'maps package to path';
+};
+
+subtest 'GET /favicon.ico' => sub {
+    # 実体は static/favicon.ico にしかない。VPS 時代は nginx の alias が
+    # /favicon.ico を吸収していたので、アプリだけで解決できることをここで守る
+    $mech->get('/favicon.ico');
+    is $mech->status, 200, 'status is 200';
+    ok $mech->header_like('Content-Type', qr{^image/}), 'Content-Type is an image';
+};
+
+subtest 'GET /robots.txt' => sub {
+    # 本番はエッジ (Cloudflare のゾーン管理) が配信するが、エッジ管理を
+    # 無効化した場合に origin が 404 を返さないことをここで守る
+    $mech->get('/robots.txt');
+    is $mech->status, 200, 'status is 200';
+    like $mech->content, qr{^User-agent: \*}m, 'robots.txt の実体が返る';
+};
+
+subtest '静的ファイルの Cache-Control' => sub {
+    # ファイル名にダイジェストが入らないので恒久キャッシュにはしない。
+    # docs.json と rss はビルドごとに変わるため短い側に置く
+    my %expected = (
+        '/static/css/style.css'  => 'public, max-age=14400',
+        '/favicon.ico'           => 'public, max-age=14400',
+        '/robots.txt'            => 'public, max-age=14400',
+        '/static/docs.json'      => 'public, max-age=7200',
+        '/static/rss/recent.rss' => 'public, max-age=7200',
+    );
+    for my $path (sort keys %expected) {
+        $mech->get($path);
+        is $mech->status, 200, "$path is 200";
+        is $mech->response->header('Cache-Control'), $expected{$path}, "$path has expected Cache-Control";
+    }
+
+    # HTML はエッジにもブラウザにもキャッシュさせない
+    $mech->get('/');
+    is $mech->response->header('Cache-Control'), undef, 'HTML has no Cache-Control';
+
+    # path だけを見てヘッダを付けると、デプロイ直前の 404 が max-age つきで
+    # ブラウザとエッジに最大 4 時間残り続ける
+    $mech->get('/static/this-file-does-not-exist.css');
+    is $mech->status, 404, 'missing static file is 404';
+    is $mech->response->header('Cache-Control'), undef,
+        'missing static file has no Cache-Control';
+};
 
 subtest 'GET /index/core' => sub {
     $mech->get('/index/core');
@@ -87,12 +149,21 @@ subtest 'GET /index/module' => sub {
     $mech->get('/index/module');
     is $mech->status, 200, 'status is 200';
     is $mech->title, '翻訳されたPerlモジュールの一覧 - perldoc.jp';
+
+    # data/index-module.pl の生成漏れや空生成でもタイトルまでは返ってしまうので、
+    # モジュールへのリンクが十分な数描画されていることまで確認する
+    my @links = $mech->find_all_links(url_regex => qr{^/docs/modules/});
+    cmp_ok scalar(@links), '>', 100, 'module index links are rendered';
 };
 
 subtest 'GET /index/article' => sub {
     $mech->get('/index/article');
     is $mech->status, 200, 'status is 200';
     is $mech->title, 'Perlに関係するその他の翻訳の一覧 - perldoc.jp';
+
+    # 同上 (data/index-article.pl)
+    my @links = $mech->find_all_links(url_regex => qr{^/docs/articles/});
+    cmp_ok scalar(@links), '>', 10, 'article index links are rendered';
 };
 
 subtest 'GET /pod/*' => sub {
@@ -168,7 +239,7 @@ subtest 'GET /variable/*' => sub {
     };
 };
 
-subtest '/docs/modules/{distvname}{trailingslash}' => sub {
+subtest '/docs/modules/{distvname}/*.pod' => sub {
     subtest '指定モジュールの翻訳が存在すれば、その翻訳が表示される' => sub {
         $mech->get('/docs/modules/Acme-Bleach-1.12/Bleach.pod');
 
@@ -178,6 +249,29 @@ subtest '/docs/modules/{distvname}{trailingslash}' => sub {
 
     subtest '指定モジュールの翻訳が存在しなければ、404が返る' => sub {
         $mech->get('/docs/modules/DoesNotExist-1.12/DoesNotExist.pod');
+        is $mech->status, 404, 'status is 404';
+    };
+};
+
+# 上の subtest が叩いているのはファイル名まで含む path で、こちらのルートには
+# 一致しない (distvname にスラッシュを含められないため)。dist の一覧を出す
+# こちらのルートは、版が無い名前で来たときに package として解釈し直して
+# 最新の dist を選ぶ経路を持つ
+subtest '/docs/modules/{distvname}{trailingslash}' => sub {
+    subtest '版付きの dist 名で一覧が出る' => sub {
+        $mech->get('/docs/modules/Acme-Bleach-1.12/');
+        is $mech->status, 200, 'status is 200';
+        $mech->content_like(qr{Bleach\.pod}, '収録された pod へのリンクがある');
+    };
+
+    subtest '版の無い名前は package として解釈され、最新の dist が出る' => sub {
+        $mech->get('/docs/modules/Acme-Bleach');
+        is $mech->status, 200, 'status is 200';
+        $mech->content_like(qr{Acme-Bleach-\d}, '版付きの dist の内容が出る');
+    };
+
+    subtest '該当する dist が無ければ 404 が返る' => sub {
+        $mech->get('/docs/modules/DoesNotExist');
         is $mech->status, 404, 'status is 404';
     };
 };
@@ -193,10 +287,24 @@ subtest '/docs/(modules|perl|articles)/*.(html|pod).pod' => sub {
 };
 
 subtest '/docs/(modules|perl)/*.pod/diff' => sub {
-    $mech->get('/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod');
+    subtest '両方の翻訳が存在すれば、差分が表示される' => sub {
+        $mech->get('/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod');
 
-    is $mech->status, 200, 'status is 200';
-    is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
+        is $mech->status, 200, 'status is 200';
+        is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
+        $mech->content_contains(q{<table class='diff'>}, 'diff テーブルが描画される');
+        $mech->content_contains(q{<tr class='match'>}, '共通行が描画される');
+    };
+
+    subtest 'DBに存在しないpodの場合、404が返る (500にならない)' => sub {
+        $mech->get('/docs/modules/DoesNotExist-1.23/DoesNotExist.pod/diff?target=modules%2FDoesNotExist-1.24%2FDoesNotExist.pod');
+        is $mech->status, 404, 'status is 404';
+    };
+
+    subtest 'targetパラメータがない場合、404が返る' => sub {
+        $mech->get('/docs/perl/5.38.0/perl.pod/diff');
+        is $mech->status, 404, 'status is 404';
+    };
 };
 
 subtest '/docs/(articles)/*.html' => sub {

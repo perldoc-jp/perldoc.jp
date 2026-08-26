@@ -1,11 +1,15 @@
 name: Update cpanfile.snapshot
 
+# pull_request 専用。workflow_dispatch を置かない: この workflow は
+# contents: write を持つため、Actions: write しか持たない主体 (translation 通知用
+# GitHub App。docs/cloud-run.md §9) からの起動経路を作らない。
+# workflow_dispatch は checkout が github.head_ref 空で選択 ref を直接 checkout
+# するため、master への直接コミット経路にもなっていた
 on:
   pull_request:
     paths:
       - cpanfile
       - cpanfile.target
-  workflow_dispatch:
 
 jobs:
   update-cpanfile-snapshot:
@@ -16,7 +20,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         ref: ${{ github.head_ref }}
 
@@ -32,7 +36,7 @@ jobs:
         docker run --rm -v $(pwd):/usr/src/app perl-app-image bash -c 'carton install'
         sha256sum cpanfile > cpanfile.target
 
-    - uses: stefanzweifel/git-auto-commit-action@v5.0.0
+    - uses: stefanzweifel/git-auto-commit-action@4a55954c782fc1ea30b9056cd3e7a2b40ca8887d # v7.2.0
       with:
         commit_user_name: GitHub Actions
         commit_user_email: noreply@github.com

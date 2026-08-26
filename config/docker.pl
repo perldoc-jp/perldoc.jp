@@ -1,3 +1,5 @@
+use Cwd ();
+
 my $master_db = '/usr/src/app/perldocjp.master.db';
 my $slave_db  = '/usr/src/app/perldocjp.slave.db';
 
@@ -19,5 +21,6 @@ my $slave_db  = '/usr/src/app/perldocjp.slave.db';
         cache_dir => "/usr/src/app/tmp/perldoc.jp-xslate.cache/",
     },
     'assets_dir' => "/usr/src/app/assets/",
-    'code_dir'   => qx/pwd/,
+    # qx/pwd/ だと末尾に改行が付き、chdir がそのまま失敗する
+    'code_dir'   => Cwd::getcwd(),
 };

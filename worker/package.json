@@ -1,0 +1,15 @@
+{
+  "name": "perldoc-jp-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "msw": "2.15.0",
+    "wrangler": "4.124.0"
+  }
+}

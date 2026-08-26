@@ -22,9 +22,12 @@ ci:
 	make setup-data
 	make test
 
-# 翻訳データのセットアップ
-# TODO: 翻訳データのセットアップは他にもあるので、全部ひとまとめにできると良さそう
+# 翻訳データと、それに依存する生成物のセットアップ。
+# 本番の Dockerfile databuild ステージと同じ生成物を作る
+# (data/recent.pl, data/years.pl, static/docs.json,
+#  data/index-module.pl, data/index-article.pl)。
 .PHONY: setup-data
 setup-data:
 	docker compose exec app perl script/update.pl
+	docker compose exec app perl script/create_data.pl
 

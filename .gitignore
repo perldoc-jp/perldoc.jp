@@ -4,7 +4,6 @@ MANIFEST
 *.old
 nytprof.out
 .sass-cache/
-assets/index-module.pl
 Entries.Log
 nytprof/
 db/
@@ -13,8 +12,14 @@ db/
 /.carmel/
 /local/
 /data/recent.pl
-/data/years.pl
+/data/index-module.pl
+/data/index-article.pl
 /static/docs.json
 /static/rss/
 xtc/
 functions.txt
+/worker/.dev.vars*
+/worker/.env*
+/worker/.wrangler/
+/worker/node_modules/
+gha-creds-*.json

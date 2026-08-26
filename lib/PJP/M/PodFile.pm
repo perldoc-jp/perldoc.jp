@@ -6,6 +6,7 @@ use feature qw(state);
 package PJP::M::PodFile;
 use Amon2::Declare;
 use File::Spec::Functions qw/abs2rel catfile catdir/;
+use PJP::Util ();
 use File::Find::Rule;
 use PJP::M::Pod;
 use Log::Minimal;
@@ -13,6 +14,7 @@ use File::Basename;
 use version;
 use PJP::M::Index::Article;
 use PJP::M::BuiltinFunction;
+use PJP::M::Repository;
 use PJP::Util qw(markdown_to_html);
 
 sub slurp {
@@ -41,27 +43,79 @@ sub retrieve {
         );
 }
 
+# distvname を比較可能な version 値にする。バージョンを持たない distvname
+# (articles の README や ppc 文書等) は croak せず最古扱いにする。croak だと
+# 無版の文書が混在する package (github.com) で版選択そのものができなくなる
 sub _version {
     my ($v) = @_;
     $v =~ s{^.+?-(?=\d)}{};
-    $v =~ s{\-RC\d+$}{}i;
+    $v =~ s{\-(?:RC\d+|TRIAL)$}{}i;
     $v =~ s{^.+?-(v[\d\.]+)$}{$1}i;
-    my $version = eval { version->new($v) };
-    if ($@) {
-      Carp::croak $@ . "(args: $v)";
-    }
-    return $version;
+    return eval { version->new($v) } // version->new(0);
+}
+
+# final release かどうか。-RC1 等を剥がした _version は final と同値になる
+# ため、単体では最新版の選択に使えない
+sub _is_stable {
+    my ($v) = @_;
+    return 0 if $v =~ m{\-(?:RC\d+|TRIAL)$}i;
+    # 6.55_02 のような underscore 版は CPAN の developer release
+    return 0 if _version($v)->is_alpha;
+    return 1;
+}
+
+# distvname 同士の版比較 ($x の方が新しければ正)。版の比較はこの関数に
+# 一本化する (other_versions / get_latest / PJP::M::Index::Module が
+# 同じ選択をする)。同じ数値版では final release がプレリリースより新しい側に
+# 来る (Foo-1.2-RC1 より Foo-1.2 が新しい)。
+#
+# decode_path 等と同じくプレーン関数なので、外からは
+# PJP::M::PodFile::compare_version($x, $y) と完全修飾で呼ぶこと。
+# ->compare_version($x, $y) と書くとクラス名が第 1 引数に入って $y が落ちる。
+#
+# 版と stable/pre-release しか見ないので、別 dist の同じ数値版 (Foo-1.2 と
+# Bar-1.2) や、版として解析できない名前どうしでは 0 を返す。全順序が要る
+# 呼び出し元は 0 のときのタイブレークを自分で足すこと (pick_latest は
+# distvname / package / path で締めている)
+sub compare_version {
+    my ($x, $y) = @_;
+    state (%version, %stable);
+    return ($version{$x} //= _version($x)) <=> ($version{$y} //= _version($y))
+        || ($stable{$x} //= _is_stable($x)) <=> ($stable{$y} //= _is_stable($y));
+}
+
+# 候補行の集合から最新の 1 行を選ぶ (無ければ undef)。行は path / distvname /
+# package を持つこと。「最新」の選択はここに一本化する (get_latest /
+# get_latest_pod / Dispatcher の package 再解釈が同じ規則を通る)。SQL の
+# ORDER BY distvname は文字列順で、perl コアの 5.6.1 が 5.42.0 に、
+# libwww-perl-5.836 が HTTP-Message-6.03 に勝ってしまうため、最新の選択には
+# 使えない。同値の版は distvname / package の降順で締め、同一 (package,
+# distvname) に複数の path がある実データ (NAME が重複した dist 内の pod や
+# articles の README 等) は path 昇順の先頭を主文書として選ぶ。path
+# (PRIMARY KEY) まで比較すれば全順序なので、結果は常に決定的になる
+sub pick_latest {
+    my ($class, $rows) = @_;
+    my ($latest) =
+      sort  {
+               compare_version($b->{distvname}, $a->{distvname})
+            || $b->{distvname} cmp $a->{distvname}
+            || $b->{package} cmp $a->{package}
+            || $a->{path} cmp $b->{path}
+      } @$rows;
+    return $latest;
 }
 
 sub other_versions {
         my ($class, $package) = @_;
         my $c = c();
+        # 同値の版は path (PRIMARY KEY) でタイブレークし、並びを行順に依存させない
+        # (昇順なのは get_latest の主文書の選択規則と同じ向きに揃えるため)
         if ($package =~ m{^perl.*?delta$}) {
-            sort { _version($b->{distvname}) <=> _version($a->{distvname}) }
+            sort { compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
               grep {$_->{package} =~ m{^perl.*?delta$}}
                 @{$c->dbh->selectall_arrayref(q{SELECT distvname, path, package FROM pod WHERE package like 'perl%delta'}, {Slice => {}})};
         } else {
-            sort { _version($b->{distvname}) <=> _version($a->{distvname}) }
+            sort { compare_version($b->{distvname}, $a->{distvname}) || $a->{path} cmp $b->{path} }
               @{$c->dbh->selectall_arrayref(q{SELECT distvname, path FROM pod WHERE package=?}, {Slice => {}}, $package)};
         }
 }
@@ -81,21 +135,15 @@ sub get_latest {
 	  ($where_operator, $search_package) = ('=', $package);
 	}
 
-        my %sort_tmp;
-    my @versions =
-      sort  { ($sort_tmp{$b->[0]} ||= (eval { version->parse($b->[0]) } || 0)) <=> ($sort_tmp{$a->[0]} ||= (eval {version->parse($a->[0])} || 0)) } @{
-        $c->dbh->selectall_arrayref( qq{SELECT distvname,package FROM pod WHERE $search_column $where_operator ?},
-            {}, $search_package )
-      };
-        unless (@versions) {
+    my $latest = $class->pick_latest(
+        $c->dbh->selectall_arrayref( qq{SELECT path, distvname, package FROM pod WHERE $search_column $where_operator ?},
+            {Slice => {}}, $search_package )
+    );
+        unless ($latest) {
                 debugf("Any versions not found in database: %s", $search_package);
                 return undef;
         }
-
-        my($path) = $c->dbh->selectrow_array(
-                q{SELECT path FROM pod WHERE package=? AND distvname=?}, {}, $versions[0]->[1], $versions[0]->[0]
-        );
-        return $path;
+        return $latest->{path};
 }
 
 sub get_latest_pod {
@@ -113,16 +161,15 @@ sub get_latest_pod {
     }
 
     my $c = c();
-    my $pod = $c->dbh->single('pod',
-                              {
-                               package => $package,
-                               path    => {'like' => '%' . $pod_path},
-                              },
-                              {
-                               order_by => ['distvname desc'],
-                              }
-                             );
-    return $pod;
+    # 同じ pod の候補は dist を跨ぐ (HTTP/Message.pod は libwww-perl 5.x と
+    # HTTP-Message 6.x の両方にある)。候補は軽いカラムだけで集めて
+    # pick_latest で選び、選ばれた 1 行だけを retrieve で引き直す
+    # (html を候補の行数ぶん読まないため)
+    my $rows = $c->dbh->selectall_arrayref(
+        q{SELECT path, distvname, package FROM pod WHERE package = ? AND path LIKE ?},
+        {Slice => {}}, $package, '%' . $pod_path);
+    my $latest = $class->pick_latest($rows) or return undef;
+    return $class->retrieve($latest->{path});
 }
 
 sub search_by_distvname {
@@ -135,33 +182,40 @@ sub search_by_packages {
         my ($class, $packages) = @_;
         my $c = c();
         my $place_holder = join ',', (('?') x @$packages);
+        # ORDER BY は package ごとのグルーピングと決定的な並びのため。
+        # distvname の文字列降順は版の新旧を表さないので、最新の 1 行を
+        # 選ぶ用途では pick_latest を通すこと
         @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description, distvname FROM pod WHERE package in ($place_holder) ORDER BY package, distvname desc}, {Slice => {}}, @$packages) };
-}
-
-sub search_by_packages_like {
-        my ($class, $packages) = @_;
-        my $c = c();
-        my $where = join ' or ', (('package like ?') x @$packages);
-        @{ $c->dbh->selectall_arrayref(qq{SELECT path, package, description, distvname FROM pod WHERE $where ORDER BY package, distvname desc}, {Slice => {}}, @$packages) };
 }
 
 sub generate {
         my ($class, $c) = @_;
 
+        # perlfunc.pod の HTML には組み込み関数へのリンクを焼き込む (下の
+        # generate_one_file)。一覧が空のまま生成すると、リテラル置換分だけが
+        # 残った HTML が黙ってイメージに入る。
+        # script/update.pl は PJP::M::BuiltinFunction->generate を先に実行し、
+        # その最後で functions.txt を読み直すので、この時点では埋まっている
+        die 'PJP::M::BuiltinFunction has no function list; run its generate() first'
+            unless @PJP::M::BuiltinFunction::REGEXP;
+
+        my @failures;
         my $txn = $c->dbh_master->txn_scope();
         $c->dbh_master->do(q{DELETE FROM pod});
         my @bases = (glob(catdir($c->assets_dir(), '*', 'docs')));
         for my $base (@bases) {
-                my $repository = $base;
-                my $extention_exp;
-                if ($repository =~ s{^.+?/assets/}{}) {
-                    $extention_exp = qr/\.(pod|html|md)$/;
-                } else {
-                    $extention_exp = '*.pod';
-                }
-                $repository =~ s{^([\w\-.]+)/.+}{$1};
+                # @bases は assets_dir 直下から glob しているので、必ず
+                # assets_dir の中にある。文字列置換の成否で分岐していた頃は、
+                # assets_dir の path に 'assets' component が無い環境
+                # (テストの tempdir 等) だけ別の拡張子規則に落ちていた
+                my $repository = PJP::M::Repository::repository_of($c, $base);
+                # 何を翻訳文書として配信するかは、イベント観測・現ツリー列挙と
+                # 同じ述語 (PJP::M::Repository) を通す
+                my $extention_exp = PJP::M::Repository::TRANSLATION_FILE_RE;
 
-                my @files = File::Find::Rule->file()
+                # 列挙順はファイルシステムに依存する。pod テーブルへの挿入順が
+                # そのまま DB のバイト列に出るので、並べ替えて決定的にする
+                my @files = sort File::Find::Rule->file()
                     ->name($extention_exp)
                     ->in($base);
                 for my $file (@files) {
@@ -173,32 +227,38 @@ sub generate {
                         } else {
                             $class->generate_one_file_html($c, $file, $base, $repository);
                         }
+                        1;
+                    } or do {
+                        # 1 ファイルの失敗で全体を止めず、最後にまとめて報告する。
+                        # そのファイルだけ配信から欠ける状態でイメージが完成すると、
+                        # 「500 件以上ある」程度のテストは通ってしまい気づけない
+                        push @failures, "$file: " . ($@ || 'unknown error');
                     };
-                    if ($@) {
-                      warn '===============================================';
-                      warn "cannot generate: $file ($@)";
-                      warn '===============================================';
-                    }
                 }
         }
+
+        # commit の前に判定する。後に置くと、失敗したビルドが部分的な pod
+        # テーブルを確定させてしまう
+        die "cannot generate these documents:\n"
+            . join('', map { "  $_\n" } @failures)
+            if @failures;
+
         $txn->commit;
 }
 
 sub generate_one_file {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
-        my $args = $c->cache->file_cache(
-                "path:26",
-                $file,
-                sub {
+        my $args = do {
                     my $html = PJP::M::Pod->pod2html($file);
                     if ($file =~ m{/perlfunc\.pod$}) {
-                        foreach my $regexp (@PJP::M::BuiltinFunction::REGEXP) {
-                            $html =~ s{<code>($regexp)</code>}{<code><a href="/func/$1" target="_blank">$1</a></code>}g;
-                        }
-                        $html =~ s{<code>(qq|q|tr|y|m|s|qr|qw|qx)(///?)</code>}{<code><a href="/func/$1" target="_blank">$1$2</a></code>}g;
+                        $html = PJP::M::BuiltinFunction->linkify_functions($html);
                     }
-                    my $relpath = abs2rel( $file, $base );
+                    # DB に入る値だけを decode する。@files の一覧と
+                    # 読み出しに使う $file は readdir の生バイトのまま扱い、
+                    # git 側の path (decode 済み) と突き合わせられるのは
+                    # ここから作る path / package / distvname の方
+                    my $relpath = PJP::M::Repository::decode_path(abs2rel($file, $base));
                     my ( $package, $description ) =
                       PJP::M::Pod->parse_name_section($file);
                     if ( !defined $package ) {
@@ -223,8 +283,7 @@ sub generate_one_file {
                         distvname   => $distvname,
                         html        => $html,
                     };
-                }
-        );
+        };
         $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,
@@ -237,12 +296,13 @@ sub generate_one_file {
 sub generate_one_file_html {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
-        my $args = $c->cache->file_cache(
-                "path:26",
-                $file,
-                sub {
-                    my $html = PJP::M::Index::Article::slurp($file);
-                    my $relpath = abs2rel( $file, $base );
+        my $args = do {
+                    my $html = PJP::Util::slurp($file);
+                    # DB に入る値だけを decode する。@files の一覧と
+                    # 読み出しに使う $file は readdir の生バイトのまま扱い、
+                    # git 側の path (decode 済み) と突き合わせられるのは
+                    # ここから作る path / package / distvname の方
+                    my $relpath = PJP::M::Repository::decode_path(abs2rel($file, $base));
                     my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.html$};
 
                     $package or die "cannot get package name: $relpath";
@@ -254,8 +314,7 @@ sub generate_one_file_html {
                         distvname   => $distvname,
                         html        => $html,
                     };
-                }
-        );
+        };
         $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,
@@ -268,12 +327,13 @@ sub generate_one_file_html {
 sub generate_one_file_md {
         my ($class, $c, $file, $base, $repository) = @_;
         infof("Processing: %s", $file);
-        my $args = $c->cache->file_cache(
-                "path:26",
-                $file,
-                sub {
-                    my $md_src = PJP::M::Index::Article::slurp($file);
-                    my $relpath = abs2rel( $file, $base );
+        my $args = do {
+                    my $md_src = PJP::Util::slurp($file);
+                    # DB に入る値だけを decode する。@files の一覧と
+                    # 読み出しに使う $file は readdir の生バイトのまま扱い、
+                    # git 側の path (decode 済み) と突き合わせられるのは
+                    # ここから作る path / package / distvname の方
+                    my $relpath = PJP::M::Repository::decode_path(abs2rel($file, $base));
                     my ($package, $distvname) = $relpath =~ m{^articles/([^/]+)/(?:.*?/)?([^/]+)\.md$};
 
                     $package or die "cannot get package name: $relpath";
@@ -287,8 +347,7 @@ sub generate_one_file_md {
                         distvname   => $distvname,
                         html        => $html,
                     };
-                }
-        );
+        };
         $c->dbh_master->replace(
                 pod => +{
                         repository => $repository,

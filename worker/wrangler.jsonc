@@ -1,0 +1,53 @@
+{
+  "name": "perldoc-jp",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-25",
+
+  // 公開入口は Custom Domain (perldoc.jp / staging.perldoc.jp) だけにする。
+  // workers_dev は既定で true のため、放置すると本番 Worker がゾーンの
+  // Cache / Redirect / Rate Limiting を通らない workers.dev 上の入口を持って
+  // しまう (preview_urls の既定は workers_dev の値を継承)。env にも継承される
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // エラーの構造化ログを Workers Logs に残す。invocation_logs を切っているのは、
+  // 正常なリクエストの 1 件ごとのログは保存件数を食うだけで、ここで見たいのは
+  // proxy が失敗したときの console.error だけのため
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "invocation_logs": false,
+      "head_sampling_rate": 1
+    }
+  },
+
+  // ORIGIN (Cloud Run のサービス URL) は §7 の分類で機密 locator として扱う。
+  // 平文の vars ではなく secret として scripts/deploy.sh が --secrets-file で
+  // 毎デプロイ注入する。required 宣言により、secret の無い本番デプロイは
+  // 失敗する (fail-closed。dry-run では検査されない)。
+  // 手元で wrangler dev するときは worker/.dev.vars に ORIGIN=https://... を書く
+  "secrets": { "required": ["ORIGIN"] },
+
+  // 本番の Custom Domain (perldoc.jp) は routes に書かない。deploy が DNS の
+  // 切り替えを伴うと事故になるため、cutover は Cloudflare 側の操作として分けている
+  // (docs/cloud-run.md §10)。staging は壊れても影響がないので宣言的に作る
+  "env": {
+    "staging": {
+      "name": "perldoc-jp-staging",
+      "routes": [
+        {
+          "pattern": "staging.perldoc.jp",
+          "custom_domain": true
+        }
+      ],
+      // vars は環境間で継承されないので、staging でだけ効く。
+      // 手順書のコマンドに --var を足す形だと付け忘れが無症状で通ってしまい、
+      // staging が検索結果に出る
+      "vars": {
+        "NOINDEX": "1"
+      },
+      // secrets.required は継承に頼らず staging にも明示する
+      "secrets": { "required": ["ORIGIN"] }
+    }
+  }
+}

@@ -9,7 +9,7 @@ use Text::Xslate::Util qw/mark_raw html_escape/;
 use Encode ();
 use HTML::Entities ();
 use Amon2::Declare;
-use Text::Diff::FormattedHTML ();
+use PJP::HTMLDiff ();
 
 sub parse_name_section {
     my ($class, $stuff) = @_;
@@ -130,6 +130,8 @@ sub get_latest_file_path {
         $h += $add - 1;
 
         my $id = $_[0]->idify($_[0]{scratch});
+        # 直後の handle_text が拾う訳語を、この見出しの実 id に結びつける
+        $_[0]->{last_head_id} = $id;
         my $text = $_[0]{scratch};
         # あとで翻訳したリソースと置換できるように、印をつけておく
         $_[0]{'scratch'} = sprintf(qq{<h$h id="$id">TRANHEADSTART%sTRANHEADEND<a href="#$id" class="toc_link">&#182;</a></h$h>}, $text);
@@ -147,7 +149,14 @@ sub get_latest_file_path {
             # 最初の行の括弧でかこまれたものがあったら、それは翻訳された見出しとみなす
             # 仕様については Pod::L10N を見よ
             $_[0]->{translated_toc}->{$_[0]->{last_head_body}} = $1;
-            $_[0]->{translated_toc_manually}->{$_[0]->{last_head_body}} = $1;
+            # 訳語で書かれた L</...> が作る href を、その訳語が付いた見出しの
+            # 実 id へ寄せる。鍵は自分で組まず resolve_pod_page_link から取る
+            # (リンク解決と鍵生成に同じ規則を使えば、同一実行内でずれない)。
+            # 同じ訳語を持つ見出しが複数ある pod があるので (CPAN::Meta::Spec の
+            # "Version Range" と "Version Ranges" はどちらも「バージョンの範囲」)、
+            # //= で先に現れた見出しに固定する
+            $_[0]->{anchor_of_translation}->{ $_[0]->resolve_pod_page_link(undef, $1) }
+                //= '#' . $_[0]->{last_head_id};
         } else {
             $self->SUPER::handle_text($text);
         }
@@ -227,9 +236,16 @@ sub get_latest_file_path {
 
         my $output = join( "\n\n", @{ $self->{'output'} } );
 
-	# 日本語の L</..> を英語のアンカーに変更する
-	my %reverse_toc = reverse %{$self->{translated_toc_manually} || {}};
-	$output =~s{href="#pod([\d\-]+)"}{my $t = pack("U*", split /\-/, $1); q{href="#} . ($reverse_toc{$t} || $1) . '"'}eg;
+        # 訳語で書かれた L</..> を、その訳語が付いた見出しの実 id へ寄せる
+        my $anchor = $self->{anchor_of_translation} || {};
+        # 実在する見出しへのリンクは訳語表より優先する。鍵は
+        # resolve_pod_page_link が作る fragment 表現なので、実在 id 側も同じ
+        # encode_url を通さないと一致しない (idify('Foo:Bar') は 'Foo:Bar'
+        # だが L</Foo:Bar> は '#Foo%3ABar' になる)
+        my %real = map { ('#' . $self->encode_url($_->[1]), 1) } @{$to_index};
+        delete $anchor->{$_} for grep { $real{$_} } keys %$anchor;
+        # 表に無い href は無変換で通す
+        $output =~ s{href="(#[^"]*)"}{ 'href="' . ($anchor->{$1} // $1) . '"' }eg;
 
         $output =~ s[TRANHEADSTART(.+?)TRANHEADEND][
             if (my $translated = $self->{translated_toc}->{$1}) {
@@ -244,9 +260,20 @@ sub get_latest_file_path {
     }
 }
 
+# diff にかける秒数。0 以下にすると alarm を張らない。
+#
+# 呼び出し元から渡す形にしていた頃は、既定が「タイムアウトなし」で、
+# 唯一の呼び出し元 (Dispatcher) が明示していたから効いていた。呼び出しが
+# 増えたときに素通しの経路ができるので、既定をここに持たせる
+our $DIFF_TIMEOUT = 6;
+
 sub diff {
-    my ($self, $origin, $target, $option) = @_;
-    $option //= {};
+    my ($self, $origin, $target) = @_;
+
+    # target はクエリパラメータ由来で、未指定のままアクセスされうる
+    if (!defined $target || $target eq '') {
+        return {error => 'no_pod'};
+    }
 
     if ($origin =~m{perl[\w-]*delta\.pod} or $target =~m{perl[\w-]*delta\.pod}) {
         return {error => 'perldelta'};
@@ -255,11 +282,15 @@ sub diff {
     my ($origin_pod_name) = $origin =~ m{([^/]+\.pod)};
     my ($target_pod_name) = $target =~ m{([^/]+\.pod)};
 
-    if ($origin_pod_name ne $target_pod_name) {
+    if (!defined $origin_pod_name or !defined $target_pod_name
+        or $origin_pod_name ne $target_pod_name) {
         return {error => 'different_file'};
     }
 
-    my $pod = PJP::M::PodFile->retrieve($origin);
+    # DB に無い pod は slurp より先にここで弾く (undef のまま進めると
+    # 下の {%$pod, ...} が undef デリファレンスで die し 500 になる)
+    my $pod = PJP::M::PodFile->retrieve($origin)
+        or return {error => 'no_pod'};
 
     my $origin_content = PJP::M::PodFile->slurp($origin) // return {%$pod, error => 'no_pod'};
     my $target_content = PJP::M::PodFile->slurp($target) // return {%$pod, error => 'no_pod'};
@@ -274,19 +305,20 @@ sub diff {
 
     my $diff;
     local $@;
-    $option->{timeout} ||= 0;
+    # ハンドラは alarm の解除より外側で生かす。eval の中で local すると、
+    # eval を抜けた時点でハンドラだけが先に復元され、そこから alarm 0 に
+    # 到達するまでの隙間に残タイマーが着弾するとデフォルト動作
+    # (プロセス終了) でワーカーが即死する
+    local $SIG{ALRM} = sub { die "diff timeout" };
     eval {
-        local $SIG{ALRM} = sub { die "diff timeout" };
-        if ($option->{timeout} > 0) {
-            alarm $option->{timeout};
+        if ($DIFF_TIMEOUT > 0) {
+            alarm $DIFF_TIMEOUT;
         }
-        $diff = Text::Diff::FormattedHTML::diff_strings({ vertical => 1 }, $target_content, $origin_content);
-        if ($option->{timeout} > 0) {
-            alarm 0;
-        }
+        $diff = PJP::HTMLDiff::diff_strings_vertical($target_content, $origin_content);
     };
+    # timeout 以外の die でも必ず解除する
+    alarm 0;
     if ($@ =~m{diff timeout}) {
-        # should record time out combination and generate by batch program.
         warn "diff timeout: $origin $target";
         return {%$pod, error => 'timeout'};
     } elsif ($@) {
@@ -294,34 +326,6 @@ sub diff {
     }
 
     return { %$pod, diff => $diff };
-}
-
-sub select_heavy_diff {
-    my ($self, $origin, $target) = @_;
-    my $c = c();
-    my $sth = $c->dbh_master->search(heavy_diff =>
-                                     {
-                                      origin    => $origin,
-                                      target    => $target,
-                                     });
-    return $sth->fetchrow_hashref();
-}
-
-sub save_as_heavy_diff {
-    my ($self, $origin, $target, $diff) = @_;
-    my $c = c();
-    my $heavy_diff = $self->select_heavy_diff($origin, $target);
-    if (! $heavy_diff) {
-        $heavy_diff = $c->dbh_master->insert(heavy_diff =>
-                                             {
-                                              origin    => $origin,
-                                              target    => $target,
-                                              time      => (time + 9 * 3600),
-                                              is_cached => ($diff ? 1 : 0),
-                                              diff       => $diff,
-                                             });
-    }
-    return $heavy_diff;
 }
 
 1;

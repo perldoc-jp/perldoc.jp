@@ -1,6 +1,9 @@
 version: '3'
 services:
   app:
+    # test.yml が事前ビルドしたイメージを compose にそのまま使わせるための明示。
+    # compose の既定名 (プロジェクト perldocjp + サービス app) と同じ
+    image: perldocjp-app
     build:
       context: .
       target: app
