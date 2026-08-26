@@ -36,14 +36,24 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   翻訳が見えないことに加え、translation が 2023 年に複数リポジトリを
   subtree merge で寄せ集めた経緯により、merge をまたぐ path の履歴が merge
   コミットに簡約されて翻訳者でなく merge 実行者が観測されてしまうため。
-- 翻訳の diff (`/docs/*/diff`) はキャッシュせず都度計算する。GNU diff の
-  外部コマンド化 (`PJP::HTMLDiff`) により perlfunc.pod 級の最悪ケースでも
-  数秒以内に収まる。クエリ付き GET のため Cloudflare にはキャッシュされず
-  毎回 Cloud Run に届くので、連続アクセス対策として Cloudflare の
-  レートリミットルールを設定しておくことを推奨する。
+- 公開レスポンスは再デプロイまで変わらない (認証・セッション・個人化・時刻
+  依存の生成が無い) ため、Worker が全パスの GET/HEAD の status 200 を
+  Cloudflare エッジで 2 時間キャッシュする (`cf.cacheEverything` +
+  `cacheTtlByStatus`。§10 の Cache Rules 節)。再デプロイ後に旧レスポンスが
+  最大 2 時間残ることは許容する。デプロイ時 purge は行わない。
+- 翻訳の diff (`/docs/*/diff`) は GNU diff の外部コマンド化 (`PJP::HTMLDiff`)
+  により perlfunc.pod 級の最悪ケースでも数秒以内に収まり、同じ比較の反復は
+  エッジキャッシュに吸収される。diff は匿名入力で到達できる最も高コストな
+  処理なので、Worker が `target` クエリを検証・正規化して、無関係なクエリ・
+  等価なエンコード・重複 `target`・ヘッダー変化によるキャッシュキーの分割を
+  防ぐ (worker/src/index.js)。それでも異なる比較の初回計算、POP ごとの
+  コールド MISS、eviction 後の再計算は Cloud Run に届くため、連続アクセス
+  対策として Cloudflare のレートリミットルールの設定は引き続き推奨する
+  (キャッシュはレートリミットやオリジン認証の代替ではない)。
   ただし `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は
-  公開のままであり、Cloudflare を経由しない直アクセスにはレートリミットは
-  効かない。直アクセス側の実質的な上限装置は max-instances (=3)。ただし
+  公開のままであり、Cloudflare を経由しない直アクセスにはエッジキャッシュも
+  レートリミットも効かない。直アクセス側の実質的な上限装置は max-instances
+  (=3)。ただし
   Cloud Run はトラフィックスパイクやリビジョン切替中の新旧重複などで設定値を
   一時的に超えることがあるため、絶対的なコスト上限ではなく主要な緩和策として
   扱う (完全に塞ぐには LB + ingress 制限が必要で、本構成のコスト方針とは
@@ -750,46 +760,71 @@ Worker の通常変数は `wrangler.jsonc` が、secret (ORIGIN) は `scripts/de
 Worker の Custom Domain は apex だけなので、www/new は Worker を起動せず
 Redirect Rules だけで処理される。
 
-#### Cache Rules
+#### Cache Rules とエッジキャッシュ
 
-`/static/*` は Cloud Run 上のアプリ (`Plack::Middleware::Static`) が配信する。
-TTL は app.psgi が付ける `Cache-Control` を唯一の情報源とする
-(`/static/docs.json` と `/static/rss/` は 2 時間、それ以外の `/static/*` と
-`/favicon.ico` は 4 時間)。
+エッジのキャッシュポリシーは Worker が所有する。Worker は全パスの GET/HEAD の
+サブリクエストに
 
-`css` / `js` / `png` / `ico` は Cloudflare の既定キャッシュ対象拡張子なので、
-`Cache-Control` がそのまま効きルールは要らない。一方 `.json` と `.rss` は対象外で、
-ルールが無いと `/static/docs.json` と `/static/rss/recent.rss` は
-`cf-cache-status: DYNAMIC` のまま毎回オリジンに届く。この 2 つをキャッシュ対象に
-するルールを 1 本だけ置く:
+```js
+cf: {
+  cacheEverything: true,
+  cacheTtlByStatus: { "200": 7200, "201-599": -1 },
+}
+```
 
-- 式: `http.request.uri.path eq "/static/docs.json" or starts_with(http.request.uri.path, "/static/rss/")`
-- Cache eligibility: **Eligible for cache**
-- Edge TTL: **Use cache-control header if present** (オリジンの 2 時間が使われる)
+を付けて Cloud Run へ `fetch()` する (worker/src/index.js)。status 200 だけが
+2 時間エッジに残り、404 / 503 / 3xx と Worker 自身の 400 / 502 は保存されない
+(負数は「保存しない」の意味。`0` は即時失効なので使わない)。ダッシュボードの
+Cache Rules に同じルールを重ねない。Worker の `cf` 設定は Cache Rules や
+Page Rules より優先される (この優先は compatibility date が
+`request_cf_overrides_cache_rules` の既定有効日 2025-04-02 以降であることが
+前提。wrangler.jsonc は 2026-07-25)。
 
-**Cache eligibility と Edge TTL は両方を設定する。** どちらかが欠けていても
-`cf-cache-status` は `DYNAMIC` のままで、式がマッチしていない場合と区別が付かない。
-`DYNAMIC` が続くときに疑う順は (1) 式がマッチしていない (2) Cache eligibility が
-未設定 (3) Edge TTL が未設定。式は Expression Preview で確認できるので (1) から潰す。
+TTL の所有境界:
 
-Edge TTL に `Use cache-control header if present` を選べるのは、app.psgi が
-`Cache-Control` を返すからこそ。オリジンがまだ返していない状態
-(Cache-Control を入れる前のイメージが動いている間) にこのモードにすると TTL が
-決まらないので、その間は `Ignore cache-control header and use this TTL` に
-2 時間 (Free プランで指定できる最小値) を入れておく。
+- ブラウザー向け TTL は app.psgi が付ける `Cache-Control` が唯一の情報源
+  (`/static/docs.json` と `/static/rss/` は 2 時間、それ以外の `/static/*` と
+  `/favicon.ico` は 4 時間。動的 HTML には付けない)。Worker はレスポンスへ
+  `Cache-Control` を足さない。
+- エッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 2 時間)。
+  静的ファイルは「ブラウザー 4 時間、エッジ 2 時間」の二層になる。
 
-`/static/*` 全体を対象にするルールは置かない。既定でキャッシュされる拡張子まで
-ルールに含めると、TTL をオリジンの `Cache-Control` とルールの両方に持つことになる。
+キャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
+method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う。
+`cf.cacheKey` は Enterprise 限定なので使わない。この前提で:
 
-エッジ TTL をオリジンより長くしないのは、`cf.cacheKey` が Enterprise 限定で
-キャッシュキーが run.app の URL になり、perldoc.jp のゾーンからの URL 単位パージが
-効かないため。ファイル名にダイジェストも入らないので、長い TTL は
-配信物を差し替えられないまま抱えることになる。
+- 一般ルートはクエリ全体がキーに残る。`/about?nonce=1` と `?nonce=2` は
+  別キーになり、変種の初回はオリジンへ届く (= 現在と同じ都度計算)。アプリは
+  クエリを意味に使う余地がある (`/search?q=`、tmpl/pod.tt の `c().req.uri()`
+  による Source link) ため、一般ルートのクエリを推測で削ってはならない。
+  ダッシュボードの「Ignore Query String」も使わない (diff の `target` まで
+  キーから消え、異なる差分の混同 = キャッシュ汚染になる)。
+- diff だけは Worker が上流クエリを再構築する。空でない `target` 1 個だけを
+  正規化してキーに残し、未知パラメーターは受理しつつ上流 URL から除く。
+  重複 `target` とエスケープ (`%`) 入りの diff 形パスは 400 で止め、
+  キー分割や Worker/Plack のパーサー差を突いたすり抜けを上流に到達させない。
+- キャッシュキーを分割・迂回できるリクエストヘッダー (`Origin`、method
+  override 系、`Cache-Control: no-cache`、`Pragma`、`Cookie`、
+  `Authorization` など) は、キャッシュ対象の GET/HEAD では Worker が上流へ
+  渡さない。`X-Forwarded-Host` は Worker が信頼値で確定させるため、同じ
+  run.app を叩く本番と staging のキャッシュはホスト名ごとに分かれる。
+- キャッシュは上流サブリクエストの run.app URL を基準に保持されるため、
+  perldoc.jp の URL からの単一ファイル purge は期待できない。デプロイ時
+  purge も行わず、2 時間の自然失効を前提にする。
 
-Worker の `fetch()` による subrequest にも Cache Rules は適用される (優先順位は
-Worker の `cf` 設定 > Cache Rules > Page Rules)。式をパスだけで書いておけばオリジンの
-ホスト名は影響しない。ルールを入れたら `cf-cache-status` が `DYNAMIC` から
-`MISS` → `HIT` に変わることを必ず確認する。
+**将来、認証・セッション・Cookie・ユーザー別表示・時刻依存のルートを追加する
+場合は、同じ変更で Worker がそのルートへ `cf` のキャッシュ設定を付けない
+ようにすること。** `cacheEverything` と明示的な TTL の組はオリジンの
+`Set-Cookie` や `Cache-Control: private` より強く働き得るため、アプリ側の
+レスポンスヘッダーだけでは共有キャッシュからの opt-out にならない。
+
+`/static/docs.json` と `/static/rss/*` を対象にしていた既存の Cache Rule
+(式: `http.request.uri.path eq "/static/docs.json" or starts_with(http.request.uri.path, "/static/rss/")`、
+Cache eligibility: **Eligible for cache**、Edge TTL: **Use cache-control
+header if present**) は、Worker の全パスポリシーと重複するため、staging と
+本番で `cf-cache-status: HIT` を確認してから削除する。Worker を旧版 (`cf`
+設定なし) に戻す場合、この 2 パスのエッジキャッシュも維持したければ同じ
+内容でルールを復元する (コードのロールバックではダッシュボードは戻らない)。
 
 関連するゾーン設定 (Caching → Configuration):
 
@@ -797,9 +832,17 @@ Worker の `cf` 設定 > Cache Rules > Page Rules)。式をパスだけで書い
   `Cache-Control` を上書きする (既定は 4 時間)
 - `Caching Level`: Standard
 - `Development Mode`: OFF (ON の間はキャッシュされない)
-- Page Rules は使わない (Cache Rules と設定が重なる)
+- Page Rules は使わない (Worker の `cf` 設定と重なる)
+- Rules → Settings の `Normalize incoming URLs`: **On**、type は `RFC-3986`
+  (どちらも既定値)。`%70erl` → `perl` のような unreserved エンコードを
+  Worker より前に canonical な URL へ寄せる。Worker は `%` を含む diff 形
+  パスを 400 で止めるため、この設定はキャッシュ回避防止の必須条件ではなく、
+  等価な URL 表現を寄せて 400 を減らすための互換性設定
 
-HTML は Cloudflare の既定でキャッシュされず、app.psgi も `Cache-Control` を付けない。
+デプロイ後に `cf-cache-status` が `DYNAMIC` のままのときに疑う順は
+(1) Development Mode が ON (2) Worker の `cf` 設定が bundle に入っていない
+(デプロイ漏れ) (3) compatibility date が古く Cache Rules 側が優先されている。
+`MISS` → `HIT` の確認手順は「動作確認」のとおり。
 
 #### SSL/TLS
 
@@ -820,9 +863,9 @@ HTML は Cloudflare の既定でキャッシュされず、app.psgi も `Cache-C
 #### 動作確認 (staging.perldoc.jp)
 
 本番の apex に触らないまま構成をまるごと検証する。`staging.perldoc.jp` を Worker の
-Custom Domain にすれば、Cache Rules の式がパスベースなのでそのまま適用され、cutover
-後の挙動を事前に確かめられる。`workers.dev` のサブドメインだけではゾーンの Cache
-Rules も Redirect Rules も適用されないためキャッシュの確認には足りない。
+Custom Domain にすれば、ゾーン設定 (URL 正規化・Redirect Rules・SSL/TLS) を通った
+cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサブドメインはゾーンの
+設定をどれも通らないため、キャッシュと正規化の確認には足りない。
 
 1. Cloud Run にデプロイしておく (§8)
 2. staging の Worker をデプロイする。`wrangler.jsonc` の `env.staging` が
@@ -849,7 +892,10 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
      ./scripts/deploy.sh staging
    )
    ```
-3. Cache Rules を入れる。パスだけで書いてあるので staging にも本番にも同じに効く
+3. Cache Rules の追加は不要 (エッジキャッシュは Worker の `cf` 設定として
+   デプロイに同梱される)。既存の docs.json/rss 用ルールが残っていても Worker の
+   設定が優先される。削除の手順とタイミングは「Cache Rules とエッジキャッシュ」
+   のとおり
 4. 確認する:
    ```sh
    BASE=https://staging.perldoc.jp
@@ -861,36 +907,88 @@ Rules も Redirect Rules も適用されないためキャッシュの確認に�
    curl -fsS "$BASE/static/docs.json" | grep 'Acme::Bleach' > /dev/null
    curl -fsS -o /dev/null "$BASE/favicon.ico"
 
-   # 都度計算する diff。perlfunc.pod のような大きい pod でも試しておく
-   curl -fsS -o /dev/null -w '%{time_total}\n' \
-     "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod"
-
    # X-Forwarded-Host が効いていること。/chomp は /func/chomp へのリダイレクトなので、
    # ここに run.app が出たら Worker 側の不備 (/func/chomp 自体は 200 なので使えない)
    curl -sS -o /dev/null -D - "$BASE/chomp" | grep -i '^location:'
 
-   # オリジンの Cache-Control (docs.json は 2 時間、css は 4 時間)
+   # ブラウザー向けの Cache-Control は従来どおりオリジン由来
+   # (docs.json は 2 時間、css は 4 時間)。動的 HTML には現れない
    curl -sS -o /dev/null -D - "$BASE/static/docs.json"     | grep -i '^cache-control:'
    curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cache-control:'
+   curl -sS -o /dev/null -D - "$BASE/" | grep -i '^cache-control:' \
+     || echo 'HTML に Cache-Control なし (期待どおり)'
 
-   # 2 回叩いて cf-cache-status が MISS → HIT になること (docs.json は要 Cache Rules)
-   curl -sS -o /dev/null -D - "$BASE/static/docs.json" | grep -i '^cf-cache-status:'
-   curl -sS -o /dev/null -D - "$BASE/static/docs.json" | grep -i '^cf-cache-status:'
-   curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cf-cache-status:'
-   curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cf-cache-status:'
+   # 全パスの 200 が 2 回目で HIT になること (HTML も静的も Worker の cf で入る)。
+   # HIT では Age が現れ、時間経過で増える
+   for path in / /docs/perl/perl.pod /static/docs.json /static/css/style.css; do
+     curl -sS -o /dev/null -D - "$BASE$path" | grep -i '^cf-cache-status:'
+     curl -sS -o /dev/null -D - "$BASE$path" | grep -iE '^(cf-cache-status|age):'
+   done
 
-   # HTML はキャッシュしない (DYNAMIC のままであること)
-   curl -sS -o /dev/null -D - "$BASE/" | grep -i '^cf-cache-status:'
+   # diff も 2 回目が HIT。GET で充填したキャッシュは HEAD でも HIT になり
+   # 本文を返さない
+   DIFF_URL="$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod"
+   curl -sS -o /dev/null -D - "$DIFF_URL" | grep -iE '^(cf-cache-status|age):'
+   curl -sS -o /dev/null -D - "$DIFF_URL" | grep -iE '^(cf-cache-status|age):'
+   curl -sS -I "$DIFF_URL" -o /dev/null -D - | grep -iE '^(cf-cache-status|age):'
 
-   # staging がクロール除けになっていること
+   # diff の未知パラメーターはキーから除かれ、同じキャッシュへ寄る (HIT のまま)。
+   # 一般ルートのクエリ変種が別キー (MISS) になるのは仕様
+   curl -sS -o /dev/null -D - "$DIFF_URL&nonce=1" | grep -iE '^(cf-cache-status|age):'
+
+   # 重複 target は Worker の 400 で Cloud Run に届かない
+   curl -sS -o /dev/null -w '%{http_code}\n' \
+     "$DIFF_URL&target=perl%2F5.36.0%2Fperl.pod"
+
+   # キー分割・再検証・認証ヘッダーを送っても diff の再計算を強制できない
+   # (HIT のまま)
+   curl -sS -o /dev/null -D - \
+     -H 'Origin: https://attacker.example' \
+     -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+     -H 'Cookie: cache-bust=1' -H 'Authorization: Bearer cache-bust' \
+     "$DIFF_URL" | grep -iE '^(cf-cache-status|age):'
+
+   # エスケープ入りの diff 形パスは 400 (非正規化キーでの再計算にならない)
+   curl -sS -o /dev/null -w '%{http_code}\n' \
+     "$BASE/docs/perl%2F5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod"
+
+   # unreserved エンコードはゾーンの URL 正規化で canonical に寄って HIT になるか、
+   # 正規化が無効なら Worker の 400 になる。200 のまま毎回オリジンで再計算
+   # (DYNAMIC や MISS の連続) されたら不合格
+   curl -sS -o /dev/null -D - \
+     "$BASE/docs/%70erl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod" \
+     | grep -iE '^(HTTP/|cf-cache-status:|age:)'
+
+   # 404 と 3xx は保持されない (2 回目も HIT にならない)
+   curl -sS -o /dev/null -D - "$BASE/docs/perl/no-such.pod" | grep -iE '^(HTTP/|cf-cache-status:)'
+   curl -sS -o /dev/null -D - "$BASE/docs/perl/no-such.pod" | grep -iE '^(HTTP/|cf-cache-status:)'
+   curl -sS -o /dev/null -D - "$BASE/chomp" | grep -iE '^(HTTP/|cf-cache-status:)'
+
+   # staging がクロール除けになっていること (キャッシュ HIT でも毎回付く)
    curl -sS -o /dev/null -D - "$BASE/" | grep -i '^x-robots-tag:'
    ```
+
+   異なる比較対象の分離も確認する (A を再取得して B の本文が返らないこと):
+   ```sh
+   curl -fsS "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.36.0%2Fperl.pod" \
+     -o /tmp/perldoc-diff-a.html
+   curl -fsS "$BASE/docs/perl/5.38.0/perl.pod/diff?target=perl%2F5.34.0%2Fperl.pod" \
+     -o /tmp/perldoc-diff-b.html
+   shasum -a 256 /tmp/perldoc-diff-a.html /tmp/perldoc-diff-b.html
+   ```
+
+   Cloud Run 側でも軽減を確認する: 同じ URL を短時間に複数回送り、Cloudflare で
+   後続が `HIT` になる間、Cloud Run のリクエストログにはキャッシュ充填分だけが
+   届いていること (HIT と同数のリクエストや diff 計算が発生していないこと) を
+   見る。エッジキャッシュ導入後の Cloud Run リクエストログは「ページビュー」
+   ではなく「origin MISS」に近い値になる。
 
    症状から切り分ける:
    - `/chomp` の `Location` に run.app が出る → Worker が `X-Forwarded-Host` を
      付けていない
-   - `/static/docs.json` が `DYNAMIC` のまま → Cache Rules 側 (式 / Cache eligibility /
-     Edge TTL のいずれか)
+   - 200 が `DYNAMIC` のまま → Development Mode が ON / Worker の `cf` 設定が
+     bundle に入っていない / compatibility date (「Cache Rules とエッジ
+     キャッシュ」の切り分け順)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
      古い (Worker や Cloudflare の設定ではない)
 5. cutover 後に片付ける (残すと staging.perldoc.jp という公開入口と Workers の
@@ -921,8 +1019,10 @@ cutover 時に確かめる。
 #### 切り替え手順
 
 1. Cloud Run にデプロイし、`status.url` を確認する
-2. 「動作確認」のとおり staging で構成を検証する。Cache Rules・SSL/TLS・Browser Cache
-   TTL はゾーン単位の設定なので、ここで入れたものが cutover 後の本番にもそのまま効く
+2. 「動作確認」のとおり staging で構成を検証する。SSL/TLS・Browser Cache TTL・
+   URL 正規化はゾーン単位の設定なので、ここで確認したものが cutover 後の本番にも
+   そのまま効く。エッジキャッシュは Worker のデプロイに同梱されるため、
+   ゾーン側の追加操作は無い
 3. 本番の Worker をデプロイする。トークンと ORIGIN の読み込みを含む実行形は
    「手元からデプロイする場合」の bash ブロックのとおり
    (`./scripts/deploy.sh production` まで一式)
@@ -932,12 +1032,15 @@ cutover 時に確かめる。
    グレー雲のままではリクエストが Cloudflare のエッジを通らず Redirect Rule が
    発火しない。順序を逆にすると一時的にリクエストが旧オリジンへ流れる
 6. 確認: apex が 200、`/chomp` の `Location` が perldoc.jp を指すこと、
-   `www.perldoc.jp` が 301 でクエリを保持すること、`/static/docs.json` の
-   `cf-cache-status`。「動作確認」の curl を `BASE=https://perldoc.jp` で回すのが早い
-7. Cache Rules を最終形にする。この時点でオリジンが `Cache-Control` を返しているので、
-   短期ルールの Edge TTL を `Ignore cache-control header and use this TTL` から
-   **`Use cache-control header if present`** に切り替える。`/static/*` 全体を対象に
-   するルールが残っていれば削除する (TTL の情報源を app.psgi 側 1 箇所に寄せる)
+   `www.perldoc.jp` が 301 でクエリを保持すること、`/static/docs.json` と
+   diff の `cf-cache-status`。「動作確認」の curl を `BASE=https://perldoc.jp` で
+   回すのが早い。キャッシュキーは Worker が確定する `X-Forwarded-Host` を含む
+   ため、staging で温めたキャッシュは本番とは別で、cutover 直後の本番は各キー
+   初回 MISS から始まる
+7. 本番の `HIT` を確認したら、`/static/docs.json` と `/static/rss/*` 用の既存
+   Cache Rule を削除する (「Cache Rules とエッジキャッシュ」のとおり Worker の
+   全パスポリシーと重複するため。削除前に式と設定値の記録を確認)。`/static/*`
+   全体を対象にするルールが残っていれば同様に削除する
 8. staging の Worker を消す
 
 ロールバックは Custom Domain を外して元の apex レコードに戻す。
@@ -946,7 +1049,9 @@ cutover 時に確かめる。
 
 `--allow-unauthenticated` のため `<service>.run.app` は公開のままで、Worker を
 経由しないアクセスにはキャッシュもレートリミットも効かない (「構成の概要」のとおり
-実質的な上限装置は max-instances)。
+実質的な上限装置は max-instances)。エッジキャッシュは Worker の `fetch()` に
+付く設定なので、この経路では diff を含む全パスが毎回オリジンで計算される。
+これは受容している残存リスクの一部である。
 
 `X-Forwarded-Host` を信頼する構成なので、直アクセスでは `Location` のホストを
 任意の値にできる。Cloudflare のキャッシュには入らない経路なのでキャッシュ汚染には
@@ -973,7 +1078,9 @@ Custom Domain (perldoc.jp / staging.perldoc.jp) だけにしている。
 
 Workers Free は 10 万リクエスト/日で、**Cloudflare のキャッシュにヒットした
 リクエストも 1 件として数える**。超える場合は Workers Paid (月 $5, 1000 万
-リクエスト込み、超過 100 万あたり $0.30)。
+リクエスト込み、超過 100 万あたり $0.30)。エッジキャッシュ (§10 の Cache
+Rules 節) はこの枠を減らさない — キャッシュ HIT でも Worker は毎回実行される。
+減るのは Cloud Run 側のリクエスト数と CPU 消費だけ。
 
 Worker を挟まない構成にする場合の選択肢:
 
@@ -994,7 +1101,7 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 | `script/create_recent.pl` | 毎時 | 同上 (databuild)。`script/create_data.pl` に統合 |
 | `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。`script/create_data.pl` に統合。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
 | `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_data.pl` に置き換え |
-| `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため、都度計算で足りる |
+| `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため都度計算で足り、同じ比較の反復は Cloudflare のエッジキャッシュ (§10) が吸収する |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
 
 反映頻度は旧構成 (1日4回) より速くなる。translation の push を
@@ -1008,8 +1115,9 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
 - <https://chrome.google.com/webstore/detail/iedgkpbokcjamkpoglfbefmdmclkljhc>
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
-デプロイ後に古い docs.json が残る時間は app.psgi が付ける `Cache-Control` で決まる
-(2 時間。旧構成の更新間隔は 6 時間毎だった)。エッジもこれを尊重する (§10)。
+デプロイ後に古い docs.json が残る時間は、ブラウザーは app.psgi が付ける
+`Cache-Control` (2 時間)、エッジは Worker の `cf` 設定 (2 時間) で決まる (§10)。
+旧構成の更新間隔は 6 時間毎だった。
 
 ## 運用
 
@@ -1054,7 +1162,10 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
-  Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)
+  Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)。
+  エッジキャッシュ (§10) の導入後、Cloud Run のリクエストログは
+  ページビューではなく「エッジの MISS」に近い値になる。ページビューを
+  見たい場合は Cloudflare 側の Analytics を使う
 - **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_data.pl`
   で前年+当年 (対象年は translation の最新イベントから導出) を毎ビルド
   translation の git 履歴から再導出し、デプロイ成功後に
