@@ -687,9 +687,8 @@ gcloud run services describe perldoc-jp \
 
 手元からデプロイする場合 (cutover 時など)。wrangler は `worker/package.json` の
 exact な devDependency で、`worker/package-lock.json` が依存グラフ全体を固定する。
-バージョンを変えるときは lockfile も一緒に更新すること。以下は production 用で、
-staging へは「動作確認」手順 2 に同じ形のブロック (`./scripts/deploy.sh staging`)
-がある。
+バージョンを変えるときは lockfile も一緒に更新すること。staging へも同じブロックで、
+最後を `./scripts/deploy.sh staging` に変えるだけ。
 
 **インストールはトークンを渡さない状態で行う** (`npm ci` を実行してから
 `CLOUDFLARE_API_TOKEN` を読み込む)。依存の install フックはインストール時の
@@ -835,14 +834,6 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
 `Set-Cookie` や `Cache-Control: private` より強く働き得るため、アプリ側の
 レスポンスヘッダーだけでは共有キャッシュからの opt-out にならない。
 
-`/static/docs.json` と `/static/rss/*` を対象にしていた既存の Cache Rule
-(式: `http.request.uri.path eq "/static/docs.json" or starts_with(http.request.uri.path, "/static/rss/")`、
-Cache eligibility: **Eligible for cache**、Edge TTL: **Use cache-control
-header if present**) は、Worker の全パスポリシーと重複するため、staging と
-本番で `cf-cache-status: HIT` を確認してから削除する。Worker を旧版 (`cf`
-設定なし) に戻す場合、この 2 パスのエッジキャッシュも維持したければ同じ
-内容でルールを復元する (コードのロールバックではダッシュボードは戻らない)。
-
 関連するゾーン設定 (Caching → Configuration):
 
 - `Browser Cache TTL`: **Respect Existing Headers**。固定値だと app.psgi の
@@ -885,35 +876,13 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
 設定をどれも通らないため、キャッシュと正規化の確認には足りない。
 
 1. Cloud Run にデプロイしておく (§8)
-2. staging の Worker をデプロイする。`wrangler.jsonc` の `env.staging` が
-   `staging.perldoc.jp` を Custom Domain として作り、`NOINDEX` も設定ファイル側で
-   与える (Worker が `X-Robots-Tag: noindex, nofollow` を足し、本番と重複した内容が
-   検索結果に出るのを防ぐ)。**bash** で実行する (§10 の手元デプロイ参照):
-   ```bash
-   (
-     set -euo pipefail
-     cd worker
-     npm ci   # トークンを読み込む前に入れる (§10 の手元デプロイ参照)
-
-     export CLOUDFLARE_ACCOUNT_ID=...
-
-     printf 'CLOUDFLARE_API_TOKEN: ' >&2
-     IFS= read -r -s CLOUDFLARE_API_TOKEN
-     printf '\n' >&2
-     export CLOUDFLARE_API_TOKEN
-
-     ORIGIN=$(gcloud run services describe perldoc-jp \
-       --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')
-     export ORIGIN
-
-     ./scripts/deploy.sh staging
-   )
-   ```
-3. Cache Rules の追加は不要 (エッジキャッシュは Worker の `cf` 設定として
-   デプロイに同梱される)。既存の docs.json/rss 用ルールが残っていても Worker の
-   設定が優先される。削除の手順とタイミングは「Cache Rules とエッジキャッシュ」
-   のとおり
-4. 確認する:
+2. staging の Worker をデプロイする。「手元からデプロイする場合」の bash
+   ブロックを、最後だけ `./scripts/deploy.sh staging` に変えて実行する。
+   `wrangler.jsonc` の `env.staging` が `staging.perldoc.jp` を Custom Domain
+   として作り、`NOINDEX` も設定ファイル側で与える (Worker が
+   `X-Robots-Tag: noindex, nofollow` を足し、本番と重複した内容が検索結果に
+   出るのを防ぐ)
+3. 確認する:
    ```sh
    BASE=https://staging.perldoc.jp
 
@@ -1008,7 +977,7 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
      キャッシュ」の切り分け順)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
      古い (Worker や Cloudflare の設定ではない)
-5. cutover 後に片付ける (残すと staging.perldoc.jp という公開入口と Workers の
+4. cutover 後に片付ける (残すと staging.perldoc.jp という公開入口と Workers の
    枠を無駄に使う)。削除も Cloudflare の認証情報と worker ディレクトリを要する
    ため、デプロイと同じ形の bash subshell で自己完結させる。削除後、Custom
    Domain が Cloudflare 側に残っていたら合わせて外す:
@@ -1054,11 +1023,7 @@ cutover 時に確かめる。
    回すのが早い。キャッシュキーは Worker が確定する `X-Forwarded-Host` を含む
    ため、staging で温めたキャッシュは本番とは別で、cutover 直後の本番は各キー
    初回 MISS から始まる
-7. 本番の `HIT` を確認したら、`/static/docs.json` と `/static/rss/*` 用の既存
-   Cache Rule を削除する (「Cache Rules とエッジキャッシュ」のとおり Worker の
-   全パスポリシーと重複するため。削除前に式と設定値の記録を確認)。`/static/*`
-   全体を対象にするルールが残っていれば同様に削除する
-8. staging の Worker を消す
+7. staging の Worker を消す
 
 ロールバックは Custom Domain を外して元の apex レコードに戻す。
 
