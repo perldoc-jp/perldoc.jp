@@ -71,6 +71,56 @@ describe('実 workerd 上の Worker', () => {
     assert.equal(res.headers.get('X-Robots-Tag'), 'noindex, nofollow');
   });
 
+  // diff の分類・正規化 (src/index.js の classifyDiffRequest) が bundle 後の
+  // 実ランタイムでも効いていること。cf オプションと MISS→HIT はローカルで
+  // 観測できないため、URL の再構築と 400 の遮断だけをここで見る
+  it('diff は正規化した target だけを上流 URL に載せる', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.text('diff body');
+      }),
+    );
+    const res = await production.fetch(
+      'https://perldoc.jp/docs/perl/5.42.0/perlfunc.pod/diff?nonce=1&target=perl%2f5.10.1%2fperlfunc.pod',
+    );
+    assert.equal(res.status, 200);
+    assert.deepEqual(captured, [
+      `${ORIGIN}/docs/perl/5.42.0/perlfunc.pod/diff?target=perl%2F5.10.1%2Fperlfunc.pod`,
+    ]);
+  });
+
+  it('重複 target は 400 で、origin に届かない', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.text('diff body');
+      }),
+    );
+    const res = await production.fetch(
+      'https://perldoc.jp/docs/perl/5.42.0/perlfunc.pod/diff?target=a&target=b',
+    );
+    assert.equal(res.status, 400);
+    assert.deepEqual(captured, []);
+  });
+
+  it('%2F 入りの diff 形パスは 400 で、origin に届かない', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.text('diff body');
+      }),
+    );
+    const res = await production.fetch(
+      'https://perldoc.jp/docs/perl%2F5.42.0/perlfunc.pod/diff?target=perl%2F5.10.1%2Fperlfunc.pod',
+    );
+    assert.equal(res.status, 400);
+    assert.deepEqual(captured, []);
+  });
+
   // ORIGIN の検証が実ランタイムでも効いていること (設定ミスのまま
   // デプロイされた場合に、origin を叩かず 502 で止まる)
   it('不正な ORIGIN では 502 を返す', async () => {

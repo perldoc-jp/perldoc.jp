@@ -272,3 +272,289 @@ describe('origin 障害時の応答', () => {
     assert.match(logged[0].error, /<origin>/);
   });
 });
+
+// 全パスの GET/HEAD の status 200 は Cloudflare エッジで 2 時間キャッシュする
+// (docs/cloud-run.md)。cf はサブリクエスト単位の設定で、200 以外は負数 = 保存しない
+const EDGE_CACHE = {
+  cacheEverything: true,
+  cacheTtlByStatus: { '200': 7200, '201-599': -1 },
+};
+
+const DIFF = '/docs/perl/5.42.0/perlfunc.pod/diff';
+const TARGET = 'perl%2F5.10.1%2Fperlfunc.pod';
+const CANONICAL_DIFF = `${ORIGIN}${DIFF}?target=perl%2F5.10.1%2Fperlfunc.pod`;
+
+describe('全パス共通のエッジキャッシュ設定', () => {
+  for (const path of [
+    '/',
+    '/about',
+    '/docs/perl/5.42.0/perlfunc.pod',
+    '/static/css/style.css',
+    `${DIFF}?target=${TARGET}`,
+  ]) {
+    it(`GET ${path} に共通の cf 設定が付く`, async () => {
+      await proxy(`https://perldoc.jp${path}`);
+      assert.deepEqual(calls[0].init.cf, EDGE_CACHE);
+    });
+  }
+
+  it('HEAD にも同じ cf 設定が付き、メソッドは HEAD のまま', async () => {
+    await proxy('https://perldoc.jp/about', { method: 'HEAD' });
+    assert.deepEqual(calls[0].init.cf, EDGE_CACHE);
+    assert.equal(calls[0].init.method, 'HEAD');
+  });
+
+  // cf のキャッシュ設定は GET/HEAD にしか効かないが、コード上も付けない。
+  // 将来 POST ルートが増えたときに「POST もキャッシュ対象」と誤読させない
+  it('POST には cf を付けず、ボディを透過する', async () => {
+    await proxy('https://perldoc.jp/', { method: 'POST', body: 'hello' });
+    assert.equal(calls[0].init.cf, undefined);
+    assert.equal(await new Response(calls[0].init.body).text(), 'hello');
+  });
+
+  // 2 時間はエッジ TTL であり、ブラウザーへ新しい TTL を公開しない
+  it('レスポンスへ Cache-Control を追加しない', async () => {
+    const res = await proxy('https://perldoc.jp/');
+    assert.equal(res.headers.get('Cache-Control'), null);
+  });
+
+  it('静的ファイルの既存 Cache-Control はそのまま返す', async () => {
+    originResponse = () =>
+      new Response('css', {
+        status: 200,
+        headers: { 'Cache-Control': 'public, max-age=14400' },
+      });
+    const res = await proxy('https://perldoc.jp/static/css/style.css');
+    assert.equal(res.headers.get('Cache-Control'), 'public, max-age=14400');
+  });
+});
+
+// Cloudflare の既定キャッシュキーは URL のほかに Origin と method override /
+// forwarding 系ヘッダーを含み、値を変えるだけで同じ URL を別キーへ分割して
+// MISS を強制できる。Cache-Control / Pragma は上流サブリクエストへの再検証指示、
+// Cookie / Authorization は BYPASS の誘発と認証状態の共有キャッシュへの
+// 持ち込みになる。公開・非個人化のレスポンスしか無いため、キャッシュ対象の
+// GET/HEAD では上流に渡さない
+describe('キャッシュ対象メソッドのヘッダー境界', () => {
+  const CACHE_BUSTING = {
+    'Origin': 'https://attacker.example',
+    'X-HTTP-Method-Override': 'PURGE',
+    'X-HTTP-Method': 'PURGE',
+    'X-Method-Override': 'PURGE',
+    'X-Host': 'evil.example',
+    'X-Original-URL': '/evil',
+    'X-Rewrite-URL': '/evil',
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+    'Authorization': 'Bearer cache-bust',
+    'Cookie': 'cache-bust=1',
+  };
+
+  for (const method of ['GET', 'HEAD']) {
+    it(`${method} では上流に残らない`, async () => {
+      await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`, { method, headers: CACHE_BUSTING });
+      const h = calls[0].init.headers;
+      for (const name of Object.keys(CACHE_BUSTING)) {
+        assert.equal(h.get(name), null, `${name} が上流に残らない`);
+      }
+    });
+  }
+
+  it('削除しても User-Agent / Accept-Language / Referer は残す', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`, {
+      headers: { 'Accept-Language': 'ja', 'User-Agent': 'test-agent', 'Referer': 'https://example.com/' },
+    });
+    const h = calls[0].init.headers;
+    assert.equal(h.get('Accept-Language'), 'ja');
+    assert.equal(h.get('User-Agent'), 'test-agent');
+    assert.equal(h.get('Referer'), 'https://example.com/');
+  });
+
+  // 非キャッシュメソッドのヘッダー転送は変えない。将来の POST ルートが
+  // Cookie や Authorization を黙って失わないようにする
+  it('POST では Cookie / Authorization / Origin を落とさない', async () => {
+    await proxy('https://perldoc.jp/', {
+      method: 'POST',
+      body: 'x',
+      headers: { 'Cookie': 'a=1', 'Authorization': 'Bearer t', 'Origin': 'https://perldoc.jp' },
+    });
+    const h = calls[0].init.headers;
+    assert.equal(h.get('Cookie'), 'a=1');
+    assert.equal(h.get('Authorization'), 'Bearer t');
+    assert.equal(h.get('Origin'), 'https://perldoc.jp');
+  });
+
+  // 既定キーは X-Forwarded-Host も含む。Worker が信頼値で確定させるため、
+  // 同じ run.app を叩く production と staging のキャッシュは host ごとに分かれる
+  it('X-Forwarded-Host は staging では staging のホスト名になる', async () => {
+    await proxy(`https://staging.perldoc.jp${DIFF}?target=${TARGET}`);
+    assert.equal(calls[0].init.headers.get('X-Forwarded-Host'), 'staging.perldoc.jp');
+  });
+});
+
+// diff は高コストなので、同じ比較をクエリの変種で別キーに分割させない。
+// 上流 URL は Worker が分類した値だけから再構築し、元の search を渡さない
+// (Plack 側の WWW::Form::UrlEncoded は `;` も区切りに使うため、素通しすると
+// Worker の検証をすり抜けた target が diff 計算へ到達し得る)
+describe('diff のキー正規化', () => {
+  it('正常な GET の上流 URL は正規化した target だけを持つ', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url.href, CANONICAL_DIFF);
+  });
+
+  it('HEAD も GET と同じ上流 URL と cf になり、メソッドは HEAD のまま', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`, { method: 'HEAD' });
+    assert.equal(calls[0].url.href, CANONICAL_DIFF);
+    assert.deepEqual(calls[0].init.cf, EDGE_CACHE);
+    assert.equal(calls[0].init.method, 'HEAD');
+  });
+
+  it('percent hex の大文字小文字 (%2f / %2F) は同じ上流 URL になる', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=perl%2f5.10.1%2fperlfunc.pod`);
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`);
+    assert.equal(calls[0].url.href, calls[1].url.href);
+  });
+
+  it('空白の表現差 (%20 / +) は同じ上流 URL になる', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=a%20b`);
+    await proxy(`https://perldoc.jp${DIFF}?target=a+b`);
+    assert.equal(calls[0].url.href, calls[1].url.href);
+  });
+
+  it('未知パラメーターは受理しつつ上流 URL から除く', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}&nonce=1`);
+    assert.equal(calls[0].url.href, CANONICAL_DIFF);
+  });
+
+  it('未知パラメーターの値や順序が違っても同じ上流 URL になる', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?nonce=1&target=${TARGET}`);
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}&nonce=2`);
+    assert.equal(calls[0].url.href, CANONICAL_DIFF);
+    assert.equal(calls[1].url.href, CANONICAL_DIFF);
+  });
+
+  // 名前の大文字小文字は区別する (Plack も区別するため Target は未知パラメーター)
+  it('Target (大文字) は target として扱わない', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?Target=perl%2F5.40.0%2Fperlfunc.pod&target=${TARGET}`);
+    assert.equal(calls[0].url.href, CANONICAL_DIFF);
+  });
+
+  // URLSearchParams は名前もデコードする。Plack も同様なので、符号化した
+  // 名前で検証をすり抜けて素の search を上流に運ばせない
+  it('符号化した名前 (%74arget) も target として認識する', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?%74arget=${TARGET}`);
+    assert.equal(calls[0].url.href, CANONICAL_DIFF);
+  });
+
+  it('異なる target は異なる上流 URL になる', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`);
+    await proxy(`https://perldoc.jp${DIFF}?target=perl%2F5.40.0%2Fperlfunc.pod`);
+    assert.notEqual(calls[0].url.href, calls[1].url.href);
+  });
+
+  it('パス中の比較元が異なれば異なる上流 URL になる', async () => {
+    await proxy(`https://perldoc.jp/docs/perl/5.40.0/perlfunc.pod/diff?target=${TARGET}`);
+    await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}`);
+    assert.notEqual(calls[0].url.href, calls[1].url.href);
+  });
+
+  it('target 未指定は上流にクエリを渡さない', async () => {
+    await proxy(`https://perldoc.jp${DIFF}`);
+    assert.equal(calls[0].url.href, `${ORIGIN}${DIFF}`);
+  });
+
+  // Plack は `;` も区切りに使うため、素通しすると Worker には見えない target が
+  // アプリに届く。Worker の解釈 (target 未指定) で上流クエリを確定させる
+  it('`;` 区切りの target は未指定として扱い、元の search を渡さない', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?a=b;target=${TARGET}`);
+    assert.equal(calls[0].url.href, `${ORIGIN}${DIFF}`);
+  });
+
+  it('空の target は正規化した空 target だけを渡す', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=`);
+    assert.equal(calls[0].url.href, `${ORIGIN}${DIFF}?target=`);
+  });
+
+  // 値の中の `;` は %3B に符号化されて届く。Plack の分割はデコード前の
+  // raw 文字列に対して行われるため、再分割で別パラメーターに化けない
+  it('値中の `;` は符号化して渡す', async () => {
+    await proxy(`https://perldoc.jp${DIFF}?target=a%3Bb`);
+    assert.equal(calls[0].url.search, '?target=a%3Bb');
+  });
+});
+
+describe('diff の重複 target の拒否', () => {
+  // 重複時にどちらを使うかはパーサー依存で、解釈差はキャッシュ汚染に使える。
+  // 意味が曖昧な入力は上流に渡さず 400 で止める
+  for (const [name, query] of [
+    ['同じ値', `target=${TARGET}&target=${TARGET}`],
+    ['異なる値', `target=${TARGET}&target=perl%2F5.40.0%2Fperlfunc.pod`],
+    ['空値が先', `target=&target=${TARGET}`],
+    ['空値が後', `target=${TARGET}&target=`],
+  ]) {
+    it(`${name}の重複は 400 で、上流 fetch を呼ばない`, async () => {
+      const res = await proxy(`https://perldoc.jp${DIFF}?${query}`);
+      assert.equal(res.status, 400);
+      assert.equal(calls.length, 0);
+    });
+  }
+
+  it('HEAD でも重複 target は 400 になる', async () => {
+    const res = await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}&target=${TARGET}`, { method: 'HEAD' });
+    assert.equal(res.status, 400);
+    assert.equal(calls.length, 0);
+  });
+
+  // 分類はメソッドに依らない。POST で同じ曖昧な search を上流へ運ばせない
+  it('POST でも重複 target は 400 になる', async () => {
+    const res = await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}&target=${TARGET}`, { method: 'POST', body: 'x' });
+    assert.equal(res.status, 400);
+    assert.equal(calls.length, 0);
+  });
+
+  it('400 は固定文言の text/plain で、ORIGIN のホスト名を含まない', async () => {
+    const res = await proxy(`https://perldoc.jp${DIFF}?target=${TARGET}&target=${TARGET}`);
+    assert.equal(res.headers.get('Content-Type'), 'text/plain; charset=utf-8');
+    const body = await res.text();
+    assert.equal(body, 'Bad Request\n');
+    assert.ok(!body.includes(new URL(ORIGIN).hostname));
+  });
+});
+
+// Plack は PATH_INFO を 1 回 URL デコードするため、%2F などのエスケープ入り
+// パスでも同じ diff route に到達し得る。素通しすると「非正規化の別キーで
+// 同じ高コスト計算を反復させる」抜け道になる。正規の POD パスに % は
+// 現れないので、エスケープ入りの diff 形パスは一律 400 で止める
+describe('diff のパス等価表現', () => {
+  for (const [name, path] of [
+    ['ディレクトリ区切りの %2F (raw では diff 形にならない)', `/docs/perl%2F5.42.0/perlfunc.pod/diff`],
+    ['ファイル名中の %2F (raw でも diff 形になる)', `/docs/perl/5.42.0%2Fperlfunc.pod/diff`],
+    ['unreserved の符号化 (%70erl / %64iff)', `/docs/%70erl/5.42.0/perlfunc.pod/%64iff`],
+    ['二重符号化 (%252F)', `/docs/perl/5.42.0%252Fperlfunc.pod/diff`],
+    ['不正なエスケープ (%zz)', `/docs/perl/5.42.0%zzperlfunc.pod/diff`],
+  ]) {
+    it(`${name} は 400 で、上流 fetch を呼ばない`, async () => {
+      const res = await proxy(`https://perldoc.jp${path}?target=${TARGET}`);
+      assert.equal(res.status, 400);
+      assert.equal(calls.length, 0);
+    });
+  }
+
+  it('diff 形でないエスケープ入りパスは現在どおり転送する', async () => {
+    await proxy('https://perldoc.jp/func/%E3%81%82?foo=bar');
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url.href, `${ORIGIN}/func/%E3%81%82?foo=bar`);
+    assert.deepEqual(calls[0].init.cf, EDGE_CACHE);
+  });
+});
+
+// diff 以外のクエリはアプリが意味を持ち得る (例: tmpl/pod.tt は c().req.uri() を
+// Source link に使う) ため、削除も並べ替えもせずそのまま渡す。クエリ全体が
+// 既定キャッシュキーに含まれるので、変種は別キー = 現在と同じ都度計算になる
+describe('一般ルートのクエリ互換', () => {
+  it('diff 以外はクエリを順序ごと素通しする', async () => {
+    await proxy('https://perldoc.jp/docs/perl/5.42.0/perlfunc.pod?b=2&a=1');
+    assert.equal(calls[0].url.href, `${ORIGIN}/docs/perl/5.42.0/perlfunc.pod?b=2&a=1`);
+  });
+});
