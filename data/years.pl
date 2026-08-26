@@ -16353,8 +16353,8 @@
               "commit_count" => [
                                   [
                                     "SHIRAKATA Kentaro",
-                                    31,
-                                    9
+                                    32,
+                                    10
                                   ],
                                   [
                                     "Mitsutoshi Nakano",
@@ -16364,7 +16364,7 @@
                                 ],
               "commit_count_all" => {
                                       "Mitsutoshi Nakano" => 1,
-                                      "SHIRAKATA Kentaro" => 31
+                                      "SHIRAKATA Kentaro" => 32
                                     },
               "modules" => [
                              {
@@ -16438,6 +16438,14 @@
                                "name" => "perlhacktips",
                                "path" => "docs/perl/5.22.1/perlhacktips.pod",
                                "version" => "5.22.1"
+                             },
+                             {
+                               "author" => "SHIRAKATA Kentaro",
+                               "date" => "2026-08-27 01:24:21",
+                               "in" => "perl",
+                               "name" => "perl5440delta",
+                               "path" => "docs/perl/5.44.0/perl5440delta.pod",
+                               "version" => "5.44.0"
                              }
                            ]
             }
