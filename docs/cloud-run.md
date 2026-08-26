@@ -687,7 +687,9 @@ gcloud run services describe perldoc-jp \
 
 手元からデプロイする場合 (cutover 時など)。wrangler は `worker/package.json` の
 exact な devDependency で、`worker/package-lock.json` が依存グラフ全体を固定する。
-バージョンを変えるときは lockfile も一緒に更新すること。
+バージョンを変えるときは lockfile も一緒に更新すること。以下は production 用で、
+staging へは「動作確認」手順 2 に同じ形のブロック (`./scripts/deploy.sh staging`)
+がある。
 
 **インストールはトークンを渡さない状態で行う** (`npm ci` を実行してから
 `CLOUDFLARE_API_TOKEN` を読み込む)。依存の install フックはインストール時の
