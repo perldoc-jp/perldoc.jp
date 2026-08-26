@@ -725,6 +725,21 @@ exact な devDependency で、`worker/package-lock.json` が依存グラフ全�
 `--env` を省くと `CLOUDFLARE_ENV` で環境が選ばれてしまうため、selector は
 必ず明示している。
 
+ここで `wrangler login` (OAuth) を使わないのは意図的な選択。login の既定
+スコープは d1 / pages / ssl_certs / queues など Workers Scripts を大きく
+超える write を含み、token が refresh token ごと平文の
+`~/Library/Preferences/.wrangler/config/default.toml` に永続化される
+(自動更新されるため実質無期限)。上の手順が `npm ci` をトークンより先に行う
+のと同じ脅威モデル (手元の依存・マルウェアによる資格情報の奪取) に対しては、
+ディスクに残らない Workers Scripts のみのトークンのほうが安全になる。
+取り回しを優先して login を使う場合も
+`wrangler login --scopes account:read user:read workers_scripts:write` で
+絞り、作業が終わったら `wrangler logout` でセッションを破棄すること。
+なお wrangler は `CLOUDFLARE_API_TOKEN` が無いと手元の OAuth セッションで
+認証するため、過去に login したままの環境では意図しない資格情報でデプロイ
+され得る。`wrangler whoami` で状態を確認し、残っているセッションは
+logout しておく。
+
 Worker の通常変数は `wrangler.jsonc` が、secret (ORIGIN) は `scripts/deploy.sh` が
 所有する。dashboard で追加した通常変数は次回のデプロイで消える。secret は
 デプロイごとに `--secrets-file` で再登録され、列挙外の既存 secret は消えない。
