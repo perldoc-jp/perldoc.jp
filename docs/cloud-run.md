@@ -482,10 +482,11 @@ docker buildx build \
   (buildx が既定で付ける attestation により manifest が image index になるため)。
 
 本番同等の FS 制約で起動確認してからデプロイする (deploy.yml / test.yml の
-smoke test と同じスクリプト):
+smoke test と同じスクリプト)。ホスト側では Perl 5.38 以降を使用し、追加の
+CPAN モジュールは必要ない:
 
 ```sh
-./script/smoke-test.sh "$IMAGE:$TAG"
+./script/smoke-test.pl "$IMAGE:$TAG"
 ```
 
 デプロイする。フラグは §4 および deploy.yml と同一で、`--image` だけが変わる

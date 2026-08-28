@@ -114,7 +114,7 @@ jobs:
       # databuild の prove (PLACK_ENV=build) では検証されないため、push した
       # イメージを Cloud Run 相当の FS 制約で起動して開通確認してからデプロイする
       - name: Smoke test image
-        run: ./script/smoke-test.sh "$IMAGE:$TAG"
+        run: ./script/smoke-test.pl "$IMAGE:$TAG"
 
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず
       # self-correcting にする。
