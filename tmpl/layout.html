@@ -10,7 +10,7 @@
     <meta name="description" content="[% IF description %][% description %][% ELSE %]このサイトはPerlの公式ドキュメント、モジュールのドキュメントを日本語に翻訳したものを表示するサイトです。[% END %]" />
     <meta name="keywords" content="Perl,翻訳,モジュール">
     [% IF top_page %]
-    <link rel="alternate" type="application/rss+xml" title="perldoc.jp 最近の更新" href="http://perldoc.jp/static/rss/recent.rss" />
+    <link rel="alternate" type="application/rss+xml" title="perldoc.jp 最近の更新" href="https://perldoc.jp/static/rss/recent.rss" />
     [% END %]
     <link href="/static/css/screen.css" media="screen, projection" rel="stylesheet" type="text/css" />
     [% IF diff_page %]
@@ -34,7 +34,7 @@
 
         (function() {
             var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-            ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+            ga.src = 'https://ssl.google-analytics.com/ga.js';
             var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
         })();
     </script>
@@ -70,7 +70,7 @@
             <div id="content">[% content %]</div>
         </div>
         <div class="footer span-24 last">
-            Powered by Amon2, <a href="https://github.com/perldoc-jp/translation">翻訳</a>, <a href="https://github.com/perldoc-jp/perldoc.jp">サイト</a>. Operated by <a href="http://japan.perlassociation.org">Japan Perl Association</a>
+            Powered by Amon2, <a href="https://github.com/perldoc-jp/translation">翻訳</a>, <a href="https://github.com/perldoc-jp/perldoc.jp">サイト</a>. Operated by <a href="https://japan.perlassociation.org">Japan Perl Association</a>
         </div>
     </div>
 </body>

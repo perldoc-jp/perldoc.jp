@@ -2,7 +2,7 @@
 [% IF is_hash_ref(message) && message.package %]
    [% message.package %]はみつかりませんでした。
    <div>
-   <a href="http://metacpan.org/module/[% message.package %]">MetaCPANで見る</a>
+   <a href="https://metacpan.org/pod/[% message.package %]">MetaCPANで見る</a>
    </div>
 [% ELSIF is_hash_ref(message) && defined message.query %]
    「[% message.query %]」の検索結果が見つかりませんでした。

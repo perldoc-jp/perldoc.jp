@@ -89,7 +89,7 @@ sub create_rss {
     my $rss = XML::RSS->new(version => '2.0');
     $rss->channel(
         title          => 'perldoc.jp',
-        link           => 'http://perldoc.jp/',
+        link           => 'https://perldoc.jp/',
         language       => 'ja',
         description    => 'Perl の公式ドキュメント、モジュールを日本語翻訳したものを表示するサイトです。',
         copyright      => 'Japan Perl Association',
@@ -103,7 +103,7 @@ sub create_rss {
         my $datetime = Time::Piece->strptime($module->{date}, '%Y-%m-%d %H:%M:%S');
         $rss->add_item(
             title       => $module->{name},
-            link        => "http://perldoc.jp/" . $module->{path},
+            link        => "https://perldoc.jp/" . $module->{path},
             description => ($module->{in} ? "$module->{in}の" : '') . "$module->{name}" . ($module->{version} ? "($module->{version})": '') . "が、$module->{author} により commit されました。",
             pubDate     => PJP::M::Repository::format_rfc822_jst($datetime),
             );
