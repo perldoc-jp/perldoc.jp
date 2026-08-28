@@ -55,18 +55,69 @@ subtest 'pod2html' => sub {
     subtest 'HTMLタグが閉じられてるか' => sub {
         my $html = PJP::M::Pod->pod2html("@{[$c->assets_dir]}translation/docs/perl/5.12.1/perl.pod");
 
-        todo 'pod2html', sub {
-            fail 'HTMLタグが閉じられているかのテストが失敗している';
-        };
+        # 一覧に nobr は入れない。<nobr> は Pod::Simple::HTML が S<> に対して
+        # 出すもので、Pod::Simple::XHTML は版に関係なく出さないため、
+        # ok $open > 0 に必ず落ちる
+        my $testee = $html;
+        for my $tag (qw/div pre p h1 h2 code b a ul li i/) {
+            my ($open, $close) = (0, 0);
+            $testee =~ s/<$tag[^>]*>/$open++/gei;
+            $testee =~ s!</$tag[^>]*>!$close++!gei;
+            ok $open > 0, "$tag があり、";
+            ok $open == $close, '開始タグと終了タグの数が一致している';
+        }
+    };
 
-        # my $testee = $html;
-        # for my $tag (qw/div pre p h1 h2 code b a ul li nobr i/) {
-        #     my ($open, $close) = (0, 0);
-        #     $testee =~ s/<$tag[^>]*>/$open++/gei;
-        #     $testee =~ s!</$tag[^>]*>!$close++!gei;
-        #     ok $open > 0, "$tag があり、";
-        #     ok $open == $close, '開始タグと終了タグの数が一致している';
-        # }
+    # Pod::Simple::XHTML 3.29 以降、start_for が開いた <div class="original"> は
+    # emit されずに scratch へ滞留する。原文ブロックの先頭が scratch を代入で
+    # 上書きする要素 (verbatim / =over / =head) だと開きタグだけが消え、
+    # </div> が余って DOM が壊れる。lib/PJP/M/Pod.pm の start_for override が
+    # 3.28 と同じく開いた時点で流し切ることで防いでいる
+    my %original_shape = (
+        verbatim => "    my \$x = 1;\n",
+        over     => "=over 4\n\n=item foo\n\nbar\n\n=back\n",
+        head     => "=head2 Some Heading\n\nbody\n",
+    );
+
+    subtest '原文ブロックの先頭がどの要素でも div が閉じきる' => sub {
+        for my $name (sort keys %original_shape) {
+            subtest $name => sub {
+                my $pod = "=encoding utf-8\n\n=head1 NAME\n\nSample - $name\n\n"
+                        . "=begin original\n\n$original_shape{$name}\n=end original\n\n訳文。\n";
+                my $html = PJP::M::Pod->pod2html(\$pod);
+                my $open  = () = $html =~ /<div/g;
+                my $close = () = $html =~ m{</div>}g;
+                is $open, $close, '<div> と </div> の数が一致する';
+                like $html, qr{<div class="original">}, '原文ブロックの開きタグがある';
+            };
+        }
+    };
+
+    subtest '原文ブロックの先頭が見出しでも見出しのマーカーが漏れない' => sub {
+        # =head が先頭だと _end_head が滞留中の div ごと見出しテキストとして
+        # 取り込み、end_Document の TRANHEADSTART...TRANHEADEND の置換が改行を
+        # またげずに失敗してマーカーが本文に出る。div の数だけ見ると釣り合って
+        # しまうので、独立して確かめる。
+        # 見出しは必ず中身のあるものにすること — 空の =head1 は (.+?) が
+        # 空文字にマッチしない別の既知バグ (Net/Netrc.pod) を踏む
+        my $pod = "=encoding utf-8\n\n=head1 NAME\n\nSample - head\n\n"
+                . "=begin original\n\n$original_shape{head}\n=end original\n\n"
+                . "=head2 とある見出し\n\n訳文。\n";
+        my $html = PJP::M::Pod->pod2html(\$pod);
+        unlike $html, qr/TRANHEAD(?:START|END)/, 'マーカーが出力に残らない';
+        unlike $html, qr{<li><a href="[^"]*"><div}, '目次のリンク文字列に div が混ざらない';
+    };
+
+    subtest '=begin html は literal region のまま扱う' => sub {
+        # literal xhtml region では start_for が early return するので、
+        # 3.29 以降の挙動 (div を出さない) を変えない
+        my $pod = "=encoding utf-8\n\n=head1 NAME\n\nSample - html\n\n"
+                . "=begin html\n\n<b>raw</b>\n\n=end html\n\n訳文。\n";
+        my $html = PJP::M::Pod->pod2html(\$pod);
+        my $open  = () = $html =~ /<div/g;
+        my $close = () = $html =~ m{</div>}g;
+        is $open, $close, '<div> と </div> の数が一致する';
+        unlike $html, qr{<div class="html">}, 'literal region に div を足さない';
     };
 };
 
