@@ -110,6 +110,24 @@ sub get_latest_file_path {
         return $self;
     }
 
+    # Pod::Simple::XHTML 3.29 (2015-02) で start_for が emit しなくなり、開いた
+    # <div class="original"> が scratch に残るようになった。start_Verbatim や
+    # start_over_* / _end_head は scratch を代入で上書きするため、その div が
+    # 消えて </div> だけが残る (=head が先頭に来たときは div が見出しの中へ
+    # 紛れ込み、TRANHEADSTART マーカーの置換まで壊す)。CPAN 最新の 3.48 でも
+    # 直っていないので、3.28 (旧 VPS の perl 5.18.2) と同じく、開いた時点で
+    # 流し切る。
+    sub start_for {
+        my ($self, $flags) = @_;
+        $self->SUPER::start_for($flags);
+        return if $self->__in_literal_xhtml_region;
+        # 3.28 は ">" までしか積まなかった。ここで末尾の改行を落としておくと、
+        # end_Document の join("\n\n", ...) が同じ位置に改行を戻すので、
+        # 1 回で emit していた頃と出力がバイト単位で一致する
+        $self->{scratch} =~ s/\s+\z//;
+        $self->emit;
+    }
+
     # for google source code prettifier
     sub start_Verbatim {
         $_[0]{'scratch'} = '<pre class="prettyprint lang-perl"><code>';
