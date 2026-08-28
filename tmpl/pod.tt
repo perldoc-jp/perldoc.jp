@@ -15,7 +15,7 @@
         <div class="PodInfo">
             <div class="PodVersion">[% PodVersion %]</div>
         [% IF package && ! is_article  %]
-            <div class="CheckAtCPAN"><a href="http://search.cpan.org/perldoc?[% package %]">CPANで確認する</a></div>
+            <div class="CheckAtCPAN"><a href="https://metacpan.org/pod/[% package %]">CPANで確認する</a></div>
         [% END %]
         [% IF ! is_article AND others AND others.size() > 0 %]
             <div class="OtherVersions">

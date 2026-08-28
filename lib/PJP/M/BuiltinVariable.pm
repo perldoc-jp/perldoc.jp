@@ -94,7 +94,7 @@ sub generate {
 
 	push @variables, $name;
         my $pod = join("", "=encoding $encoding\n\n=over 4\n\n", @dynamic_pod, "=back\n");
-        $pod =~ s!L</([a-z]+)>!L<$1|http://perldoc.jp/variable/$1>!g;
+        $pod =~ s!L</([a-z]+)>!L<$1|https://perldoc.jp/variable/$1>!g;
         my $html = PJP::M::Pod->pod2html(\$pod);
 	$c->dbh_master->insert(
 			       var => {
