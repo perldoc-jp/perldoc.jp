@@ -136,7 +136,7 @@ jobs:
           type=gha,scope=runtime-pr
 
     - name: Smoke test image
-      run: ./script/smoke-test.sh perldocjp-runtime:latest
+      run: ./script/smoke-test.pl perldocjp-runtime:latest
 
   # Worker は master への push で無条件に本番デプロイされる
   # (deploy-worker.yml) ため、PR 段階のゲートをここに置く。数十 ms で
