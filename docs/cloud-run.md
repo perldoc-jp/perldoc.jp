@@ -838,7 +838,11 @@ TTL の所有境界:
 - 内側のエッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 1 時間)。
 - 再デプロイ後の残留は最悪で外側 + 内側の和 (内側の失効直前の応答で外側が
   充填された場合)。「最大 2 時間」の予算 (構成の概要) を保つよう二層の和を
-  7200 秒以内にする。片方の TTL だけを変えないこと。
+  7200 秒以内にする。片方の TTL だけを変えないこと。この予算は平常時のもの:
+  Worker やオリジンの障害時は、外側が失効済みの応答を stale として配ることが
+  ある (`Cf-Cache-Status: STALE` / `UPDATING`)。その間は 2 時間を超えた
+  古い応答が出得るが、エラーを返すよりよいので許容し、予算を厳密には
+  適用しない。
 
 内側のキャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
 method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う。
@@ -891,7 +895,8 @@ Worker 内から呼ぶ purge API (`ctx.cache.purge`) があるが使っていな
 - `Browser Cache TTL`: **Respect Existing Headers**。固定値だと app.psgi の
   `Cache-Control` を上書きする (既定は 4 時間)
 - `Caching Level`: Standard
-- `Development Mode`: OFF (ON の間はキャッシュされない)
+- `Development Mode`: OFF (ON の間、内側 = ゾーンのキャッシュがされない。
+  外側の Workers Cache は zoneless なので影響を受けない)
 - Page Rules は使わない (Worker の `cf` 設定と重なる)
 - Rules → Settings の `Normalize incoming URLs`: **On**、type は `RFC-3986`
   (どちらも既定値)。`%70erl` → `perl` のような unreserved エンコードを
@@ -903,10 +908,12 @@ Worker 内から呼ぶ purge API (`ctx.cache.purge`) があるが使っていな
 (HIT / MISS / BYPASS / DYNAMIC など。HIT では Worker が起動していない)。
 `DYNAMIC` のままのときに疑う順は (1) wrangler.jsonc の `cache.enabled` が
 デプロイに入っていない (2) Worker が `Cloudflare-CDN-Cache-Control` を
-付けていない (デプロイ漏れ) (3) Development Mode が ON。外側を無効にして
-切り分けるときは内側の層が同じ症状を出し得るので、(4) Worker の `cf` 設定の
-デプロイ漏れ (5) compatibility date が古く Cache Rules 側が優先されている、
-も従来どおり残る。`MISS` → `HIT` の確認手順は「動作確認」のとおり。
+付けていない (デプロイ漏れ)。Workers Cache は zoneless なので、Development
+Mode を含むゾーン設定は外側の説明にならない。内側の層を調べるとき
+(外側を無効にした切り分けなど) は、(3) Development Mode が ON (4) Worker の
+`cf` 設定のデプロイ漏れ (5) compatibility date が古く Cache Rules 側が
+優先されている、が従来どおり残る。`MISS` → `HIT` の確認手順は
+「動作確認」のとおり。
 
 #### SSL/TLS
 
@@ -1041,8 +1048,9 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    - `/chomp` の `Location` に run.app が出る → Worker が `X-Forwarded-Host` を
      付けていない
    - 200 が `DYNAMIC` のまま → wrangler.jsonc の `cache.enabled` か
-     `Cloudflare-CDN-Cache-Control` がデプロイに入っていない / Development
-     Mode が ON / (内側の層は) Worker の `cf` 設定の漏れ・compatibility date
+     `Cloudflare-CDN-Cache-Control` がデプロイに入っていない (Development
+     Mode は zoneless な外側には効かない) / (内側の層は) Development Mode が
+     ON・Worker の `cf` 設定の漏れ・compatibility date
      (「エッジキャッシュ」節の切り分け順)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
      古い (Worker や Cloudflare の設定ではない)
