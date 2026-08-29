@@ -3,12 +3,14 @@ name: Renovate
 # 依存の自動更新。更新の内容と対象は .github/renovate.json5、セットアップ手順と
 # 権限の設計は docs/dependency-updates.md を参照。
 #
-# 実行の契機はこの cron だけ (Renovate 側に schedule は置かない)。毎月 1 日
-# 21:00 UTC = 2 日 6:00 JST。deploy.yml の日次ビルド (19:00 UTC) と重ねると、
-# Renovate が作った PR の CI と本番ビルドが同じ時間帯に並ぶのでずらしている
+# workflow は日次で回す。この cron が決めるのは「Renovate を起動する頻度」だけで、
+# 通常の更新 PR を月 1 回に絞るのは Renovate 側の schedule (renovate.json5) の
+# 役目。日次にしているのは vulnerabilityAlerts の PR が schedule を無視して作られ
+# るためで、脆弱性の修正を翌月まで待たせない。
+# 21:00 UTC = 6:00 JST。deploy.yml の日次ビルド (19:00 UTC) とはずらしている
 on:
   schedule:
-    - cron: '0 21 1 * *'
+    - cron: '0 21 * * *'
   # 設定を変えた後の動作確認と、cron を待たずに回したいときに使う。
   # このジョブは contents: write を持つ App token を作るので、workflow_dispatch
   # は update-cpanfile-snapshot.yml が避けたのと同じ「Actions: write しか持たない
@@ -54,12 +56,15 @@ jobs:
           # workflows: .github/workflows/ 配下の action 版の書き換え
           # checks / statuses: 既存ブランチの CI 状態の読み取りと、
           #   lock file 更新に失敗したときの renovate/artifacts ステータス
+          # vulnerability-alerts: Dependabot alerts の読み取り
+          #   (vulnerabilityAlerts の脆弱性修正 PR の入力)
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
           permission-workflows: write
           permission-checks: write
           permission-statuses: write
+          permission-vulnerability-alerts: read
 
       # リポジトリの checkout は不要 (Renovate は自分で clone し、設定も
       # clone 先の .github/renovate.json5 から読む)
@@ -67,10 +72,17 @@ jobs:
         uses: renovatebot/github-action@5402b206248e5a8c8427a15102702eb9c1793efc # v46.2.4
         with:
           token: ${{ steps.app-token.outputs.token }}
-          # action の既定値は floating tag ('44') で、同じ SHA のまま中身が
-          # 変わる。ここで完全な版に固定し、この行自体は renovate.json5 の
-          # customManagers が (他の依存と同じ 7 日待ちを経て) 更新する
-          renovate-version: 44.50.3
+          # 実際に走るのはこの action ではなく ghcr.io/renovatebot/renovate の
+          # コンテナで、そこへ contents / workflows の write を持つ App token を
+          # 渡す。action の既定値は floating tag ('44') なので、タグではなく
+          # digest まで固定する (タグは可変で、同じ文字列のまま中身が変わる)。
+          #
+          # この行は Renovate 自身には更新させず手で上げる。GHCR は公開日を
+          # 返さないため 7 日待ちの判定ができず、docker datasource で自動更新
+          # させると待ち時間なしで上がってしまうため。更新手順は
+          # docs/dependency-updates.md の「Renovate 自身の版を上げる」を参照
+          # (2026-08-21 公開)
+          renovate-version: 44.39.1@sha256:00699dedb6d44bf645e3f0a98729bcdb660a660f1952a53d9592d3a127088b11
         env:
           # autodiscover は使わず対象を明示する。token が 1 リポジトリに
           # 限定されているのと二重の歯止めになる
