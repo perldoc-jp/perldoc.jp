@@ -37,19 +37,24 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   subtree merge で寄せ集めた経緯により、merge をまたぐ path の履歴が merge
   コミットに簡約されて翻訳者でなく merge 実行者が観測されてしまうため。
 - 公開レスポンスは再デプロイまで変わらない (認証・セッション・個人化・時刻
-  依存の生成が無い) ため、Worker が全パスの GET/HEAD の status 200 を
-  Cloudflare エッジで 2 時間キャッシュする (`cf.cacheEverything` +
-  `cacheTtlByStatus`。§10 の Cache Rules 節)。再デプロイ後に旧レスポンスが
-  最大 2 時間残ることは許容する。デプロイ時 purge は行わない。
+  依存の生成が無い) ため、全パスの GET/HEAD の status 200 をエッジの二層で
+  キャッシュする (§10 のエッジキャッシュ節)。外側は Workers Cache (Worker の
+  手前。HIT では Worker 自体が起動しない)、内側は Worker の `fetch()` の
+  `cf.cacheEverything` + `cacheTtlByStatus`。TTL は 1 時間 + 1 時間に割って
+  いて、再デプロイ後に旧レスポンスが残る時間は最悪で二層の和 = 最大
+  2 時間。これは従来 (単層 2 時間) から変えずに許容する。デプロイ時 purge は
+  行わない。
 - 翻訳の diff (`/docs/*/diff`) は GNU diff の外部コマンド化 (`PJP::HTMLDiff`)
   により perlfunc.pod 級の最悪ケースでも数秒以内に収まり、同じ比較の反復は
   エッジキャッシュに吸収される。diff は匿名入力で到達できる最も高コストな
   処理なので、Worker が `target` クエリを検証・正規化して、無関係なクエリ・
   等価なエンコード・重複 `target`・ヘッダー変化によるキャッシュキーの分割を
-  防ぐ (worker/src/index.js)。それでも異なる比較の初回計算、POP ごとの
-  コールド MISS、eviction 後の再計算は Cloud Run に届くため、連続アクセス
-  対策として Cloudflare のレートリミットルールの設定は引き続き推奨する
-  (キャッシュはレートリミットやオリジン認証の代替ではない)。
+  防ぐ (worker/src/index.js)。外側の Workers Cache は同一キーの同時 MISS を
+  データセンター内で 1 回の Worker 起動に集約する (request collapsing) ため、
+  コールドな diff への同時アクセスも束ねられる。それでも異なる比較の初回計算、
+  POP ごとのコールド MISS、eviction 後の再計算は Cloud Run に届くため、
+  連続アクセス対策として Cloudflare のレートリミットルールの設定は引き続き
+  推奨する (キャッシュはレートリミットやオリジン認証の代替ではない)。
   ただし `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は
   公開のままであり、Cloudflare を経由しない直アクセスにはエッジキャッシュも
   レートリミットも効かない。直アクセス側の実質的な上限装置は max-instances
@@ -777,36 +782,65 @@ Worker の通常変数は `wrangler.jsonc` が、secret (ORIGIN) は `scripts/de
 Worker の Custom Domain は apex だけなので、www/new は Worker を起動せず
 Redirect Rules だけで処理される。
 
-#### Cache Rules とエッジキャッシュ
+#### エッジキャッシュ (Workers Cache と fetch の cf 設定)
 
-エッジのキャッシュポリシーは Worker が所有する。Worker は全パスの GET/HEAD の
-サブリクエストに
+エッジのキャッシュポリシーは Worker が所有し、二層で構成する
+(worker/src/index.js の `WORKERS_CACHE_TTL` / `ORIGIN_CACHE_TTL`):
 
-```js
-cf: {
-  cacheEverything: true,
-  cacheTtlByStatus: { "200": 7200, "201-599": -1 },
-}
-```
+- **外側: Workers Cache** (<https://developers.cloudflare.com/workers/cache/>)。
+  wrangler.jsonc の `cache.enabled` で有効化する、Worker の手前のキャッシュ層。
+  HIT では Worker 自体が起動しない。保持の可否と TTL は Worker が全レスポンスへ
+  明示する `Cloudflare-CDN-Cache-Control` ヘッダーで制御し、GET/HEAD の 200 は
+  `max-age=3600`、それ以外は `no-store` を付ける。**無指定はオプトアウトに
+  ならない** — RFC 9111 のヒューリスティック (404 も 180 秒保持など) が適用
+  されるため、`cache.enabled` を残したままヘッダー側だけを消してはならない。
+  このヘッダーはエッジで消費されクライアントへは届かない。同一キーの同時
+  MISS はデータセンター内で 1 回の Worker 起動に集約される (request
+  collapsing)。キャッシュは Worker 単位かつ Worker の version 単位
+  (`cross_version_cache` は既定の false) なので、Worker のデプロイごとに空から
+  始まる。Cloud Run 側のデプロイでは消えない。
+- **内側: `fetch()` の cf 設定**。Worker は全パスの GET/HEAD のサブリクエストに
 
-を付けて Cloud Run へ `fetch()` する (worker/src/index.js)。status 200 だけが
-2 時間エッジに残り、404 / 503 / 3xx と Worker 自身の 400 / 502 は保存されない
-(負数は「保存しない」の意味。`0` は即時失効なので使わない)。ダッシュボードの
-Cache Rules に同じルールを重ねない。Worker の `cf` 設定は Cache Rules や
-Page Rules より優先される (この優先は compatibility date が
-`request_cf_overrides_cache_rules` の既定有効日 2025-04-02 以降であることが
-前提。wrangler.jsonc は 2026-07-25)。
+  ```js
+  cf: {
+    cacheEverything: true,
+    cacheTtlByStatus: { "200": 3600, "201-599": -1 },
+  }
+  ```
+
+  を付けて Cloud Run へ `fetch()` する。status 200 だけが 1 時間エッジに残り、
+  404 / 503 / 3xx と Worker 自身の 400 / 502 は保存されない (負数は「保存
+  しない」の意味。`0` は即時失効なので使わない)。
+
+役割分担: 外側は性能最適化 (HIT で Worker の起動と CPU を省き、同時 MISS を
+束ねる)、内側はオリジン保護の backstop。外側のキーにはクライアントが自由に
+変えられるヘッダー (後述) が含まれるためキー分割で MISS を強制できるが、
+そうして Worker まで届いた変種も、内側では Worker が正規化した上流 URL の
+キーに寄って HIT する。**外側があるからといって内側を外してはならない**。
+
+ダッシュボードの Cache Rules に同じルールを重ねない。Workers Cache には
+ゾーンの Cache Rules / Page Rules / cache level 設定がそもそも一切適用されず、
+内側の `cf` 設定も Cache Rules や Page Rules より優先される (内側の優先は
+compatibility date が `request_cf_overrides_cache_rules` の既定有効日
+2025-04-02 以降であることが前提。wrangler.jsonc は 2026-07-25)。
 
 TTL の所有境界:
 
 - ブラウザー向け TTL は app.psgi が付ける `Cache-Control` が唯一の情報源
   (`/static/docs.json` と `/static/rss/` は 2 時間、それ以外の `/static/*` と
   `/favicon.ico` は 4 時間。動的 HTML には付けない)。Worker はレスポンスへ
-  `Cache-Control` を足さない。
-- エッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 2 時間)。
-  静的ファイルは「ブラウザー 4 時間、エッジ 2 時間」の二層になる。
+  `Cache-Control` を足さない (`Cloudflare-CDN-Cache-Control` はエッジ専用で、
+  クライアントへは届かない)。
+- 外側のエッジ TTL は Worker が付ける `Cloudflare-CDN-Cache-Control` が唯一の
+  情報源 (全 200 で 1 時間)。オリジンの `Cache-Control` より優先され、
+  オリジンが誤って `Cloudflare-CDN-Cache-Control` を返しても Worker が
+  上書きする。
+- 内側のエッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 1 時間)。
+- 再デプロイ後の残留は最悪で外側 + 内側の和 (内側の失効直前の応答で外側が
+  充填された場合)。「最大 2 時間」の予算 (構成の概要) を保つよう二層の和を
+  7200 秒以内にする。片方の TTL だけを変えないこと。
 
-キャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
+内側のキャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
 method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う。
 `cf.cacheKey` は Enterprise 限定なので使わない。この前提で:
 
@@ -825,15 +859,32 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
   `Authorization` など) は、キャッシュ対象の GET/HEAD では Worker が上流へ
   渡さない。`X-Forwarded-Host` は Worker が信頼値で確定させるため、同じ
   run.app を叩く本番と staging のキャッシュはホスト名ごとに分かれる。
-- キャッシュは上流サブリクエストの run.app URL を基準に保持されるため、
-  perldoc.jp の URL からの単一ファイル purge は期待できない。デプロイ時
-  purge も行わず、2 時間の自然失効を前提にする。
+
+外側 (Workers Cache) のキャッシュキーは Cloudflare が固定で決める:
+path + クエリ (パラメーターの順序も区別)、Worker の version、それに
+method override 系・URL rewrite 系・forwarding 系のリクエストヘッダー。
+ホスト名はキーに**含まれない**が、本番と staging は別 Worker
+(perldoc-jp / perldoc-jp-staging) で、キャッシュ自体が Worker 単位に
+分かれているため混ざらない。diff のクエリ正規化は Worker の中の処理なので
+外側キーには効かず、等価表現の変種は外側では別キーになる — それらは
+Worker を起動させるだけで、正規化後の内側キーへ寄って HIT するため
+Cloud Run には届かない (Worker の起動は現状の全リクエストと同じ費用)。
+
+purge について: 内側は上流サブリクエストの run.app URL を基準に保持される
+ため、perldoc.jp の URL からの単一ファイル purge は期待できない。外側には
+Worker 内から呼ぶ purge API (`ctx.cache.purge`) があるが使っていない
+(呼び出し経路を作ること自体が新しい入口になる)。どちらもデプロイ時 purge は
+行わず、二層合計で最大 2 時間の自然失効を前提にする。Worker のデプロイは
+外側を version 分離で空にするが、配信データの更新は Cloud Run 側の
+デプロイなのでどちらの層も消さない。
 
 **将来、認証・セッション・Cookie・ユーザー別表示・時刻依存のルートを追加する
-場合は、同じ変更で Worker がそのルートへ `cf` のキャッシュ設定を付けない
-ようにすること。** `cacheEverything` と明示的な TTL の組はオリジンの
-`Set-Cookie` や `Cache-Control: private` より強く働き得るため、アプリ側の
-レスポンスヘッダーだけでは共有キャッシュからの opt-out にならない。
+場合は、同じ変更で Worker がそのルートへ (1) `cf` のキャッシュ設定を付けない
+(2) `Cloudflare-CDN-Cache-Control: no-store` を付ける、の両方を行うこと。**
+内側は `cacheEverything` と明示的な TTL の組がオリジンの `Set-Cookie` や
+`Cache-Control: private` より強く働き得るため、アプリ側のレスポンス
+ヘッダーだけでは共有キャッシュからの opt-out にならない。外側は
+`Set-Cookie` 付き応答を保存しないが、これに頼らず明示する。
 
 関連するゾーン設定 (Caching → Configuration):
 
@@ -848,10 +899,14 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
   パスを 400 で止めるため、この設定はキャッシュ回避防止の必須条件ではなく、
   等価な URL 表現を寄せて 400 を減らすための互換性設定
 
-デプロイ後に `cf-cache-status` が `DYNAMIC` のままのときに疑う順は
-(1) Development Mode が ON (2) Worker の `cf` 設定が bundle に入っていない
-(デプロイ漏れ) (3) compatibility date が古く Cache Rules 側が優先されている。
-`MISS` → `HIT` の確認手順は「動作確認」のとおり。
+デプロイ後の `cf-cache-status` は外側 (Workers Cache) の状態を返す
+(HIT / MISS / BYPASS / DYNAMIC など。HIT では Worker が起動していない)。
+`DYNAMIC` のままのときに疑う順は (1) wrangler.jsonc の `cache.enabled` が
+デプロイに入っていない (2) Worker が `Cloudflare-CDN-Cache-Control` を
+付けていない (デプロイ漏れ) (3) Development Mode が ON。外側を無効にして
+切り分けるときは内側の層が同じ症状を出し得るので、(4) Worker の `cf` 設定の
+デプロイ漏れ (5) compatibility date が古く Cache Rules 側が優先されている、
+も従来どおり残る。`MISS` → `HIT` の確認手順は「動作確認」のとおり。
 
 #### SSL/TLS
 
@@ -905,12 +960,18 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    curl -sS -o /dev/null -D - "$BASE/" | grep -i '^cache-control:' \
      || echo 'HTML に Cache-Control なし (期待どおり)'
 
-   # 全パスの 200 が 2 回目で HIT になること (HTML も静的も Worker の cf で入る)。
-   # HIT では Age が現れ、時間経過で増える
+   # 全パスの 200 が 2 回目で HIT になること (2 回目の HIT は外側の
+   # Workers Cache で、Worker は起動していない)。HIT では Age が現れ、
+   # 時間経過で増える
    for path in / /docs/perl/perl.pod /static/docs.json /static/css/style.css; do
      curl -sS -o /dev/null -D - "$BASE$path" | grep -i '^cf-cache-status:'
      curl -sS -o /dev/null -D - "$BASE$path" | grep -iE '^(cf-cache-status|age):'
    done
+
+   # エッジ制御ヘッダーがクライアントへ漏れないこと (エッジで消費される)。
+   # 出てきたら Workers Cache が効いていない構成を疑う
+   curl -sS -o /dev/null -D - "$BASE/" | grep -i '^cloudflare-cdn-cache-control:' \
+     || echo 'Cloudflare-CDN-Cache-Control なし (期待どおり)'
 
    # diff も 2 回目が HIT。GET で充填したキャッシュは HEAD でも HIT になり
    # 本文を返さない
@@ -919,7 +980,10 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    curl -sS -o /dev/null -D - "$DIFF_URL" | grep -iE '^(cf-cache-status|age):'
    curl -sS -I "$DIFF_URL" -o /dev/null -D - | grep -iE '^(cf-cache-status|age):'
 
-   # diff の未知パラメーターはキーから除かれ、同じキャッシュへ寄る (HIT のまま)。
+   # diff の未知パラメーターは Worker がキーから除き、内側では同じキャッシュへ
+   # 寄る。外側 (Workers Cache) のキーはクエリをそのまま含むため、この変種は
+   # 外側では MISS になり得る — その場合も Worker 経由で内側の HIT に寄り、
+   # Cloud Run には届かない (Cloud Run ログ確認まで見れば合格)。
    # 一般ルートのクエリ変種が別キー (MISS) になるのは仕様
    curl -sS -o /dev/null -D - "$DIFF_URL&nonce=1" | grep -iE '^(cf-cache-status|age):'
 
@@ -927,8 +991,11 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    curl -sS -o /dev/null -w '%{http_code}\n' \
      "$DIFF_URL&target=perl%2F5.36.0%2Fperl.pod"
 
-   # キー分割・再検証・認証ヘッダーを送っても diff の再計算を強制できない
-   # (HIT のまま)
+   # キー分割・再検証・認証ヘッダーを送っても diff の再計算を強制できない。
+   # 外側 (Workers Cache) は Authorization などで BYPASS / MISS になり得るが、
+   # その場合も Worker がヘッダーを一掃した内側で HIT し、Cloud Run には
+   # 届かない。ここの表示が HIT 以外でも、後述の Cloud Run ログ確認で
+   # diff 計算が発生していないことまで見れば合格
    curl -sS -o /dev/null -D - \
      -H 'Origin: https://attacker.example' \
      -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
@@ -973,9 +1040,10 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    症状から切り分ける:
    - `/chomp` の `Location` に run.app が出る → Worker が `X-Forwarded-Host` を
      付けていない
-   - 200 が `DYNAMIC` のまま → Development Mode が ON / Worker の `cf` 設定が
-     bundle に入っていない / compatibility date (「Cache Rules とエッジ
-     キャッシュ」の切り分け順)
+   - 200 が `DYNAMIC` のまま → wrangler.jsonc の `cache.enabled` か
+     `Cloudflare-CDN-Cache-Control` がデプロイに入っていない / Development
+     Mode が ON / (内側の層は) Worker の `cf` 設定の漏れ・compatibility date
+     (「エッジキャッシュ」節の切り分け順)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
      古い (Worker や Cloudflare の設定ではない)
 4. cutover 後に片付ける (残すと staging.perldoc.jp という公開入口と Workers の
@@ -1021,9 +1089,9 @@ cutover 時に確かめる。
 6. 確認: apex が 200、`/chomp` の `Location` が perldoc.jp を指すこと、
    `www.perldoc.jp` が 301 でクエリを保持すること、`/static/docs.json` と
    diff の `cf-cache-status`。「動作確認」の curl を `BASE=https://perldoc.jp` で
-   回すのが早い。キャッシュキーは Worker が確定する `X-Forwarded-Host` を含む
-   ため、staging で温めたキャッシュは本番とは別で、cutover 直後の本番は各キー
-   初回 MISS から始まる
+   回すのが早い。staging で温めたキャッシュは本番とは別 (外側は Worker 単位の
+   キャッシュで別 Worker、内側はキーに含まれる `X-Forwarded-Host` を Worker が
+   確定する) ため、cutover 直後の本番は各キー初回 MISS から始まる
 7. staging の Worker を消す
 
 ロールバックは Custom Domain を外して元の apex レコードに戻す。
@@ -1032,8 +1100,9 @@ cutover 時に確かめる。
 
 `--allow-unauthenticated` のため `<service>.run.app` は公開のままで、Worker を
 経由しないアクセスにはキャッシュもレートリミットも効かない (「構成の概要」のとおり
-実質的な上限装置は max-instances)。エッジキャッシュは Worker の `fetch()` に
-付く設定なので、この経路では diff を含む全パスが毎回オリジンで計算される。
+実質的な上限装置は max-instances)。エッジキャッシュは二層とも Worker に
+属する (外側は Worker の手前、内側は Worker の `fetch()` に付く設定) ため、
+この経路では diff を含む全パスが毎回オリジンで計算される。
 これは受容している残存リスクの一部である。
 
 `X-Forwarded-Host` を信頼する構成なので、直アクセスでは `Location` のホストを
@@ -1061,9 +1130,11 @@ Custom Domain (perldoc.jp / staging.perldoc.jp) だけにしている。
 
 Workers Free は 10 万リクエスト/日で、**Cloudflare のキャッシュにヒットした
 リクエストも 1 件として数える**。超える場合は Workers Paid (月 $5, 1000 万
-リクエスト込み、超過 100 万あたり $0.30)。エッジキャッシュ (§10 の Cache
-Rules 節) はこの枠を減らさない — キャッシュ HIT でも Worker は毎回実行される。
-減るのは Cloud Run 側のリクエスト数と CPU 消費だけ。
+リクエスト込み、超過 100 万あたり $0.30)。エッジキャッシュ (§10 の
+エッジキャッシュ節) はこの枠を減らさない — 外側 (Workers Cache) の HIT で
+Worker が起動しないリクエストも 1 件として数え、追加課金も無い (HIT では
+CPU 時間が課金されないだけ)。減るのは Worker の実行回数・CPU 消費と、
+Cloud Run 側のリクエスト数・CPU 消費。
 
 Worker を挟まない構成にする場合の選択肢:
 

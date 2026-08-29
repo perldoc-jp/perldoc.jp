@@ -21,6 +21,16 @@
     }
   },
 
+  // Workers Cache (Worker の手前のキャッシュ層。docs/cloud-run.md §10 の
+  // エッジキャッシュ節)。HIT ではこの Worker 自体が起動しない。保持の可否と
+  // TTL は src/index.js が全レスポンスへ明示する Cloudflare-CDN-Cache-Control
+  // で制御する。ここを有効にしたままヘッダー側を消すと、RFC 9111 の
+  // ヒューリスティック (404 も 180 秒保持など) で意図しない保持が始まる。
+  // cross_version_cache は既定 (false) のまま = Worker のデプロイごとに空の
+  // キャッシュから始まる。デプロイは稀で、コールドスタートは内側の fetch
+  // キャッシュが吸収する
+  "cache": { "enabled": true },
+
   // ORIGIN (Cloud Run のサービス URL) は §7 の分類で機密 locator として扱う。
   // 平文の vars ではなく secret として scripts/deploy.sh が --secrets-file で
   // 毎デプロイ注入する。required 宣言により、secret の無い本番デプロイは
@@ -47,7 +57,10 @@
         "NOINDEX": "1"
       },
       // secrets.required は継承に頼らず staging にも明示する
-      "secrets": { "required": ["ORIGIN"] }
+      "secrets": { "required": ["ORIGIN"] },
+      // cache も同様に明示する。staging は cutover 前の検証環境 (§10 の
+      // 動作確認) なので、本番と同じ二層キャッシュで動かす
+      "cache": { "enabled": true }
     }
   }
 }
