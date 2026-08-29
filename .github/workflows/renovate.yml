@@ -1,0 +1,80 @@
+name: Renovate
+
+# 依存の自動更新。更新の内容と対象は .github/renovate.json5、セットアップ手順と
+# 権限の設計は docs/dependency-updates.md を参照。
+#
+# 実行の契機はこの cron だけ (Renovate 側に schedule は置かない)。毎月 1 日
+# 21:00 UTC = 2 日 6:00 JST。deploy.yml の日次ビルド (19:00 UTC) と重ねると、
+# Renovate が作った PR の CI と本番ビルドが同じ時間帯に並ぶのでずらしている
+on:
+  schedule:
+    - cron: '0 21 1 * *'
+  # 設定を変えた後の動作確認と、cron を待たずに回したいときに使う。
+  # このジョブは contents: write を持つ App token を作るので、workflow_dispatch
+  # は update-cpanfile-snapshot.yml が避けたのと同じ「Actions: write しか持たない
+  # 主体がリポジトリへの書き込みを起こせる経路」ではある。ただし起こせるのは
+  # Renovate の実行だけで、書き込み先は renovate/* ブランチと PR、Dependency
+  # Dashboard の issue に限られる (automerge は使っていないので master へは
+  # 入らない)。ref を master 以外にしても environment の branch policy により
+  # private key を読めない
+  workflow_dispatch:
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+# 組み込み GITHUB_TOKEN は使わないので全権限を落とす (docs/cloud-run.md §9 と同じ)
+permissions: {}
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # branch policy を master のみにした environment に置く。schedule と
+    # workflow_dispatch はどちらも任意の ref を選べるため、これが「App の
+    # private key を読めるのは master の renovate.yml だけ」の境界になる
+    environment: renovate
+
+    steps:
+      # private key を読む外部 action なのでコミット SHA にピン留めする。
+      # 更新時は SHA とコメントのバージョンを両方書き換えること
+      - name: Create installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RENOVATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: perldoc-jp
+          repositories: perldoc.jp
+          # App に付けた権限のうち Renovate が実際に使うものだけを token に載せる
+          # (App 側の installation 権限は docs/dependency-updates.md を参照)。
+          # contents: ブランチの作成と push
+          # pull-requests: PR の作成・更新・close
+          # issues: Dependency Dashboard (7 日待ちで抑止中の更新の可視化)
+          # workflows: .github/workflows/ 配下の action 版の書き換え
+          # checks / statuses: 既存ブランチの CI 状態の読み取りと、
+          #   lock file 更新に失敗したときの renovate/artifacts ステータス
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-workflows: write
+          permission-checks: write
+          permission-statuses: write
+
+      # リポジトリの checkout は不要 (Renovate は自分で clone し、設定も
+      # clone 先の .github/renovate.json5 から読む)
+      - name: Run Renovate
+        uses: renovatebot/github-action@5402b206248e5a8c8427a15102702eb9c1793efc # v46.2.4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          # action の既定値は floating tag ('44') で、同じ SHA のまま中身が
+          # 変わる。ここで完全な版に固定し、この行自体は renovate.json5 の
+          # customManagers が (他の依存と同じ 7 日待ちを経て) 更新する
+          renovate-version: 44.50.3
+        env:
+          # autodiscover は使わず対象を明示する。token が 1 リポジトリに
+          # 限定されているのと二重の歯止めになる
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # 設定ファイルが消えたときに onboarding PR を作らせない
+          # (設定の無いリポジトリは何もせず終了する)
+          RENOVATE_ONBOARDING: 'false'
