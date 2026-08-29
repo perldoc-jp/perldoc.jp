@@ -839,10 +839,19 @@ TTL の所有境界:
 - 再デプロイ後の残留は最悪で外側 + 内側の和 (内側の失効直前の応答で外側が
   充填された場合)。「最大 2 時間」の予算 (構成の概要) を保つよう二層の和を
   7200 秒以内にする。片方の TTL だけを変えないこと。この予算は平常時のもの:
-  Worker やオリジンの障害時は、外側が失効済みの応答を stale として配ることが
-  ある (`Cf-Cache-Status: STALE` / `UPDATING`)。その間は 2 時間を超えた
-  古い応答が出得るが、エラーを返すよりよいので許容し、予算を厳密には
-  適用しない。
+  Worker のエラー時は、外側が失効済みの保存応答を `Cf-Cache-Status: STALE`
+  として配る。ヘッダーに `stale-if-error` を指定していないため、この stale
+  配信に時間の上限は**無く**、エントリが purge・eviction されるか Worker が
+  回復するまで続き得る。エラーを返すよりよいのでこれを許容する
+  (`UPDATING` は `stale-while-revalidate` を明示した場合だけの状態で、
+  現在のヘッダーでは発生しない)。裏返しとして、公開 URL が 200 を返し
+  続けることは障害が無いことの証明にならない — 障害の検知は
+  `Cf-Cache-Status: STALE` の有無と Workers Logs (proxy failed の
+  console.error) で行い、古い応答を止める必要があれば purge する
+  (「purge について」のとおり外側の purge API は未配線なので、緊急時は
+  Worker の再デプロイによる version 分離が実質の purge になる)。
+  鮮度に有限の上限が必要になったら、`stale-if-error=N` を明示して
+  その値をテストで固定する。
 
 内側のキャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
 method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う。
@@ -1178,7 +1187,9 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
 デプロイ後に古い docs.json が残る時間は、ブラウザーは app.psgi が付ける
-`Cache-Control` (2 時間)、エッジは Worker の `cf` 設定 (2 時間) で決まる (§10)。
+`Cache-Control` (2 時間) で決まる。エッジでは、平常時は外側の Workers Cache
+(1 時間) と内側の `fetch()` キャッシュ (1 時間) の二層合計で最大 2 時間 (§10)。
+障害時の stale 配信はこの上限に含めない (§10 の TTL の所有境界)。
 旧構成の更新間隔は 6 時間毎だった。
 
 ## 運用
