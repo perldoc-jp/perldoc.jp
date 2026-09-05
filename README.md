@@ -22,6 +22,11 @@ Google Cloud Run 上で動作しています。翻訳データや一覧情報は
 
 修正したい点があれば、プルリクエストを送ってください。
 
+依存モジュールの更新は Renovate が自動でプルリクエストを作ります。
+Renovate 自体は日次で動き、通常の更新のプルリクエストは月 1 回 (公開から 7 日以上
+経過した版のみ)、脆弱性の修正は検知しだい出ます。
+対象と設定は [docs/dependency-updates.md](docs/dependency-updates.md) を参照してください。
+
 # SETUP
 
 ## Docker を利用する場合
