@@ -56,6 +56,10 @@ describe('実 workerd 上の Worker', () => {
     const res = await production.fetch('https://perldoc.jp/func/chomp');
     assert.equal(res.status, 200);
     assert.equal(await res.text(), 'origin body');
+    // 外側 (Workers Cache) を制御するヘッダーが bundle 後の実ランタイムでも
+    // 付くこと。エッジでの消費と HIT/MISS はローカルで観測できないため、
+    // ヘッダーの存在だけをここで見る
+    assert.equal(res.headers.get('Cloudflare-CDN-Cache-Control'), 'max-age=3600');
   });
 
   it('本番の設定では X-Robots-Tag を足さない', async () => {

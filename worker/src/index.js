@@ -22,7 +22,10 @@ export default {
       });
       return new Response('Bad Gateway\n', {
         status: 502,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Cloudflare-CDN-Cache-Control': 'no-store',
+        },
       });
     }
   },
@@ -38,7 +41,10 @@ async function proxy(request, env, url) {
     // 方針で ORIGIN・入力値・スタックトレースを含めない
     return new Response('Bad Request\n', {
       status: 400,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cloudflare-CDN-Cache-Control': 'no-store',
+      },
     });
   }
 
@@ -81,8 +87,9 @@ async function proxy(request, env, url) {
   // psgi.url_scheme を https にしない
   headers.set('X-Forwarded-Proto', 'https');
 
-  // 全パスの GET/HEAD の status 200 を Cloudflare エッジで 2 時間キャッシュする
-  // (docs/cloud-run.md §10 の Cache Rules 節)。キャッシュキーは既定のまま、
+  // 全パスの GET/HEAD の status 200 をエッジの二層でキャッシュする
+  // (docs/cloud-run.md §10 のエッジキャッシュ節)。この内側 (fetch の cf 設定) の
+  // キャッシュキーは既定のまま、
   // つまり上流 URL 全体と Origin / method override 系 / X-Forwarded-Host などの
   // ヘッダーで決まる。値を変えるだけで同じ URL を別キーへ割って MISS を強制
   // できるヘッダーと、上流への再検証指示 (Cache-Control / Pragma)、認証状態を
@@ -106,27 +113,56 @@ async function proxy(request, env, url) {
   };
   if (cacheable) {
     // cacheTtlByStatus は cacheEverything を含意しないため両方指定する。
-    // 200 だけを 7,200 秒とし、404 / 503 / 3xx などは負数 = 保存しない
-    // (一時的な失敗やリダイレクトを 2 時間固定しない)。エッジ TTL であり、
+    // 200 だけを保存し、404 / 503 / 3xx などは負数 = 保存しない
+    // (一時的な失敗やリダイレクトを固定しない)。エッジ TTL であり、
     // ブラウザー向けの Cache-Control はレスポンスへ足さない。
     // POST 等に cf を付けないのは、キャッシュ対象メソッドをコード上でも
     // 明示するため (Cloudflare 側でも cf のキャッシュ設定は GET/HEAD 限定)
     init.cf = {
       cacheEverything: true,
-      cacheTtlByStatus: { '200': 7200, '201-599': -1 },
+      cacheTtlByStatus: { '200': ORIGIN_CACHE_TTL, '201-599': -1 },
     };
   }
   const response = await fetch(target, init);
-  if (env.NOINDEX !== '1') return response;
 
-  // staging (docs/cloud-run.md §10 の動作確認) が検索結果に出ると本番と
-  // 重複するため、staging のデプロイではクロール除けを足す。
-  // vars は常に文字列を渡すので、'0' や 'false' を truthy と読まないよう
-  // '1' との完全一致で判定する
-  const tagged = new Response(response.body, response);
-  tagged.headers.set('X-Robots-Tag', 'noindex, nofollow');
-  return tagged;
+  // 外側の Workers Cache (wrangler.jsonc の cache.enabled。HIT ではこの
+  // Worker 自体が起動しない) はレスポンスヘッダーで制御する。無指定は
+  // オプトアウトにならず RFC 9111 のヒューリスティック (404 も 180 秒保持など)
+  // が適用されるため、全レスポンスで明示する。保存するのは内側と同じ
+  // GET/HEAD の 200 だけで、それ以外は no-store。
+  // Cloudflare-CDN-Cache-Control はエッジで消費されクライアントへ届かない
+  // ヘッダーなので、「ブラウザー向け TTL は app.psgi の Cache-Control が
+  // 唯一の情報源」の所有境界は変わらない。オリジン由来の値に依存せず常に
+  // 上書きする (set)
+  const out = new Response(response.body, response);
+  out.headers.set(
+    'Cloudflare-CDN-Cache-Control',
+    cacheable && response.status === 200 ? `max-age=${WORKERS_CACHE_TTL}` : 'no-store',
+  );
+  if (env.NOINDEX === '1') {
+    // staging (docs/cloud-run.md §10 の動作確認) が検索結果に出ると本番と
+    // 重複するため、staging のデプロイではクロール除けを足す。キャッシュには
+    // このヘッダー付きで入るので、Worker が走らない HIT でも毎回付く。
+    // vars は常に文字列を渡すので、'0' や 'false' を truthy と読まないよう
+    // '1' との完全一致で判定する
+    out.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  }
+  return out;
 }
+
+// エッジキャッシュは二層 (docs/cloud-run.md §10 のエッジキャッシュ節)。
+//   外側: Workers Cache。Worker の手前で応答を保持し、HIT では Worker が
+//         起動しない。キーには X-Forwarded-* や method override 系など
+//         クライアントが自由に変えられるヘッダーが含まれるため、キー分割で
+//         MISS を強制できる = 性能最適化であって防御層ではない
+//   内側: fetch の cf 設定。Worker が一掃・確定したヘッダーと正規化した
+//         上流 URL がキーになるため、外側をすり抜けた変種はここへ寄る。
+//         オリジン保護の backstop はこちら
+// 再デプロイ後の残留は最悪で二層の TTL の和になる (内側の失効直前の応答で
+// 外側が充填された場合)。「最大 2 時間」の予算 (docs/cloud-run.md 構成の
+// 概要) を保つため 3600 + 3600 に分割している。片方だけ変えないこと
+const WORKERS_CACHE_TTL = 3600;
+const ORIGIN_CACHE_TTL = 3600;
 
 // diff の canonical path。エスケープ (%XX) を含む形は canonical になり得ない
 // (実在する POD パスは英数と . _ / - だけで構成される。classifyDiffRequest 参照)
