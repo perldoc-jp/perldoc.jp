@@ -20,7 +20,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # このジョブ自身はビルドせず Cloud Build の完了を待つだけになったが、待ち時間の
+    # 内訳は「Cloud Build の queue 待ち (cloudbuild.yaml の timeout には含まれない)
+    # + ビルド最大 60 分 + years.pl 取得 + デプロイ」。ビルドは e2-standard-2 (2 vCPU)
+    # で走り ubuntu-latest (4 vCPU) より遅いことも織り込んで余裕を取る
+    timeout-minutes: 90
     permissions:
       contents: read
       id-token: write
@@ -41,6 +45,14 @@ jobs:
       # 既に両方を渡している
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       IMAGE: asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/perldoc-jp/app
+      # Cloud Build 用の識別子はどちらも既存の secret から組み立てる。
+      # project ID の重複保存を避けるため、専用の secret / variable は追加しない
+      # (§7 の分類と WIF provider / SA email の扱いに合わせる)
+      BUILDER_SA: perldoc-jp-builder@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+      ARTIFACT_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-build-artifacts
+      # Cloud Build が source を fetch する先。公開リポジトリなので connection も
+      # 資格情報も要らない (docs/cloud-run.md §11)
+      SOURCE_REPO: https://github.com/${{ github.repository }}
       # Starlet のワーカー数。Cloud Run の container concurrency と一致させる
       # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
       # 渡すことで、一致がコメント頼みでなくなる
@@ -48,17 +60,21 @@ jobs:
       # イメージのタグは run ごとに一意にする。schedule / workflow_dispatch
       # (translation 通知) では github.sha が変わらないまま中身の異なるイメージ
       # (translation 更新分) が作られるため、sha だけのタグはビルドを特定できない
-      # (run_id は re-run で同一になるため run_attempt まで含める)
+      # (run_id は re-run で同一になるため run_attempt まで含める)。
+      # Cloud Build へ渡す years.pl のオブジェクト名にもこの値を使う
       TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       # 外部 action はコミット SHA にピン留めする (この workflow は WIF の
       # デプロイ資格情報を扱うため、タグの付け替えによる改竄の影響を受けない
       # ようにする)。更新時は SHA とコメントのバージョンを両方書き換えること
+      #
+      # ビルドコンテキストは Cloud Build が自分で fetch するが、gcloud は
+      # --config のファイルを手元から読んで Build を組み立てる。つまり
+      # cloudbuild.yaml はこの checkout から来る。どちらも github.sha なので
+      # 一致する
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -74,47 +90,172 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      - run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
-
       # translation の HEAD を build-arg に渡し、translation が更新された
       # ときだけ databuild ステージのキャッシュを無効化する
       - name: Resolve translation HEAD
         id: translation
         run: |
           sha=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
-          test -n "$sha"
+          # 値は Cloud Build の substitution として別のシステムへ渡るので、
+          # 「空でない」より強く形式そのものを確かめる。bash の =~ は文字列全体に
+          # 対して照合するので、複数行が紛れ込んでも通らない
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      - name: Build and push image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        # build record artifact と job summary には build inputs (project ID 入りの
-        # image tag / cache 参照) がそのまま入る。§7 の分類ではどちらも出せない
-        # (artifact は公開リポジトリでは実質公開で、secret マスクも効かない)
+      # ビルド・テスト・smoke test・years-export は Cloud Build (asia-northeast1) で
+      # 行う (cloudbuild.yaml)。GitHub-hosted runner が Artifact Registry から
+      # buildcache や runtime イメージを取得すると、そのたびにインターネットへの
+      # data transfer out になるため。
+      #
+      # source はローカルの checkout を送らず、公開リポジトリの exact commit SHA を
+      # Cloud Build 自身に fetch させる。Cloud Storage の staging bucket に
+      # ソースが溜まる構成を避けつつ、GitHub 側の checkout と Cloud Build が
+      # ビルドする commit を一致させる (ブランチ名ではなく github.sha を使う)
+      - name: Submit build to Cloud Build
         env:
-          DOCKER_BUILD_RECORD_UPLOAD: 'false'
-          DOCKER_BUILD_SUMMARY: 'false'
-        with:
-          context: .
-          target: runtime
-          push: true
-          tags: ${{ env.IMAGE }}:${{ env.TAG }}
-          build-args: |
-            TRANSLATION_COMMIT=${{ steps.translation.outputs.sha }}
-          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
-          # registry cache は次のデプロイと years-export のため、gha cache は
-          # PR の runtime-test のために書く (PR からは WIF が要る registry を
-          # 読めない)。runtime-test は push では回らないので、gha の
-          # scope=runtime を書けるのはこのジョブだけになる。schedule や
-          # translation 通知のビルドでも温まる
-          cache-to: |
-            type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
-            type=gha,mode=max,scope=runtime
+          # 外部 Git リモートから実行時に得た値を shell のソース本文へ埋め込まない。
+          # step の env 経由なら、値は shell 変数として渡り、構文として
+          # 再解釈されない
+          TRANSLATION_SHA: ${{ steps.translation.outputs.sha }}
+        run: |
+          build_id=$(gcloud builds submit "$SOURCE_REPO" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$REGION" \
+            --git-source-revision "$GITHUB_SHA" \
+            --config cloudbuild.yaml \
+            --service-account "projects/$GCP_PROJECT_ID/serviceAccounts/$BUILDER_SA" \
+            --substitutions "_TAG=$TAG,_TRANSLATION_COMMIT=$TRANSLATION_SHA" \
+            --async --format='value(id)')
+          [[ "$build_id" =~ ^[0-9a-f][0-9a-f-]{7,}$ ]]
+          echo "CLOUD_BUILD_ID=$build_id" >> "$GITHUB_ENV"
+          echo "Cloud Build: $build_id"
+          echo "https://console.cloud.google.com/cloud-build/builds;region=$REGION/$build_id"
 
-      # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
-      # databuild の prove (PLACK_ENV=build) では検証されないため、push した
-      # イメージを Cloud Run 相当の FS 制約で起動して開通確認してからデプロイする
-      - name: Smoke test image
-        run: ./script/smoke-test.pl "$IMAGE:$TAG"
+      # --async で投げたので、完了は自分で待つ。cloudbuild.yaml は
+      # logging: CLOUD_LOGGING_ONLY を使っており、そもそもビルドログの
+      # live streaming ができないため、同期実行にしても得るものがない。
+      # 逆に build ID を先に手に入れておくと、この run がキャンセルされたときに
+      # Cloud Build 側も止められる (下の Cancel ステップ)
+      - name: Wait for Cloud Build
+        run: |
+          err="$RUNNER_TEMP/cloud-build-describe.err"
+          failures=0
+          while :; do
+            # stderr は混ぜない。gcloud が終了コード 0 のまま警告を 1 行でも出すと
+            # $status が SUCCESS と一致しなくなり、成功したビルドを捨ててしまう
+            if status=$(gcloud builds describe "$CLOUD_BUILD_ID" \
+                 --project "$GCP_PROJECT_ID" --region "$REGION" \
+                 --format='value(status)' 2>"$err"); then
+              failures=0
+            else
+              # 一時的な API エラーで数十分のビルドを捨てない。続けて失敗する
+              # ようなら諦める
+              failures=$((failures + 1))
+              if [ "$failures" -ge 5 ]; then
+                echo 'gcloud builds describe が 5 回続けて失敗した:' >&2
+                cat "$err" >&2
+                exit 1
+              fi
+              sleep 15
+              continue
+            fi
+
+            case "$status" in
+              SUCCESS)
+                echo 'Cloud Build: SUCCESS'
+                exit 0
+                ;;
+              QUEUED | WORKING | STATUS_UNKNOWN | PENDING)
+                sleep 15
+                ;;
+              *)
+                # FAILURE / TIMEOUT / CANCELLED / EXPIRED / INTERNAL_ERROR。
+                # ここで落とすことで、以降の Cloud Run デプロイには進まない
+                echo "Cloud Build が失敗した: $status" >&2
+                exit 1
+                ;;
+            esac
+          done
+
+      # この run がキャンセルされても Cloud Build 側は走り続ける。放置すると
+      # 「もう誰も使わないイメージの push」「無料枠 build-minutes の空費」に加え、
+      # 新旧 2 本のビルドが同じ :buildcache タグへ mode=max で書くことになり、
+      # last-writer-wins で古い方の cache manifest が残って以後のヒット率が下がる
+      # (キャッシュが壊れてビルドが失敗するわけではない)。
+      # concurrency の cancel-in-progress は translation 通知が連続すると
+      # 日常的に発火するため、取りこぼさないようにする。
+      # failure() も拾うのは、ジョブの timeout-minutes 超過や待機ステップ自身の
+      # 失敗でもビルドが走り続けるため。すでに終端状態のビルドに cancel を投げると
+      # gcloud がエラーを返すが、それは || true で無視してよい
+      - name: Cancel Cloud Build
+        if: cancelled() || failure()
+        run: |
+          # CLOUD_BUILD_ID の有無で判断しない。Cloud Build は作成要求を受理した
+          # 時点でビルドを開始し、その応答が返って $GITHUB_ENV に ID が書かれるまでには
+          # 隙間がある。この間にキャンセルされると ID は空のままだが、ビルドは
+          # 走り続ける。この run の TAG は substitution として全ビルドに載っているので、
+          # ID ではなくそれで未完了のビルドを引き直す (--ongoing は QUEUED と WORKING
+          # だけを返すので、すでに終わったビルドに cancel を投げることもない)
+          if ids=$(gcloud builds list \
+              --project "$GCP_PROJECT_ID" --region "$REGION" \
+              --ongoing --limit 50 \
+              --filter="substitutions._TAG=$TAG" \
+              --format='value(id)'); then
+            :
+          else
+            # list が落ちたときだけ、保存できていれば ID にフォールバックする。
+            # 「list も失敗し、ID も保存されていない」場合だけは回収できないので、
+            # そのときは Cloud Console か下のコマンドで手動で止める
+            # (docs/cloud-run.md の「運用」参照)
+            echo 'gcloud builds list に失敗した。保存済みの ID を使う' >&2
+            ids=${CLOUD_BUILD_ID:-}
+          fi
+
+          ids=$(printf '%s\n' "$ids" | sed '/^$/d')
+          if [ -z "$ids" ]; then
+            echo '進行中の Cloud Build は無い'
+            exit 0
+          fi
+          for id in $ids; do
+            echo "cancelling Cloud Build: $id"
+            gcloud builds cancel "$id" \
+              --project "$GCP_PROJECT_ID" --region "$REGION" || true
+          done
+
+      # CLOUD_LOGGING_ONLY のビルドログは Cloud Logging から読む。deployer SA に
+      # roles/logging.viewer が無い場合はここが失敗するが、ビルドの成否は
+      # 直前のステップで確定済みなので握りつぶし、Console の URL を案内するに留める
+      - name: Show Cloud Build log
+        if: always()
+        run: |
+          if [ -z "${CLOUD_BUILD_ID:-}" ]; then
+            # submit が ID を返す前に中断された場合はここに来る。ビルド自体が
+            # 走っていた可能性はあるが、その回収は Cancel ステップが TAG で行う
+            echo 'Cloud Build の ID を保存できていないためログを取得しない'
+            exit 0
+          fi
+          gcloud builds log "$CLOUD_BUILD_ID" \
+            --project "$GCP_PROJECT_ID" --region "$REGION" || {
+            echo 'ビルドログを取得できなかった (roles/logging.viewer 未付与など)。'
+            echo "https://console.cloud.google.com/cloud-build/builds;region=$REGION/$CLOUD_BUILD_ID"
+          }
+
+      # ビルドで再導出された data/years.pl を Cloud Build から受け取る。
+      # GitHub へ戻すのはこの 1 MB 未満のファイルだけで、Artifact Registry から
+      # runner へレイヤを引く経路は残さない。
+      #
+      # デプロイより前に置いて取得後すぐ削除する。デプロイが失敗しても
+      # オブジェクトが残らない (取りこぼしはバケットの lifecycle が 1 日で回収する)
+      - name: Fetch data/years.pl from Cloud Build
+        run: |
+          object="gs://$ARTIFACT_BUCKET/years/$TAG.pl"
+          mkdir -p years-out
+          gcloud storage cp "$object" years-out/years.pl
+          test -s years-out/years.pl
+          # 取得は済んでいるので、消せなかっただけでデプロイを止めない
+          # (残っても lifecycle が 1 日で回収する)
+          gcloud storage rm "$object" \
+            || echo 'years.pl のオブジェクトを削除できなかった (lifecycle が回収する)'
 
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず
       # self-correcting にする。
@@ -146,25 +287,10 @@ jobs:
             --timeout 60 --port 8080 \
             --quiet
 
-      # ビルドで再導出された data/years.pl を取り出し、commit-years-data ジョブが
-      # master へ書き戻せるよう artifact に置く。デプロイ成功後に置いているのは、
+      # commit-years-data ジョブへ渡す。デプロイ成功後に置いているのは、
       # smoke test やデプロイで失敗した run に artifact を残さないため (v4 の
       # artifact は immutable なので、残っていると失敗ジョブの re-run が同名
-      # artifact への upload で衝突して二重に失敗する)。Build and push image が
-      # 書いた registry buildcache を明示的に参照するため、builder のローカル状態
-      # (GC 等) に関わらず databuild が再実行されることはない
-      - name: Export data/years.pl
-        # 外部 Git リモートから実行時に得た値を shell のソース本文へ埋め込まない。
-        # step の env 経由なら、値は shell 変数として渡り、構文として
-        # 再解釈されない
-        env:
-          TRANSLATION_SHA: ${{ steps.translation.outputs.sha }}
-        run: |
-          docker buildx build --target years-export \
-            --build-arg "TRANSLATION_COMMIT=$TRANSLATION_SHA" \
-            --cache-from type=registry,ref=$IMAGE:buildcache \
-            --output type=local,dest=years-out .
-
+      # artifact への upload で衝突して二重に失敗する)
       - name: Upload data/years.pl
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

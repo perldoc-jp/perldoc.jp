@@ -14,6 +14,7 @@ docs/
 README.md
 Makefile
 docker-compose.yml
+cloudbuild.yaml
 terraform/
 worker/
 inc/

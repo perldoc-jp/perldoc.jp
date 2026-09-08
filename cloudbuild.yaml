@@ -1,0 +1,247 @@
+# 本番イメージのビルドを Cloud Build (asia-northeast1) で行うための設定。
+# .github/workflows/deploy.yml が exact commit SHA を指定して submit する。
+#
+# GitHub-hosted runner でビルドしていた頃は、buildcache の pull・smoke test の
+# ための image pull・years-export の cache pull がすべて Artifact Registry から
+# インターネットへ出る転送になっていた。build から smoke test・years-export までを
+# 同じリージョンの Cloud Build に寄せることで、レイヤ転送を asia-northeast1 内に
+# 閉じ込める (同一ロケーション内の転送は無料)。
+#
+# Cloud Run への deploy はここでは行わない。GitHub Actions 側の Workload Identity
+# Federation が持つ境界 (master かつ deploy.yml からのみ認証できる) を維持するため、
+# builder サービスアカウントには Cloud Run の権限を一切与えない。
+#
+# ステップは上から順に実行され、失敗した時点で以降は走らない。したがって
+# 「runtime 完成 → smoke test 成功 → ビルド成功」の順序は構造的に保証される。
+
+# ビルド本体の上限。GitHub Actions のジョブ timeout より内側に置き、Cloud Build 自身が
+# TIMEOUT として記録する形にする (GHA が先に待ち受けを殺すとビルドだけが走り続ける)。
+# この timeout に queue 待ちは含まれないので、GHA 側はさらに余裕を持たせている
+timeout: 3600s
+
+options:
+  # 無料枠 (billing account あたり月 2,500 build-minutes) の対象は default pool の
+  # e2-standard-2 に限られる。現状の既定値と同じだが、既定が変わっても枠から
+  # 外れないよう明示的に固定する
+  machineType: E2_STANDARD_2
+  # user-specified service account を使うビルドは Google 所有のログバケットを使えない。
+  # Cloud Logging に寄せることで、自プロジェクトに GCS のログバケットを作らずに済む
+  # (この設定時 defaultLogsBucketBehavior は無視される)。
+  # 代償としてビルドログの live streaming ができないため、deploy.yml は完了後に
+  # gcloud builds log でまとめて取得する
+  logging: CLOUD_LOGGING_ONLY
+
+# イメージ参照 (asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app) は
+# 複数ステップの env: に現れる。リージョンやリポジトリ名を変えるときは、
+# deploy.yml の IMAGE と docs/cloud-run.md §2 も合わせて書き換えること。
+#
+# substitutions: は宣言しない。既定の MUST_MATCH により、未定義の substitution を
+# 参照した時点でビルドが始まる前に失敗する。空文字を渡された場合は弾けないので
+# setup-tools で値そのものを検証する。
+#
+# project ID は §7 の分類で secret として扱っているため、このファイルには書かず
+# built-in の $PROJECT_ID から組み立てる。git_source では $COMMIT_SHA /
+# $BRANCH_NAME が埋まる保証がないので使わない。
+
+steps:
+  # docker CLI と buildx プラグインを named volume に取り出す。
+  # 以降の docker を使うステップは gcr.io/cloud-builders/gcloud を image にしていて
+  # (Artifact Registry の credential helper がそこにしかない)、docker が入っていない。
+  #
+  # この image は Alpine (musl) だが、取り出す 2 つのバイナリはどちらも静的リンク
+  # なので glibc の image でもそのまま動く。docker-library/docker の Dockerfile は
+  # CLI を download.docker.com の static リリース tarball から、buildx を
+  # docker/buildx の GitHub Release から入れており、どちらの ELF にも PT_INTERP が
+  # 無いことを確認済み。バージョンを上げるときはここも確認すること
+  # (smoke-test は Debian ベースの perl image でこの docker を使うため、
+  #  ここが崩れると push まで終わった後に落ちる)
+  - id: setup-tools
+    name: 'docker:29.7.2-cli@sha256:3f4743208d2338c934d7b8bcfbe1bb54c0b2355c510ad5e0f31c0c4a54bd704e'
+    entrypoint: 'sh'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    # substitution の値は shell のソース本文に埋め込まず、環境変数として渡す。
+    # 外部 (git ls-remote の結果) 由来の値が構文として再解釈されないようにする
+    env:
+      - 'TAG=${_TAG}'
+      - 'TRANSLATION_COMMIT=${_TRANSLATION_COMMIT}'
+    args:
+      - -ceu
+      - |
+        # busybox sh には bash の =~ が無いので case と長さで確かめる。
+        # grep だと値に改行が紛れたときに行単位で一致してしまう
+        test -n "$$TAG"
+        test "$${#TRANSLATION_COMMIT}" -eq 40
+        case "$$TRANSLATION_COMMIT" in
+          *[!0-9a-f]*) echo 'TRANSLATION_COMMIT が 40 桁の hex ではない' >&2; exit 1 ;;
+        esac
+
+        mkdir -p /ci/bin /ci/docker/cli-plugins /ci/no-credentials
+        install -m 0755 /usr/local/bin/docker /ci/bin/docker
+        # docker CLI は $$DOCKER_CONFIG/cli-plugins をプラグインの探索先に含む
+        install -m 0755 /usr/local/libexec/docker/cli-plugins/docker-buildx \
+          /ci/docker/cli-plugins/docker-buildx
+
+  # Artifact Registry への認証は credential helper に任せる。
+  # ビルド開始時に取得した 1 個のアクセストークンを全ステップで使い回すと、ビルドが
+  # 長引いたときに最後の push / cache export だけが失効と競り合う。helper は
+  # その時点の active service account の short-lived credentials を返すので、
+  # 少なくとも docker / buildx の起動ごとに取り直される。
+  # ただし buildx は 1 回の build 呼び出しの中では取得した資格情報をキャッシュする
+  # ため、build-runtime のような単一の長時間ステップの中まで更新されるとは限らない。
+  # timeout に迫るビルドで最後の --push / --cache-to が通ることは、cutover 時に
+  # 実地で確かめる (docs/cloud-run.md §11-3)
+  - id: configure-docker
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    env:
+      - 'DOCKER_CONFIG=/ci/docker'
+      - 'REGISTRY=asia-northeast1-docker.pkg.dev'
+    args:
+      - -ceu
+      - |
+        export PATH=/ci/bin:$$PATH
+        gcloud auth configure-docker "$$REGISTRY" --quiet
+
+        # registry cache を mode=max で書くには docker-container ドライバが要る
+        # (既定の docker ドライバは cache-to type=registry に対応しない)。
+        # buildkit の image は可動タグ (buildx-stable-1) を使わず digest で固定する
+        docker buildx create --name perldocjp \
+          --driver docker-container \
+          --driver-opt image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 \
+          --bootstrap
+        docker buildx inspect perldocjp
+
+  # runtime を作って Artifact Registry へ push する。
+  # test ステージの /tests-passed への COPY があるため、prove を通らずに
+  # runtime が完成することは構造的にない (Dockerfile 参照)
+  - id: build-runtime
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    env:
+      - 'DOCKER_CONFIG=/ci/docker'
+      - 'IMAGE=asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app'
+      - 'TAG=${_TAG}'
+      - 'TRANSLATION_COMMIT=${_TRANSLATION_COMMIT}'
+    args:
+      - -ceu
+      - |
+        export PATH=/ci/bin:$$PATH
+        # --platform: Cloud Run は linux/amd64 のみ。従来はランナーのアーキテクチャに
+        #   暗黙に依存していたので、設定として固定する
+        # --provenance=mode=max: 従来 docker/build-push-action が public リポジトリの
+        #   push で既定的に付けていた attestation の粒度に揃える (素の buildx の
+        #   既定は mode=min)。manifest の形は変わらないが、attestation 内の
+        #   builder-id は action が入れていた GitHub Actions の run URL ではなく
+        #   Cloud Build 側の値になる。Cloud Run 側の要件ではない
+        docker buildx build --builder perldocjp \
+          --target runtime \
+          --platform linux/amd64 \
+          --build-arg "TRANSLATION_COMMIT=$$TRANSLATION_COMMIT" \
+          --cache-from "type=registry,ref=$$IMAGE:buildcache" \
+          --cache-to "type=registry,ref=$$IMAGE:buildcache,mode=max" \
+          --provenance=mode=max \
+          --tag "$$IMAGE:$$TAG" \
+          --push \
+          .
+
+  # smoke test は「Artifact Registry が実際に保持しているもの」を検査対象にする
+  # (レジストリへの往復も検証範囲に含める)。buildx の docker-container ドライバは
+  # --push してもローカルの daemon には load しないため、明示的に pull する
+  - id: pull-runtime
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    env:
+      - 'DOCKER_CONFIG=/ci/docker'
+      - 'IMAGE=asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app'
+      - 'TAG=${_TAG}'
+    args:
+      - -ceu
+      - |
+        export PATH=/ci/bin:$$PATH
+        docker pull "$$IMAGE:$$TAG"
+
+  # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
+  # databuild の prove (PLACK_ENV=build) では検証されないため、Cloud Run 相当の
+  # FS 制約で起動して開通確認する。使うスクリプトは PR の test.yml と同じもの。
+  #
+  # image は Dockerfile の base ステージと同じ perl:5.42-trixie を使う
+  # (新しい供給元を増やさない)。DOCKER_CONFIG は空のディレクトリを指し、
+  # このステップにはレジストリの資格情報を渡さない。pull-runtime が取り込んだ
+  # ローカルの image だけを検査する構造であることを明示し、取りこぼしがあれば
+  # 黙って再取得せず失敗させる
+  - id: smoke-test
+    name: 'perl:5.42-trixie'
+    entrypoint: 'sh'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    env:
+      - 'DOCKER_CONFIG=/ci/no-credentials'
+      # ビルドステップ自身がコンテナなので、ホストの loopback へ publish しても
+      # 届かない。Cloud Build が各ステップを繋いでいる docker network に相乗りする
+      - 'SMOKE_DOCKER_NETWORK=cloudbuild'
+      - 'IMAGE=asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app'
+      - 'TAG=${_TAG}'
+    args:
+      - -ceu
+      - |
+        export PATH=/ci/bin:$$PATH
+        exec ./script/smoke-test.pl "$$IMAGE:$$TAG"
+
+  # ビルドで再導出された data/years.pl を取り出す。deploy.yml の commit-years-data が
+  # master へ書き戻すために使う (databuild が git から再導出するのは前年+当年だけなので、
+  # 書き戻しが無いとある年の統計は 2 年後にシードのコミット時点の内容で凍結される)。
+  #
+  # 同じ builder のローカルキャッシュに全レイヤが載っているので実質即時に終わる。
+  # registry の cache-from は、builder のローカル状態 (GC 等) に関わらず databuild が
+  # 再実行されないようにするための保険。--platform を runtime と揃えないと
+  # 別のビルドグラフになりキャッシュに当たらない
+  - id: years-export
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    env:
+      - 'DOCKER_CONFIG=/ci/docker'
+      - 'IMAGE=asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app'
+      - 'TRANSLATION_COMMIT=${_TRANSLATION_COMMIT}'
+    args:
+      - -ceu
+      - |
+        export PATH=/ci/bin:$$PATH
+        docker buildx build --builder perldocjp \
+          --target years-export \
+          --platform linux/amd64 \
+          --build-arg "TRANSLATION_COMMIT=$$TRANSLATION_COMMIT" \
+          --cache-from "type=registry,ref=$$IMAGE:buildcache" \
+          --output "type=local,dest=/ci/years-out" \
+          .
+
+  # GitHub Actions へ渡すのは 1 MB 未満のこのファイルだけ。オブジェクト名は
+  # deploy.yml が組み立てた run ごとに一意な TAG で、GitHub 側が取得後に削除する
+  # (取りこぼしはバケットの lifecycle が 1 日で回収する)
+  - id: upload-years
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    volumes:
+      - name: 'ci'
+        path: '/ci'
+    env:
+      - 'OBJECT=gs://$PROJECT_ID-build-artifacts/years/${_TAG}.pl'
+    args:
+      - -ceu
+      - |
+        test -s /ci/years-out/years.pl
+        gcloud storage cp /ci/years-out/years.pl "$$OBJECT"

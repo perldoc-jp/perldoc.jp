@@ -138,8 +138,9 @@ COPY app.psgi toc.txt toc-var.txt ./
 RUN prove -lr t/ && touch /tests-passed
 
 
-# years-export: deploy.yml の commit-years-data ジョブが、ビルドで再導出された
-# data/years.pl を取り出して master へ書き戻すための export 専用ステージ。
+# years-export: ビルドで再導出された data/years.pl を master へ書き戻すための
+# export 専用ステージ。Cloud Build (cloudbuild.yaml) がこのステージから取り出し、
+# deploy.yml の commit-years-data ジョブがコミットする。
 # (databuild が git から再導出するのは前年+当年だけなので、書き戻しが無いと
 # ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう)
 FROM scratch AS years-export
@@ -178,7 +179,8 @@ COPY --from=deps /usr/src/app/local ./local
 # 配信イメージは COPY . . (denylist) にしない。CI のワークスペースに落ちた
 # ファイル (google-github-actions/auth の gha-creds-*.json 等) を .dockerignore の
 # 列挙漏れひとつで拾ってしまうため、実行時に読むものだけを列挙する。
-# 列挙漏れは deploy.yml の smoke test が検出する (toc.txt → /index/core など)
+# 列挙漏れは smoke test が検出する (toc.txt → /index/core など)。
+# 本番は Cloud Build (cloudbuild.yaml)、PR は test.yml がこれを回す
 COPY app.psgi toc.txt toc-var.txt ./
 COPY config ./config
 COPY lib ./lib
