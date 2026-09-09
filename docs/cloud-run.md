@@ -9,18 +9,21 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 [perldoc-jp/perldoc.jp]  --push--------------------------┤
 [schedule: 日次保険]  ───────────────────────────────────┤
                                                          v
-                GitHub Actions (.github/workflows/deploy.yml)
-                  WIF 認証 → translation の HEAD 解決
-                  → Cloud Build を github.sha 固定で submit
+                GitHub Actions / years ジョブ (deploy.yml)
+                  translation の HEAD 解決
+                  → data/years.pl を再導出し、差分があれば master へ commit
+                  → 使うコミットと translation の SHA を出力
+                                                         v
+                GitHub Actions / deploy ジョブ (deploy.yml)
+                  WIF 認証 → その commit を固定して Cloud Build を submit
                                                          v
                 Cloud Build (asia-northeast1 / cloudbuild.yaml)
                   translation取得 → SQLite構築 → データ生成
                   → テスト → Docker build → Artifact Registry push
-                  → smoke test → years-export
+                  → smoke test
                                                          v
-                GitHub Actions (.github/workflows/deploy.yml)
-                  years.pl を取得 → Cloud Run deploy
-                  → commit-years-data が data/years.pl を master へ
+                GitHub Actions / deploy ジョブ (deploy.yml)
+                  Cloud Run deploy
                                                          v
 [ユーザー] → Cloudflare (Worker) → Cloud Run (asia-northeast1)
                            - min-instances=0 (無アクセス時のコストほぼゼロ)
@@ -30,14 +33,19 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 ```
 
 - **イメージのビルドは Cloud Build (asia-northeast1) で行う** (§11)。GitHub-hosted
-  runner でビルドしていた頃は、buildcache の pull・smoke test のための image pull・
-  years-export の cache pull がいずれも Artifact Registry からインターネットへ出る
-  data transfer out になっていた。同一ロケーション内の転送は無料なので、数百 MB〜GB
-  級のレイヤ転送を asia-northeast1 の中に閉じ込める。
+  runner でビルドしていた頃は、buildcache の pull と smoke test のための image pull が
+  どちらも Artifact Registry からインターネットへ出る data transfer out になっていた。
+  同一ロケーション内の転送は無料なので、数百 MB〜GB 級のレイヤ転送を
+  asia-northeast1 の中に閉じ込める。
   `script/smoke-test.pl` は手元に無いイメージを `docker run` の自動 pull で取りに行く
   ため、ビルドだけを移して smoke test を GitHub Actions に残す分割では転送は消えない。
   Cloud Run への deploy は GitHub Actions 側に残す (WIF の境界を維持し、Cloud Build の
   サービスアカウントに Cloud Run の権限を持たせないため)。
+- **`data/years.pl` はビルドの前に更新する**。deploy.yml の years ジョブが
+  `script/update-years.pl` で再導出し、差分があれば master へコミットしてから、
+  その commit をソースにしてビルドする。ビルドから成果物を取り出して GitHub へ
+  運ぶ経路を持たないので、イメージが読む years.pl とリポジトリにコミットされて
+  いるものは常に同じ現物になる。
 - データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
   cron (10分毎の script/update.pl) に相当する処理は Dockerfile の databuild
   ステージが担う。
@@ -106,12 +114,11 @@ gcloud billing projects link "$PROJECT_ID" \
 
 gcloud services enable --project="$PROJECT_ID" \
   run.googleapis.com artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com storage.googleapis.com \
+  cloudbuild.googleapis.com \
   iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 ```
 
-`cloudbuild.googleapis.com` は §11 のイメージビルド、`storage.googleapis.com` は
-§11 の years.pl 受け渡し用バケットが使う。
+`cloudbuild.googleapis.com` は §11 のイメージビルドが使う。
 
 `compute.googleapis.com` は有効化しない。Cloud Run のランタイムには専用のサービス
 アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。Cloud Build も
@@ -356,10 +363,9 @@ deploy.yml が上記 2 つの secret から組み立てるため、個別には�
 (project number / ID の重複保存を避ける)。
 
 同じ理由で、Cloud Build 移行 (§11) でも **secret も variable も増やしていない**。
-builder SA email (`perldoc-jp-builder@<PROJECT_ID>.iam.gserviceaccount.com`) と
-years 成果物バケット名 (`<PROJECT_ID>-build-artifacts`) は deploy.yml が
-`GCP_PROJECT_ID` から組み立て、`cloudbuild.yaml` 側は built-in の `$PROJECT_ID`
-substitution を使う (リポジトリのファイルに project ID を書かない)。
+builder SA email (`perldoc-jp-builder@<PROJECT_ID>.iam.gserviceaccount.com`) は
+deploy.yml が `GCP_PROJECT_ID` から組み立て、`cloudbuild.yaml` 側は built-in の
+`$PROJECT_ID` substitution を使う (リポジトリのファイルに project ID を書かない)。
 Cloud Build が fetch するソースの URL は公開リポジトリのものなので機密ではない。
 
 environment は workflow から参照されただけでも自動作成されるが、その場合は
@@ -470,14 +476,14 @@ EOF
 gh api repos/perldoc-jp/perldoc.jp/rules/branches/master
 ```
 
-pull request 必須ルールは入れていない。deploy.yml の commit-years-data が
+pull request 必須ルールは入れていない。deploy.yml の years ジョブが
 GITHUB_TOKEN で master へ直接 push するため、PR 必須にするには push の PR 化か
 bypass 用の専用 App が必要になり、単独メンテの merge も止まるため。
 したがって「write 権限を持つアカウントの侵害」に対する独立レビュー境界は
 現状存在しない (承認 0 の PR 必須を足してもこの境界にはならない)。
 メンテナが増えたときに required approvals + CODEOWNERS へ引き上げる。
 同じ ruleset を translation リポジトリの master にも適用する (GitHub App の
-private key を置くため。§9)。適用直後の Deploy workflow で commit-years-data の
+private key を置くため。§9)。適用直後の Deploy workflow で years ジョブの
 push が成功することを確認すること。
 
 ### 8. 手動でのビルドとデプロイ
@@ -662,7 +668,7 @@ App token (`Actions: write`) が侵害されたときにできることは dispa
 - deploy.yml / deploy-worker.yml の dispatch と、レビュー済み master の再デプロイ
 - 既存 run の再実行 (初回実行から 30 日以内。元の actor の権限・元の SHA/ref で
   走る)・キャンセル、workflow の停止・再開、run / artifact の操作
-- deploy.yml 経由での commit-years-data の起動 (= レビュー済みコードが生成する
+- deploy.yml 経由での years ジョブの起動 (= レビュー済みコードが生成する
   派生データ data/years.pl の master へのコミットまでは到達する)
 - `ref` は API 上 master 以外の**既存** ref も指定できる (`-f ref=master` は
   呼び出し側の慣行であって token の制約ではない)。ただし別 ref への dispatch は、
@@ -1124,17 +1130,21 @@ Worker を挟まない構成にする場合の選択肢:
 
 ### 11. Cloud Build (本番イメージのビルド)
 
-`.github/workflows/deploy.yml` は、ビルド・テスト・smoke test・years-export を
+`.github/workflows/deploy.yml` の deploy ジョブは、ビルド・テスト・smoke test を
 Cloud Build (`cloudbuild.yaml`) に投げる。GitHub-hosted runner が Artifact Registry から
 buildcache や runtime イメージを引くと、そのたびにインターネットへの data transfer out に
 なるため、大きいレイヤ転送を asia-northeast1 の中で完結させる。
+
+ビルドの成果物を Cloud Build から GitHub へ運ぶ経路は持たない。`data/years.pl` は
+その前段の years ジョブが `script/update-years.pl` で再導出して master へコミットし、
+その commit をソースにしてビルドするので、イメージはコミット済みの現物を読む。
 
 ソースは 2nd-gen の GitHub connection を使わず、**公開リポジトリの exact commit SHA を
 Cloud Build 自身に fetch させる** (`gcloud builds submit <URL> --git-source-revision <SHA>`)。
 `--config` に渡す `cloudbuild.yaml` だけは gcloud が手元から読んで Build を組み立てる
 (ビルドの定義は呼び出し側、ビルドコンテキストは Cloud Build が fetch したもの)。
-deploy.yml は `actions/checkout` した作業ツリーから渡すので、どちらも同じ
-`github.sha` になる。
+deploy.yml は years ジョブが出力した commit を `actions/checkout` してから渡すので、
+どちらも同じ commit になる。
 connection 方式は Cloud Build GitHub App のインストールと、Secret Manager 上に置かれる
 GitHub ユーザーの OAuth トークンを常設で必要とする。このリポジトリは公開なので、
 そのどれも持たずに済ませる。ローカルの checkout を送る `gcloud builds submit .` も使わない
@@ -1142,7 +1152,7 @@ GitHub ユーザーの OAuth トークンを常設で必要とする。このリ
 
 §2 (Artifact Registry) と §5 (デプロイ用 SA) の後に、**この順で**実行する。
 
-#### 11-1. builder サービスアカウントと成果物バケット
+#### 11-1. builder サービスアカウント
 
 preflight (11-2) は builder SA を指定して回すので、SA と最低限の IAM が先に要る。
 
@@ -1166,29 +1176,8 @@ builder SA には **Cloud Run の権限を一切与えない**。デプロイは
 残してあり (§5 の WIF が持つ「master かつ deploy.yml からのみ」という境界を維持するため)、
 ビルド側にその境界を跨がせない。
 
-`data/years.pl` を GitHub Actions へ戻すための小さなバケットを作る。ソースの staging には
-使わない (そもそも staging bucket を作らせない構成にしてある)。
-
-```sh
-# soft delete は既定 7 日で、削除済みオブジェクトもその間は課金対象になる。
-# 1 ビルドで作って直後に消す用途なので 0 にする
-gcloud storage buckets create "gs://${PROJECT_ID}-build-artifacts" \
-  --project="$PROJECT_ID" --location="$REGION" \
-  --uniform-bucket-level-access --public-access-prevention \
-  --soft-delete-duration=0
-
-# GitHub Actions 側の削除が落ちた場合の保険。1 日で自動削除する
-# (lifecycle による削除は無料オペレーション)
-cat > /tmp/years-lifecycle.json <<'EOF'
-{"rule":[{"action":{"type":"Delete"},"condition":{"age":1}}]}
-EOF
-gcloud storage buckets update "gs://${PROJECT_ID}-build-artifacts" \
-  --lifecycle-file=/tmp/years-lifecycle.json
-
-# アップロードだけできればよい (読み出しと削除は GitHub Actions 側の SA が行う)
-gcloud storage buckets add-iam-policy-binding "gs://${PROJECT_ID}-build-artifacts" \
-  --member="serviceAccount:$BUILDER_SA" --role=roles/storage.objectCreator
-```
+Cloud Storage は使わない。ビルドの成果物を GitHub へ運ぶ経路が無いので専用バケットは
+不要で、`gcloud builds submit .` を使わないためソースの staging bucket も作られない。
 
 #### 11-2. preflight (cutover の必須前提)
 
@@ -1202,7 +1191,7 @@ cutover すること。ローカルエミュレータ (`cloud-build-local`) の�
 - Cloud Build は各ステップのコンテナを `cloudbuild` という docker network に接続する
 - ステップの image に Google 提供でない public / custom image を使える
 
-preflight で確かめるのは次の 8 点:
+preflight で確かめるのは次の 7 点:
 
 1. ステップから `/var/run/docker.sock` が使える
 2. named volume がステップ間で共有される
@@ -1218,9 +1207,6 @@ preflight で確かめるのは次の 8 点:
    `perl:5.42-trixie` でも実行でき、そこから docker socket を使える
    (smoke test のステップがまさにこの組み合わせ。ここが崩れると、ビルドと push が
    終わった後の一番高くつく地点で落ちる)
-8. builder SA の `roles/storage.objectCreator` だけで `gcloud storage cp` が通る
-   (production では years.pl のアップロードが最後のステップなので、権限不足だと
-   ビルド全体を捨てることになる)
 
 `docker:<VERSION>-cli` への buildx プラグインの同梱と、取り出す 2 つのバイナリが
 静的リンクであることは、image の config と ELF ヘッダで確認済みなので未確認項目には
@@ -1331,23 +1317,6 @@ steps:
         REACH
         exec perl /ci/reachability.pl                                  # (6)
 
-  # production の最後のステップと同じ経路で、builder SA の
-  # roles/storage.objectCreator だけで書けることを確かめる。
-  # 置いたオブジェクトはバケットの lifecycle (age 1) が翌日に回収する
-  - id: years-upload
-    name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    env:
-      - 'OBJECT=gs://$PROJECT_ID-build-artifacts/preflight/$BUILD_ID.txt'
-    args:
-      - -ceu
-      - |
-        printf 'preflight' > /ci/years-probe.txt
-        gcloud storage cp /ci/years-probe.txt "$$OBJECT"               # (8)
-
   - id: cleanup
     name: 'gcr.io/cloud-builders/gcloud'
     entrypoint: 'bash'
@@ -1408,10 +1377,6 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
 gcloud iam service-accounts add-iam-policy-binding "$BUILDER_SA" \
   --project="$PROJECT_ID" \
   --member="serviceAccount:$SA" --role=roles/iam.serviceAccountUser
-
-# years.pl の取得と、取得後の削除
-gcloud storage buckets add-iam-policy-binding "gs://${PROJECT_ID}-build-artifacts" \
-  --member="serviceAccount:$SA" --role=roles/storage.objectUser
 ```
 
 任意: ビルドログを GitHub Actions のログに出したい場合。`cloudbuild.yaml` は
@@ -1457,13 +1422,12 @@ gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
 
 リポジトリのコードだけでは完結しない操作を、実行順に並べたもの:
 
-1. §1 の API 有効化 (`cloudbuild.googleapis.com` / `storage.googleapis.com` を含む)
+1. §1 の API 有効化 (`cloudbuild.googleapis.com` を含む)
 2. builder SA の作成と IAM (11-1)
-3. years 成果物バケットの作成・lifecycle・IAM (11-1)
-4. preflight ビルド (11-2)
-5. デプロイ用 SA への追加バインディング (11-3)
-6. cutover
-7. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
+3. preflight ビルド (11-2)
+4. デプロイ用 SA への追加バインディング (11-3)
+5. cutover
+6. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
 
 **GitHub 側の追加操作は無い。secret も variable も増えない** (§7)。
 Cloud Build の 2nd-gen connection、Cloud Build GitHub App のインストール、
@@ -1481,7 +1445,7 @@ Secret Manager はいずれも使わない。
 | Artifact Registry ↔ Cloud Build (同一ロケーション) | **$0.00 (Free)**。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | **この変更の主目的**。buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
 | Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | **削減対象**。GitHub-hosted runner は Google のサービスではないので、runner が引くイメージ・キャッシュはここに入っていた。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
 | Cloud Logging | $0.50/GiB、**50 GiB/project/month が無料**。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | `logging: CLOUD_LOGGING_ONLY` にしたビルドログの分。無料枠に収まる想定 |
-| Cloud Storage (years 成果物バケット) | asia-northeast1 の Standard は $0.000027397/GiB-hour (約 $0.020/GiB-month)。Class A $0.005/1,000 ops、Class B $0.0004/1,000 ops。**Always Free は US-WEST1 / US-CENTRAL1 / US-EAST1 のみで asia-northeast1 は対象外**。lifecycle と API による削除は無料オペレーション | `data/years.pl` は 1 MB 未満で、ビルドごとに書き込み 1 回・読み出し 1 回・削除 1 回。オブジェクトは取得直後に消え、取り逃しても 1 日で lifecycle が回収するので、保存容量はほぼ常にゼロ |
+| Cloud Storage | — | **使わない**。ビルドの成果物を GitHub へ運ぶ経路が無いので専用バケットは要らず、`gcloud builds submit .` を使わないためソースの staging bucket も作られない |
 | Artifact Analysis (脆弱性スキャン) | $0.26/scan。**Container Scanning API を有効化したときにだけ**課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため、**この変更で新たに発生する費用ではない**。有効化した場合も、push 元が GitHub Actions か Cloud Build かで差は出ない |
 
 避けている費用:
@@ -1527,7 +1491,7 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   リポジトリに 60 日間アクティビティが無いと GitHub により自動で無効化される。
   perldoc.jp 本体はコミット頻度が低く、translation の更新 (workflow_dispatch)
   はこの判定のアクティビティにならないため、「日次保険」だけが黙って止まる
-  ことがある (commit-years-data ジョブの自動コミットはアクティビティになるため、
+  ことがある (years ジョブの自動コミットはアクティビティになるため、
   translation の更新が続いている限りは起きにくい)。Actions タブの Deploy workflow に無効化の告知が出ていたら
   re-enable すること (workflow_dispatch 起動は無効化の
   対象外なので、translation 起点の反映は止まらない)
@@ -1598,17 +1562,18 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   (「この変更で課金対象になり得るもの」参照)。所要時間は
   `gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --limit 20 --format='table(id,status,createTime,startTime,finishTime)'`
   で確認する
-- **data/years.pl の自動更新 (年次作業は不要)**: databuild は `create_data.pl`
-  で前年+当年 (対象年は translation の最新イベントから導出) を毎ビルド
-  translation の git 履歴から再導出し、デプロイ成功後に
-  `commit-years-data` ジョブが再導出結果を master へ自動コミットする
-  (変更がある場合のみ。実装は `.github/workflows/deploy.yml` の同名ジョブ)。
-  コミットの親は artifact の生成元と同じ `github.sha` に固定してあり、
-  push の時点で master が進んでいればその run の artifact は捨てる。
+- **data/years.pl の自動更新 (年次作業は不要)**: `.github/workflows/deploy.yml` の
+  years ジョブが、イメージをビルドする前に `script/update-years.pl` で前年+当年
+  (対象年は translation の最新イベントから導出) を translation の git 履歴から
+  再導出し、差分があれば master へ自動コミットする。ビルドはそのコミットを
+  ソースにするので、リポジトリにある years.pl とイメージが読むものは同じ現物になる。
+  コミットの親は `github.sha` に固定してあり、push の時点で master が進んでいれば
+  その run の再導出結果は捨てて `github.sha` のままビルドする (master が進んだ
+  ということは後続の run があり、書き戻しはそちらに任せる)。
   再導出されるのは前年+当年だけなので、この書き戻しが
   無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
   自動コミットが止まっていた場合も、対象年の翌年中に一度
-  `perl script/create_data.pl <対象年>` の結果をコミットすれば回復する。
+  `perl script/update-years.pl <対象年>` の結果をコミットすれば回復する。
   対象年を過去に指定すればその年以降を git 履歴からまとめて再導出できる。
   ただし**指定してよいのは 2023 年以降**。
   2022 年以前は CVS 期の別実装が書いた記録で、**現在の git 履歴からは同じ値を

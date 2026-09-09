@@ -1,11 +1,14 @@
 # 本番イメージのビルドを Cloud Build (asia-northeast1) で行うための設定。
 # .github/workflows/deploy.yml が exact commit SHA を指定して submit する。
 #
-# GitHub-hosted runner でビルドしていた頃は、buildcache の pull・smoke test の
-# ための image pull・years-export の cache pull がすべて Artifact Registry から
-# インターネットへ出る転送になっていた。build から smoke test・years-export までを
-# 同じリージョンの Cloud Build に寄せることで、レイヤ転送を asia-northeast1 内に
-# 閉じ込める (同一ロケーション内の転送は無料)。
+# GitHub-hosted runner でビルドしていた頃は、buildcache の pull と smoke test の
+# ための image pull がどちらも Artifact Registry からインターネットへ出る転送に
+# なっていた。build から smoke test までを同じリージョンの Cloud Build に寄せる
+# ことで、レイヤ転送を asia-northeast1 内に閉じ込める (同一ロケーション内は無料)。
+#
+# data/years.pl はここでは扱わない。deploy.yml の years ジョブが、このビルドに
+# 渡すのと同じ translation の SHA で再導出して master へコミットし、その commit を
+# ソースにしてビルドする。イメージが読むのはそのコミット済みの現物になる
 #
 # Cloud Run への deploy はここでは行わない。GitHub Actions 側の Workload Identity
 # Federation が持つ境界 (master かつ deploy.yml からのみ認証できる) を維持するため、
@@ -198,50 +201,3 @@ steps:
       - |
         export PATH=/ci/bin:$$PATH
         exec ./script/smoke-test.pl "$$IMAGE:$$TAG"
-
-  # ビルドで再導出された data/years.pl を取り出す。deploy.yml の commit-years-data が
-  # master へ書き戻すために使う (databuild が git から再導出するのは前年+当年だけなので、
-  # 書き戻しが無いとある年の統計は 2 年後にシードのコミット時点の内容で凍結される)。
-  #
-  # 同じ builder のローカルキャッシュに全レイヤが載っているので実質即時に終わる。
-  # registry の cache-from は、builder のローカル状態 (GC 等) に関わらず databuild が
-  # 再実行されないようにするための保険。--platform を runtime と揃えないと
-  # 別のビルドグラフになりキャッシュに当たらない
-  - id: years-export
-    name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    env:
-      - 'DOCKER_CONFIG=/ci/docker'
-      - 'IMAGE=asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app'
-      - 'TRANSLATION_COMMIT=${_TRANSLATION_COMMIT}'
-    args:
-      - -ceu
-      - |
-        export PATH=/ci/bin:$$PATH
-        docker buildx build --builder perldocjp \
-          --target years-export \
-          --platform linux/amd64 \
-          --build-arg "TRANSLATION_COMMIT=$$TRANSLATION_COMMIT" \
-          --cache-from "type=registry,ref=$$IMAGE:buildcache" \
-          --output "type=local,dest=/ci/years-out" \
-          .
-
-  # GitHub Actions へ渡すのは 1 MB 未満のこのファイルだけ。オブジェクト名は
-  # deploy.yml が組み立てた run ごとに一意な TAG で、GitHub 側が取得後に削除する
-  # (取りこぼしはバケットの lifecycle が 1 日で回収する)
-  - id: upload-years
-    name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    env:
-      - 'OBJECT=gs://$PROJECT_ID-build-artifacts/years/${_TAG}.pl'
-    args:
-      - -ceu
-      - |
-        test -s /ci/years-out/years.pl
-        gcloud storage cp /ci/years-out/years.pl "$$OBJECT"

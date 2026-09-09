@@ -138,16 +138,6 @@ COPY app.psgi toc.txt toc-var.txt ./
 RUN prove -lr t/ && touch /tests-passed
 
 
-# years-export: ビルドで再導出された data/years.pl を master へ書き戻すための
-# export 専用ステージ。Cloud Build (cloudbuild.yaml) がこのステージから取り出し、
-# deploy.yml の commit-years-data ジョブがコミットする。
-# (databuild が git から再導出するのは前年+当年だけなので、書き戻しが無いと
-# ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう)
-FROM scratch AS years-export
-
-COPY --from=databuild /usr/src/app/data/years.pl /years.pl
-
-
 # runtime: Cloud Run 用。レイヤは変更頻度の低い順に重ね、DB を最後に置く。
 FROM perl:5.42-slim-trixie AS runtime
 
