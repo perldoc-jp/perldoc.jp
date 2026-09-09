@@ -1683,6 +1683,17 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   ```
   進行中のものを全部見たいときは `--filter` を外す。放置すると、次の run のビルドと
   同時に `:buildcache` を書きに行き、last-writer-wins で以後のキャッシュヒット率が落ちる
+- **gcloud SDK のバージョン**: deploy.yml は `setup-gcloud` の `version` を固定して
+  いる。`cloudbuild.yaml` の解釈は client 側 (gcloud) で行われ、gcloud は知らない
+  enum 値を「そのフィールドは未使用」として扱う。`options.machineType` の
+  `E2_STANDARD_2` がクライアントの enum に入ったのは **572.0.0** で、571.0.0 以前には
+  無い (450 / 500 / 570 で不在、572 以降で存在することを確認)。machine type 自体は
+  2023 年から使えるため、値の古さからは判断できない。それ以前の版で submit すると
+  `.options.machineType: unused` で submit の手前で落ちる。
+  上げるときは 572.0.0 以上であること、およびその版でこの `cloudbuild.yaml` が
+  解釈できることを確かめてから上げる (存在しない project に対して
+  `gcloud builds submit --no-source --config cloudbuild.yaml` を実行すると、
+  API 呼び出しの手前まで進むので client 側の解釈だけを試せる)
 - **Docker Hub の pull 回数**: ビルド 1 回につき、ステップの image
   (`docker:<VERSION>-cli` / `moby/buildkit:<VERSION>` / `perl:5.42-trixie`) と
   Dockerfile のベース (`perl:5.42-trixie` / `perl:5.42-slim-trixie`) を Docker Hub から
