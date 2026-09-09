@@ -1431,13 +1431,16 @@ gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
 
 1. §1 の API 有効化 (`cloudbuild.googleapis.com` を含む)
 2. builder SA の作成と IAM (11-1)
-3. preflight ビルド (11-2)
-4. デプロイ用 SA への追加バインディング (11-3)
-5. cutover
-6. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
+3. GitHub の environment `master-write` の作成 (§7)
+4. preflight ビルド (11-2)
+5. デプロイ用 SA への追加バインディング (11-3)
+6. cutover
+7. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
 
-**GitHub 側で必要なのは environment `master-write` の作成だけ** (§7 の environment
-作成コマンドに含めてある)。secret も variable も増えない。
+**GitHub 側で必要なのは 3 の environment だけ** (§7 の environment 作成コマンドに
+含めてある)。secret も variable も増えない。作らずに参照されると branch policy 無しで
+自動作成され、years ジョブの master 限定の境界が黙って無くなるので、cutover の前に
+必ず作ること。
 Cloud Build の 2nd-gen connection、Cloud Build GitHub App のインストール、
 Secret Manager はいずれも使わない。
 
@@ -1550,10 +1553,12 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   Deploy workflow 側がキャンセル・失敗した場合は workflow が自動で cancel する。
   そのとき対象を引くのに使っているのは build ID ではなく run ごとに一意な
   `_TAG` substitution で、`gcloud builds submit` が ID を返す前に中断されても
-  受理済みのビルドを回収できるようにしてある。手で探す場合も同じ引き方をする:
+  受理済みのビルドを回収できるようにしてある。`_TAG` の先頭は `github.sha` では
+  なく **実際にビルドした commit** (years ジョブが書き戻していればその commit)。
+  手で探す場合も同じ引き方をする:
   ```sh
   gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --ongoing \
-    --filter='substitutions._TAG=<GITHUB_SHA>-<RUN_ID>-<RUN_ATTEMPT>' \
+    --filter='substitutions._TAG=<ビルドした commit>-<RUN_ID>-<RUN_ATTEMPT>' \
     --format='value(id)'
   ```
   進行中のものを全部見たいときは `--filter` を外す。放置すると、次の run のビルドと
