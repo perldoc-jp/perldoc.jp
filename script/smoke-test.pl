@@ -115,7 +115,8 @@ SH
     # publish してもランナーの network namespace からは届かない。
     # SMOKE_DOCKER_NETWORK が指定されたときは同じ docker network に相乗りする。
     # 接続先はコンテナ名ではなく network 上の IP を使う。docker の埋め込み DNS が
-    # その network で効くかどうか (コンテナ名の文字種の扱いを含む) に依存させない
+    # その network でコンテナ名を解決できるかどうか (名前の文字種の扱いを含む) に
+    # 依存させない
     my $network = $ENV{SMOKE_DOCKER_NETWORK} // '';
 
     my ($cleanup_needed, $started, $completed);

@@ -25,7 +25,9 @@ timeout: 3600s
 options:
   # 無料枠 (billing account あたり月 2,500 build-minutes) の対象は default pool の
   # e2-standard-2 に限られる。現状の既定値と同じだが、既定が変わっても枠から
-  # 外れないよう明示的に固定する
+  # 外れないよう明示的に固定する。
+  # この enum 値は gcloud 572.0.0 以降のクライアントにしか無く、それ以前で submit
+  # すると ".options.machineType: unused" になる。deploy.yml は SDK の版を固定している
   machineType: E2_STANDARD_2
   # user-specified service account を使うビルドは Google 所有のログバケットを使えない。
   # Cloud Logging に寄せることで、自プロジェクトに GCS のログバケットを作らずに済む
@@ -88,8 +90,8 @@ steps:
 
   # Artifact Registry への認証は credential helper に任せる。
   # ビルド開始時に取得した 1 個のアクセストークンを全ステップで使い回すと、ビルドが
-  # 長引いたときに最後の push / cache export だけが失効と競り合う。helper は
-  # その時点の active service account の short-lived credentials を返すので、
+  # 長引いたときに最後の push / cache export がトークンの失効後に走りかねない。
+  # helper はその時点の active service account の short-lived credentials を返すので、
   # 少なくとも docker / buildx の起動ごとに取り直される。
   # ただし buildx は 1 回の build 呼び出しの中では取得した資格情報をキャッシュする
   # ため、build-runtime のような単一の長時間ステップの中まで更新されるとは限らない。

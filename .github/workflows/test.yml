@@ -100,7 +100,7 @@ jobs:
     #
     # 本番ビルドが Cloud Build へ移ったため、gha キャッシュを書くジョブはもう無い
     # (以前は deploy.yml の master ビルドが scope=runtime を共有キャッシュとして
-    # 温めていた)。Cloud Build が使う Artifact Registry の registry cache は WIF の
+    # 書いていた)。Cloud Build が使う Artifact Registry の registry cache は WIF の
     # 認証を要するので PR (fork を含む) からは読めず、読ませもしない: PR に GCP の
     # 資格情報を渡さないため、そして Artifact Registry から GitHub-hosted runner への
     # data transfer out を復活させないため。
