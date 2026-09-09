@@ -43,9 +43,9 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   サービスアカウントに Cloud Run の権限を持たせないため)。
 - **`data/years.pl` はビルドの前に更新する**。deploy.yml の years ジョブが
   `script/update-years.pl` で再導出し、差分があれば master へコミットしてから、
-  その commit をソースにしてビルドする。ビルドから成果物を取り出して GitHub へ
-  運ぶ経路を持たないので、イメージが読む years.pl とリポジトリにコミットされて
-  いるものは常に同じ現物になる。
+  その commit をソースにしてビルドする。ビルドの成果物を GitHub へ取り出す経路が
+  無いので、イメージが読む years.pl とリポジトリにコミットされているものは
+  常に同じ現物になる。
 - データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
   cron (10分毎の script/update.pl) に相当する処理は Dockerfile の databuild
   ステージが担う。
@@ -1230,7 +1230,7 @@ Cloud Build (`cloudbuild.yaml`) に投げる。GitHub-hosted runner が Artifact
 buildcache や runtime イメージを引くと、そのたびにインターネットへの data transfer out に
 なるため、大きいレイヤ転送を asia-northeast1 の中で完結させる。
 
-ビルドの成果物を Cloud Build から GitHub へ運ぶ経路は持たない。`data/years.pl` は
+ビルドの成果物を Cloud Build から GitHub へ取り出す経路は持たない。`data/years.pl` は
 その前段の years ジョブが `script/update-years.pl` で再導出して master へコミットし、
 その commit をソースにしてビルドするので、イメージはコミット済みの現物を読む。
 
@@ -1271,8 +1271,9 @@ builder SA には **Cloud Run の権限を一切与えない**。デプロイは
 残してあり (§5 の WIF が持つ「master かつ deploy.yml からのみ」という境界を維持するため)、
 ビルド側にその境界を跨がせない。
 
-Cloud Storage は使わない。ビルドの成果物を GitHub へ運ぶ経路が無いので専用バケットは
-不要で、`gcloud builds submit .` を使わないためソースの staging bucket も作られない。
+Cloud Storage は使わない。ビルドの成果物を GitHub へ取り出す経路が無いので専用の
+バケットは不要で、`gcloud builds submit .` を使わないためソースの staging bucket も
+作られない。
 
 #### 11-2. preflight (cutover の必須前提)
 
@@ -1522,7 +1523,8 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   `build-runtime` を分割するか、machine type を上げてビルド時間を短くする
 - 実ビルド時間を測り、`cloudbuild.yaml` の `timeout` と deploy.yml の
   `timeout-minutes` を実測に合わせて詰めること (「運用」の `gcloud builds list`)。
-  移行直後の実測はキャッシュが効いた状態で 1 分前後、`databuild` 以降が動いて 6 分程度
+  移行直後の実測はレイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いた
+  ビルドが 6 分程度
 - 無料枠 2,500 build-minutes に対する消費ペース
 
 **post-cutover: Artifact Registry の権限を降格する。** cutover と同時に行わないこと
@@ -1572,7 +1574,7 @@ Secret Manager はいずれも使わない。
 | Artifact Registry ↔ Cloud Build (同一ロケーション) | **$0.00 (Free)**。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | **この変更の主目的**。buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
 | Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | **削減対象**。GitHub-hosted runner は Google のサービスではないので、runner が引くイメージ・キャッシュはここに入っていた。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
 | Cloud Logging | $0.50/GiB、**50 GiB/project/month が無料**。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | `logging: CLOUD_LOGGING_ONLY` にしたビルドログの分。無料枠に収まる想定 |
-| Cloud Storage | — | **使わない**。ビルドの成果物を GitHub へ運ぶ経路が無いので専用バケットは要らず、`gcloud builds submit .` を使わないためソースの staging bucket も作られない |
+| Cloud Storage | — | **使わない**。ビルドの成果物を GitHub へ取り出す経路が無いので専用バケットは要らず、`gcloud builds submit .` を使わないためソースの staging bucket も作られない |
 | Artifact Analysis (脆弱性スキャン) | $0.26/scan。**Container Scanning API を有効化したときにだけ**課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため、**この変更で新たに発生する費用ではない**。有効化した場合も、push 元が GitHub Actions か Cloud Build かで差は出ない |
 
 避けている費用:
