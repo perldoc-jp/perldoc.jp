@@ -127,8 +127,8 @@ gcloud services enable --project="$PROJECT_ID" \
 
 `compute.googleapis.com` は有効化しない。Cloud Run のランタイムには専用のサービス
 アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。Cloud Build も
-default pool (Google 管理側の VM) しか使わないので不要なはずだが、これは公式ドキュメントに
-明記が無いため §11-2 の preflight で「有効化を要求されないこと」を確かめる。
+default pool (Google 管理側の VM) しか使わないので不要で、cloudbuild を有効化しても
+巻き添えで有効にはならない (移行後の稼働状態で確認済み)。
 
 ### 2. Artifact Registry
 
@@ -1490,13 +1490,10 @@ SA=perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SA" --role=roles/cloudbuild.builds.editor
 
-# gcloud builds submit が要求する serviceusage.services.use。
-# ただし gcloud がこれを要求するのは source を Cloud Storage へ staging する経路で、
-# git URL を source にする本構成ではその分岐に入らない可能性がある。
-# プロジェクト全体のロールなので、cutover が安定したら一度外して submit が通るか
-# 確かめ、通るなら外す (Artifact Registry の降格と同じ進め方)
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$SA" --role=roles/serviceusage.serviceUsageConsumer
+# roles/serviceusage.serviceUsageConsumer は付けない。gcloud の IAM ドキュメントは
+# builds submit の要件として挙げているが、それが要るのは source を Cloud Storage へ
+# staging する経路で、git URL を source にする本構成はその分岐に入らない。
+# 実際に付けない状態で submit が通ることを確認済み
 
 # --service-account で builder SA を指定するのに要る iam.serviceAccounts.actAs
 gcloud iam service-accounts add-iam-policy-binding "$BUILDER_SA" \
@@ -1524,7 +1521,8 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   単一の長時間ステップの内部まで更新される保証はない。問題になるようなら
   `build-runtime` を分割するか、machine type を上げてビルド時間を短くする
 - 実ビルド時間を測り、`cloudbuild.yaml` の `timeout` と deploy.yml の
-  `timeout-minutes` を実測に合わせて詰めること (「運用」の `gcloud builds list`)
+  `timeout-minutes` を実測に合わせて詰めること (「運用」の `gcloud builds list`)。
+  移行直後の実測はキャッシュが効いた状態で 1 分前後、`databuild` 以降が動いて 6 分程度
 - 無料枠 2,500 build-minutes に対する消費ペース
 
 **post-cutover: Artifact Registry の権限を降格する。** cutover と同時に行わないこと
@@ -1569,7 +1567,7 @@ Secret Manager はいずれも使わない。
 
 | 項目 | 単価 | 見込み |
 |---|---|---|
-| Cloud Build build-minutes | **billing account あたり月 2,500 分が無料**。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 日次 schedule と translation 通知の頻度次第。無料枠に収まる想定だが、cutover 後に実測すること |
+| Cloud Build build-minutes | **billing account あたり月 2,500 分が無料**。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 移行直後の実測では、レイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いたビルドが 6 分程度 (`build-runtime` が 5 分)。日次 schedule と translation 通知の頻度を考えても無料枠には大きな余裕がある |
 | Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | 既存費用。§2 の cleanup policy のまま変わらない |
 | Artifact Registry ↔ Cloud Build (同一ロケーション) | **$0.00 (Free)**。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | **この変更の主目的**。buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
 | Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | **削減対象**。GitHub-hosted runner は Google のサービスではないので、runner が引くイメージ・キャッシュはここに入っていた。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |

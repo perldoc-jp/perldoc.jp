@@ -78,9 +78,9 @@ RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git a
 # 生成に要るものだけを持ち込む。COPY . . にすると、データ生成が一切読まない
 # ファイル (tmpl/ の 1 行、CSS、t/ のテスト) を触っただけでこのレイヤが
 # 無効化され、update.pl の pod2html (翻訳 2500 ファイル) から VACUUM までが
-# まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (deploy.yml) で
+# まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (Cloud Build) で
 # 2 回起きる。
-# 変更頻度の低い順に重ねる。data/ (= 年次統計の seed である years.pl) は
+# 変更頻度の低い順に重ねる。data/ (= 年次統計の years.pl) は
 # デプロイのたびに自動コミットされる最も揮発的な入力で、しかも update.pl は
 # 読まないため、ここには置かず update.pl の後・create_data.pl の直前で重ねる
 COPY sql ./sql
@@ -128,8 +128,9 @@ RUN rm -rf assets/translation/.git db/perldocjp.master.db
 FROM databuild AS test
 
 # アプリを起動して叩くために要るものを足す。data/ は context から重ねない。
-# context の data/years.pl は seed であり、databuild が再導出した現物を
-# 上書きしてしまうため (テストは配信するものを検証する)
+# 配信されるのは databuild が持つ data/ (コミット済みの years.pl と、
+# create_data.pl が生成した recent.pl / index-*.pl) なので、context から
+# 重ね直すとテストが配信物とは別のものを見ることになる
 COPY t ./t
 COPY tmpl ./tmpl
 COPY static ./static

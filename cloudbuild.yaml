@@ -25,7 +25,9 @@ timeout: 3600s
 options:
   # 無料枠 (billing account あたり月 2,500 build-minutes) の対象は default pool の
   # e2-standard-2 に限られる。現状の既定値と同じだが、既定が変わっても枠から
-  # 外れないよう明示的に固定する
+  # 外れないよう明示的に固定する。
+  # この enum 値は gcloud 572.0.0 以降のクライアントにしか無く、それ以前で submit
+  # すると ".options.machineType: unused" になる。deploy.yml は SDK の版を固定している
   machineType: E2_STANDARD_2
   # user-specified service account を使うビルドは Google 所有のログバケットを使えない。
   # Cloud Logging に寄せることで、自プロジェクトに GCS のログバケットを作らずに済む
