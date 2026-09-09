@@ -246,11 +246,16 @@ jobs:
           # どの GitHub Actions run が認証したか追跡できるようにする
           request_reason: gha:${{ github.run_id }}:${{ github.run_attempt }}
 
-      # SDK のバージョンも固定する。既定の version: latest は rapid チャネルの
-      # 最新を都度取ってくるため、cloudbuild.yaml の解釈のような client 側の
-      # 挙動が run ごとに変わりうる (options.machineType の enum が無い版に当たると
-      # ".options.machineType: unused" で submit 前に落ちる)。
-      # 上げるときは、この cloudbuild.yaml がその版で解釈できることを確かめること
+      # SDK のバージョンも固定する。cloudbuild.yaml の解釈は client 側で行われ、
+      # gcloud は知らない enum 値を「そのフィールドは未使用」として扱うため、
+      # options.machineType の E2_STANDARD_2 を持たない版に当たると
+      # ".options.machineType: unused" で submit 前に落ちる。
+      # この enum 値がクライアントに入ったのは 572.0.0 で、571.0.0 以前には無い
+      # (450 / 500 / 570 で不在、572 / 573 / 574 / 578 / 582 / 584 で存在することを確認)。
+      # machine type 自体は 2023 年から使えるので、値の古さからは判断できない。
+      # 既定の version: latest だと run ごとに版が変わりうるので固定する。
+      # 上げるときは 572.0.0 以上であること、およびその版でこの cloudbuild.yaml が
+      # 解釈できることを確かめること
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           version: '584.0.0'
