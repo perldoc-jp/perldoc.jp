@@ -342,7 +342,8 @@ jobs:
       # この run がキャンセルされても Cloud Build 側は走り続ける。放置すると
       # 「もう誰も使わないイメージの push」「無料枠 build-minutes の空費」に加え、
       # 新旧 2 本のビルドが同じ :buildcache タグへ mode=max で書くことになり、
-      # last-writer-wins で古い方の cache manifest が残って以後のヒット率が下がる
+      # last-writer-wins なので、古い方が後に書き終えればその cache manifest が
+      # 残り、以後のヒット率が下がる
       # (キャッシュが壊れてビルドが失敗するわけではない)。
       # concurrency の cancel-in-progress は translation 通知が連続すると
       # 日常的に発火するため、取りこぼさないようにする。

@@ -110,7 +110,7 @@ RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
 # イメージへ入れる。再導出はビルドより前に deploy.yml の years ジョブが行い、
 # その結果のコミットがこのビルドのソースになる (create_data.pl の冒頭を参照)。
 # デプロイのたびに自動コミットされる最も揮発的な入力なので、update.pl より下に
-# 置いて pod2html のレイヤキャッシュを壊さないようにする
+# 置いて pod2html のレイヤキャッシュを無効化しないようにする
 COPY data ./data
 
 RUN perl script/create_data.pl

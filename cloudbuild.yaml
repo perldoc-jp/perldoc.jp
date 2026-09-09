@@ -90,8 +90,8 @@ steps:
 
   # Artifact Registry への認証は credential helper に任せる。
   # ビルド開始時に取得した 1 個のアクセストークンを全ステップで使い回すと、ビルドが
-  # 長引いたときに最後の push / cache export だけが失効と競り合う。helper は
-  # その時点の active service account の short-lived credentials を返すので、
+  # 長引いたときに最後の push / cache export がトークンの失効後に走りかねない。
+  # helper はその時点の active service account の short-lived credentials を返すので、
   # 少なくとも docker / buildx の起動ごとに取り直される。
   # ただし buildx は 1 回の build 呼び出しの中では取得した資格情報をキャッシュする
   # ため、build-runtime のような単一の長時間ステップの中まで更新されるとは限らない。

@@ -1239,10 +1239,13 @@ Cloud Build 自身に fetch させる** (`gcloud builds submit <URL> --git-sourc
 `--config` に渡す `cloudbuild.yaml` だけは gcloud が手元から読んで Build を組み立てる
 (ビルドの定義は呼び出し側、ビルドコンテキストは Cloud Build が fetch したもの)。
 deploy.yml は years ジョブが出力した commit を `actions/checkout` してから渡すので、
-どちらも同じ commit になる。
+手元から読む `cloudbuild.yaml` と Cloud Build が fetch するソースは同じ commit になる。
+
 connection 方式は Cloud Build GitHub App のインストールと、Secret Manager 上に置かれる
 GitHub ユーザーの OAuth トークンを常設で必要とする。このリポジトリは公開なので、
-そのどれも持たずに済ませる。ローカルの checkout を送る `gcloud builds submit .` も使わない
+そのどれも持たずに済ませる。
+
+ローカルの checkout を送る `gcloud builds submit .` も使わない
 (ソースが `gs://<PROJECT_ID>_cloudbuild` に溜まるため)。
 
 §2 (Artifact Registry) と §5 (デプロイ用 SA) の後に、**この順で**実行する。
@@ -1714,8 +1717,8 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   コミットの親は `github.sha` に固定してあり、push の時点で master が進んでいれば
   その run の再導出結果は捨てて `github.sha` のままビルドする (master が進んだ
   ということは後続の run があり、書き戻しはそちらに任せる)。
-  再導出されるのは前年+当年だけなので、この書き戻しが
-  無いと、ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう。
+  再導出されるのは前年+当年だけなので、この書き戻しが無いと、ある年の統計は
+  2 年後にシードのコミット時点の内容で凍結されてしまう。
   自動コミットが止まっていた場合も、対象年の翌年中に一度
   `perl script/update-years.pl <対象年>` の結果をコミットすれば回復する。
   対象年を過去に指定すればその年以降を git 履歴からまとめて再導出できる。
