@@ -134,6 +134,14 @@ jobs:
           # 気づくための保険 (§7)
           test "$GITHUB_REF" = 'refs/heads/master'
 
+          # コンテナジョブは root で走る一方、workspace はランナーのユーザ所有の
+          # ままマウントされるため、git の dubious ownership 検査に引っかかる。
+          # actions/checkout は自分の実行中だけ一時的な HOME へ safe.directory を
+          # 足して後始末するので、後続の run step には残らない。
+          # 引っかかった git は「リポジトリが無い」ものとして振る舞い、git diff は
+          # --no-index の usage を、git config は not in a git directory を出す
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
           if git diff --quiet -- data/years.pl; then
             echo 'data/years.pl: no changes'
             echo "app-sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
