@@ -246,7 +246,14 @@ jobs:
           # どの GitHub Actions run が認証したか追跡できるようにする
           request_reason: gha:${{ github.run_id }}:${{ github.run_attempt }}
 
+      # SDK のバージョンも固定する。既定の version: latest は rapid チャネルの
+      # 最新を都度取ってくるため、cloudbuild.yaml の解釈のような client 側の
+      # 挙動が run ごとに変わりうる (options.machineType の enum が無い版に当たると
+      # ".options.machineType: unused" で submit 前に落ちる)。
+      # 上げるときは、この cloudbuild.yaml がその版で解釈できることを確かめること
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+        with:
+          version: '584.0.0'
 
       # ビルド・テスト・smoke test は Cloud Build (asia-northeast1) で行う
       # (cloudbuild.yaml)。GitHub-hosted runner が Artifact Registry から
@@ -264,6 +271,10 @@ jobs:
           # 再解釈されない
           TRANSLATION_SHA: ${{ needs.years.outputs.translation-sha }}
         run: |
+          # 失敗時にどの SDK が動いたか分かるようにする。cloudbuild.yaml の
+          # 解釈は client 側で行われるため、版が違うと結果も変わる
+          gcloud version
+
           build_id=$(gcloud builds submit "$SOURCE_REPO" \
             --project "$GCP_PROJECT_ID" \
             --region "$REGION" \
