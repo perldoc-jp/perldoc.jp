@@ -38,9 +38,19 @@ jobs:
     # 依存一式が要る。ubuntu-latest の system perl とは版が合わないので、
     # Dockerfile の base と同じイメージの中で走らせる
     container: perl:5.42-trixie
+    # コンテナジョブの run は既定が sh になる (bash ではない)。ここは [[ ]] を使う
     timeout-minutes: 45
     permissions:
       contents: write
+    # このジョブは master へ直接 push する。environment の deployment branch policy を
+    # master 限定にすることで、workflow_dispatch で別の ref を選んでもジョブ開始前に
+    # 拒否される。secret は置かず、ref を絞るためだけの environment
+    # (§7)。以前は書き込みが deploy の後段にあり、gcp-production の branch policy が
+    # 間接的にこの境界を担っていたが、ビルドの前に移したので自前で持つ必要がある
+    environment: master-write
+    defaults:
+      run:
+        shell: bash
     outputs:
       # ビルドのソースにするコミット。書き戻しが無い run や、競合で捨てた run では
       # github.sha のまま
@@ -116,6 +126,14 @@ jobs:
       - name: Commit data/years.pl if changed
         id: years
         run: |
+          # environment master-write の branch policy がこの run を master に
+          # 限定している。environment は参照されただけでも branch policy 無しで
+          # 自動作成されるため、設定漏れに黙って通されないようここでも確かめる。
+          # yml 内の検査は workflow_dispatch では yml ごと差し替えられるので
+          # 境界にはならない。境界は environment 側で、これはその設定漏れに
+          # 気づくための保険 (§7)
+          test "$GITHUB_REF" = 'refs/heads/master'
+
           if git diff --quiet -- data/years.pl; then
             echo 'data/years.pl: no changes'
             echo "app-sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"

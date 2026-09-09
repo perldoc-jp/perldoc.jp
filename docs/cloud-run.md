@@ -357,6 +357,11 @@ region は既にリポジトリ履歴で公開なので secret にしない (今
 | `CLOUD_RUN_URL` | environment `cloudflare-production` の secret (§10 の Worker のオリジン) |
 | `CLOUDFLARE_API_TOKEN` | environment `cloudflare-production` の secret |
 
+environment `master-write` は secret を持たない。deploy.yml の years ジョブが
+`data/years.pl` を master へ直接 push するため、その ref を master に限定する
+ためだけに置く (yml 内の ref ガードは workflow_dispatch では yml ごと
+差し替えられるので境界にならない。下の `CLOUDFLARE_API_TOKEN` の項と同じ理由)。
+
 WIF provider (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp`)
 と SA email (`perldoc-jp-deployer@<PROJECT_ID>.iam.gserviceaccount.com`) は
 deploy.yml が上記 2 つの secret から組み立てるため、個別には保存しない
@@ -370,16 +375,18 @@ Cloud Build が fetch するソースの URL は公開リポジトリのもの�
 
 environment は workflow から参照されただけでも自動作成されるが、その場合は
 branch policy の無い素通しになり、environment に secret が無ければ同名の
-repository secret にフォールバックする。**必ず両方の environment を作って
-branch policy を付けてから secret を置くこと**。順序も固定で、environment の
-作成が先 (`gh secret set --env` は既存 environment の public key を取得して
+repository secret にフォールバックする。**必ず 3 つの environment を作って
+branch policy を付けてから secret を置くこと**。`master-write` は secret を
+持たないが、作らずに参照されると branch policy 無しで自動作成され、master 限定の
+境界が黙って無くなる。順序も固定で、environment の作成が先
+(`gh secret set --env` は既存 environment の public key を取得して
 暗号化するため、environment が無ければ 404 で失敗する):
 
 ```sh
 # environment の作成。custom branch policy を使う (protected_branches=true は
 # 「保護ルールを持つ全ブランチを許可」の意味で、後からどこかのブランチに
 # 保護ルールを足すと許可範囲も一緒に広がってしまう)
-for env in gcp-production cloudflare-production; do
+for env in gcp-production cloudflare-production master-write; do
   gh api --method PUT "repos/perldoc-jp/perldoc.jp/environments/$env" \
     -F 'deployment_branch_policy[protected_branches]=false' \
     -F 'deployment_branch_policy[custom_branch_policies]=true'
@@ -1429,7 +1436,8 @@ gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
 5. cutover
 6. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
 
-**GitHub 側の追加操作は無い。secret も variable も増えない** (§7)。
+**GitHub 側で必要なのは environment `master-write` の作成だけ** (§7 の environment
+作成コマンドに含めてある)。secret も variable も増えない。
 Cloud Build の 2nd-gen connection、Cloud Build GitHub App のインストール、
 Secret Manager はいずれも使わない。
 
@@ -1463,7 +1471,7 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 |---|---|---|
 | `update_deployment.sh` (= `script/update.pl`) | 1日4回 (3〜6時台) | Dockerfile の databuild ステージ。translation への push で即時、加えて日次 schedule |
 | `script/create_recent.pl` | 毎時 | 同上 (databuild)。`script/create_data.pl` に統合 |
-| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | 同上 (databuild)。`script/create_data.pl` に統合。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎ビルド git から再導出する (年またぎの欠落を自己修復) |
+| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | `script/update-years.pl`。deploy.yml の years ジョブがイメージのビルドより前に実行し、結果を master へコミットする。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎回 git から再導出する (年またぎの欠落を自己修復) |
 | `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_data.pl` に置き換え |
 | `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため都度計算で足り、同じ比較の反復は Cloudflare のエッジキャッシュ (§10) が吸収する |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
@@ -1585,10 +1593,12 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   ハイフンを 1 個だけ `::` にしていた頃の値) が残るが、表示だけの差で
   件数や翻訳者ごとの集計は変わらない (同一性の判定は
   `PJP::M::YearData::_dedup_in` が両方の表記を同じものとして扱う)
-- **`data/years.pl` の完全性 (cutover の必須前提)**: `create_data.pl` は
+- **`data/years.pl` の完全性 (cutover の必須前提)**: `update-years.pl` は
   既存の `data/years.pl` のうち対象年より前だけを seed として取り込み、
-  対象年以降は毎ビルド git 履歴から再構築する (イベントが削除だけになった年の
-  ブロックは残らない)。2022 年以前の統計は CVS と複数の旧リポジトリを当時の
+  対象年以降を git 履歴から再構築する (イベントが削除だけになった年の
+  ブロックは残らない)。イメージのビルド (databuild) はこのファイルを再生成せず、
+  コミットされている現物をそのまま取り込む。
+  2022 年以前の統計は CVS と複数の旧リポジトリを当時の
   システムで観測した結果の凍結で、現在の git 履歴からは再現できないため、
   過去年を含む現物が **git 管理下にコミットされていること** が前提になる。
   ローカルビルドで `/translators` が 200 を返しても、それはページが

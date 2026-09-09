@@ -106,13 +106,13 @@ RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
 # 更新しないため、この位置でも仕上がりの DB は変わらない
 RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
 
-# 年次統計の seed (data/years.pl)。デプロイのたびに自動コミットされるため、
-# update.pl より下に置いて pod2html のレイヤキャッシュを壊さないようにする
+# 年次統計 (data/years.pl) はここで再生成せず、コミットされている現物をそのまま
+# イメージへ入れる。再導出はビルドより前に deploy.yml の years ジョブが行い、
+# その結果のコミットがこのビルドのソースになる (create_data.pl の冒頭を参照)。
+# デプロイのたびに自動コミットされる最も揮発的な入力なので、update.pl より下に
+# 置いて pod2html のレイヤキャッシュを壊さないようにする
 COPY data ./data
 
-# 対象年 (translation の最新イベントの前年) は script 側で導出する。
-# 壁時計から取るとコマンド文字列が入力に依らず一定のため、年をまたいでも
-# キャッシュされたレイヤが再利用され、対象年が古いまま進まない
 RUN perl script/create_data.pl
 
 RUN rm -rf assets/translation/.git db/perldocjp.master.db
