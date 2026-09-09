@@ -1208,8 +1208,8 @@ preflight で確かめるのは次の 7 点:
 4. その credential helper 経由で Artifact Registry に push / pull できる
 5. `docker buildx create --driver docker-container --bootstrap` が起動する
    (= ステップが `--privileged` 相当で動く)
-6. `--network cloudbuild --network-alias` で起動した隣のコンテナに、別のステップから
-   network alias で HTTP 到達できる (`script/smoke-test.pl` が通る経路)
+6. `--network cloudbuild` で起動した隣のコンテナへ、別のステップから network 上の
+   IP で HTTP 到達できる (`script/smoke-test.pl` が通る経路)
 7. Alpine (musl) の `docker:<VERSION>-cli` から取り出した docker CLI が、glibc の
    `perl:5.42-trixie` でも実行でき、そこから docker socket を使える
    (smoke test のステップがまさにこの組み合わせ。ここが崩れると、ビルドと push が
@@ -1281,19 +1281,30 @@ steps:
       - |
         export PATH=/ci/bin:$$PATH
         mkdir -p /ci/preflight
-        # 新しい供給元を増やさないよう、上でピン留めした image をそのまま土台にする
+        # 到達性の検査対象。busybox の applet 構成に賭けず、この preflight が
+        # すでに使っている perl イメージの上に最小の HTTP サーバを置く
+        # (Alpine の busybox には httpd applet が入っていない)
+        cat > /ci/preflight/server.pl <<'SERVER'
+        use IO::Socket::INET;
+        my $$sock = IO::Socket::INET->new(
+            LocalAddr => '0.0.0.0', LocalPort => 8080, Listen => 8, ReuseAddr => 1)
+            or die "listen: $$!\n";
+        while (my $$conn = $$sock->accept) {
+            my $$req = <$$conn>;
+            print {$$conn} "HTTP/1.0 200 OK\r\nContent-Length: 12\r\n\r\npreflight-ok";
+            close $$conn;
+        }
+        SERVER
         cat > /ci/preflight/Dockerfile <<'DOCKERFILE'
-        FROM docker:29.7.2-cli@sha256:3f4743208d2338c934d7b8bcfbe1bb54c0b2355c510ad5e0f31c0c4a54bd704e
-        RUN mkdir -p /srv && printf 'preflight-ok' > /srv/index.html
-        # docker:cli の ENTRYPOINT (docker-entrypoint.sh) を通さず直接起動する
+        FROM perl:5.42-trixie
+        COPY server.pl /server.pl
         ENTRYPOINT []
-        CMD ["busybox","httpd","-f","-p","8080","-h","/srv"]
+        CMD ["perl", "/server.pl"]
         DOCKERFILE
         docker buildx build --builder preflight --platform linux/amd64 \
           --tag "$$IMAGE" --push /ci/preflight                         # (4) push
         docker pull "$$IMAGE"                                          # (4) pull
-        docker run -d --name preflight-app --network cloudbuild \
-          --network-alias preflight-app "$$IMAGE"
+        docker run -d --name preflight-app --network cloudbuild "$$IMAGE"
 
   # smoke test と同じ image・同じ手段で検証する。
   # まず Alpine から持ってきた docker CLI が glibc の image で動き、socket を
@@ -1309,20 +1320,39 @@ steps:
       - |
         /ci/bin/docker --version                                       # (7) 実行できるか
         /ci/bin/docker ps > /dev/null                                  # (7) socket を使えるか
+
+        # 相手が死んでいると「到達できない」と区別が付かないので先に確かめる
+        state=$$(/ci/bin/docker inspect --format '{{.State.Status}}' preflight-app)
+        echo "preflight-app: $$state"
+        if [ "$$state" != running ]; then
+          /ci/bin/docker logs preflight-app || true
+          exit 1
+        fi
+
+        # 本番の smoke test と同じく、コンテナ名ではなく network 上の IP で引く
+        ip=$$(/ci/bin/docker inspect \
+          --format '{{index .NetworkSettings.Networks "cloudbuild" "IPAddress"}}' \
+          preflight-app)
+        echo "preflight-app ip: $$ip"
+
         cat > /ci/reachability.pl <<'REACH'
         use HTTP::Tiny;
+        my ($$ip) = @ARGV;
+        $$ip =~ /\A[0-9]+(?:\.[0-9]+){3}\z/ or die "no ip on the cloudbuild network\n";
         my $$r;
-        for (1 .. 15) {
+        for (1 .. 10) {
           $$r = HTTP::Tiny->new(timeout => 5, proxy => undef, http_proxy => undef)
-            ->get('http://preflight-app:8080/');
+            ->get("http://$$ip:8080/");
           last if $$r->{success};
           sleep 2;
         }
-        die "unreachable: $$r->{status} $$r->{reason}\n" unless $$r->{success};
+        # 599 は HTTP::Tiny の内部例外で、実際の原因は content 側に入る
+        die "unreachable: $$r->{status} $$r->{reason}: $$r->{content}\n"
+            unless $$r->{success};
         die "unexpected body: $$r->{content}\n" unless $$r->{content} eq 'preflight-ok';
         print "reachability OK\n";
         REACH
-        exec perl /ci/reachability.pl                                  # (6)
+        exec perl /ci/reachability.pl "$$ip"                            # (6)
 
   - id: cleanup
     name: 'gcr.io/cloud-builders/gcloud'

@@ -113,15 +113,10 @@ SH
 
     # CI ランナー自身がコンテナの中にいる場合 (Cloud Build)、ホストの loopback へ
     # publish してもランナーの network namespace からは届かない。
-    # SMOKE_DOCKER_NETWORK が指定されたときは同じ docker network に相乗りし、
-    # 埋め込み DNS でコンテナを引く。
-    # 名前は File::Temp の X 展開により大文字と `_` を含みうるため、DNS ラベルとして
-    # 安全な小文字の別名を付けてそちらで引く (名前そのものは衝突回避の予約として
-    # 使い続けるので、正規化で一意性は落ちない)。
-    # DNS が case-insensitive であることや docker の resolver の実装に賭けない
+    # SMOKE_DOCKER_NETWORK が指定されたときは同じ docker network に相乗りする。
+    # 接続先はコンテナ名ではなく network 上の IP を使う。docker の埋め込み DNS が
+    # その network で効くかどうか (コンテナ名の文字種の扱いを含む) に依存させない
     my $network = $ENV{SMOKE_DOCKER_NETWORK} // '';
-    my $alias = lc($name) =~ s/[^a-z0-9-]/-/gr;
-    $alias =~ s/-+\z//;
 
     my ($cleanup_needed, $started, $completed);
     defer {
@@ -145,7 +140,7 @@ SH
     # (make up) が bind している最中や並行実行と衝突する。127.0.0.1 への bind なので
     # テスト中のコンテナが LAN に公開されることもない
     my @network_args = $network ne ''
-        ? ('--network', $network, '--network-alias', $alias)
+        ? ('--network', $network)
         : ('-p', '127.0.0.1::8080');
 
     my ($run_ok) = capture(qw(docker run -d --name), $name, @platform,
@@ -155,13 +150,24 @@ SH
 
     my $base;
     if ($network ne '') {
-        # publish 経路の docker port に相当する生存確認。これが無いと、起動直後に
-        # 死んだコンテナでも名前解決の失敗を readiness ループの上限まで繰り返す
-        my ($state_ok, $state) = capture(
-            qw(docker inspect --format {{.State.Running}}), $name);
-        chomp $state;
-        $state_ok && $state eq 'true' or die "コンテナが起動直後に停止した\n";
-        $base = "http://$alias:8080";
+        # 生存確認と IP の取得を 1 回の inspect でまとめる。生存確認は publish 経路の
+        # docker port に相当し、これが無いと起動直後に死んだコンテナでも readiness
+        # ループの上限まで繰り返してしまう。
+        # network 名はドット記法だとハイフンを含む名前で壊れるので index で引く
+        # 区切りは改行にする。値に空白を含む Go テンプレートの <no value> が
+        # 分割されて診断メッセージが切れないようにする
+        my $format = qq[{{.State.Running}}\n]
+            . qq[{{index .NetworkSettings.Networks "$network" "IPAddress"}}];
+        my ($inspect_ok, $inspected) = capture(
+            qw(docker inspect --format), $format, $name);
+        chomp $inspected;
+        my ($running, $ip) = split /\n/, $inspected;
+        $inspect_ok && ($running // '') eq 'true'
+            or die "コンテナが起動直後に停止した\n";
+        # network に繋がっていない場合、Go テンプレートは <no value> を出す
+        ($ip // '') =~ /\A[0-9]+(?:\.[0-9]+){3}\z/
+            or die "network '$network' 上の IP を取得できない (" . ($ip // '') . ")\n";
+        $base = "http://$ip:8080";
     }
     else {
         my ($port_ok, $port) = capture(qw(docker port), $name, '8080/tcp');
