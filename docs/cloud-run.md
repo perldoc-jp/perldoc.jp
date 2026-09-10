@@ -36,7 +36,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   runner でビルドしていた頃は、buildcache の pull と smoke test のための image pull が
   どちらも Artifact Registry からインターネットへ出る data transfer out になっていた。
   同一ロケーション内の転送は無料なので、数百 MB〜GB 級のレイヤ転送を
-  asia-northeast1 の中に閉じ込める。
+  asia-northeast1 の中で完結させる。
   `script/smoke-test.pl` は手元に無いイメージを `docker run` の自動 pull で取りに行く
   ため、ビルドだけを移して smoke test を GitHub Actions に残す分割では転送は消えない。
   Cloud Run への deploy は GitHub Actions 側に残す (WIF の境界を維持し、Cloud Build の
@@ -44,18 +44,19 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 - **`data/years.pl` はビルドの前に更新する**。deploy.yml の years ジョブが
   `script/update-years.pl` で再導出し、差分があれば master へコミットしてから、
   その commit をソースにしてビルドする。ビルドの成果物を GitHub へ取り出す経路が
-  無いので、イメージが読む years.pl とリポジトリにコミットされているものは
-  常に同じ現物になる。
+  無いため、更新はビルドの後ではなく前に行う。イメージはコミット済みの現物を
+  読むので、イメージが読む years.pl とリポジトリにあるものは常に一致する。
 - データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
-  cron (10分毎の script/update.pl) に相当する処理は Dockerfile の databuild
-  ステージが担う。
+  cron (script/update.pl など。「旧 VPS の cron ジョブとの対応」の表) に相当する
+  処理は Dockerfile の databuild ステージが担う。
 - databuild の生成物は translation とソースの純関数として決定的に導出する。
   壁時計・ファイルの mtime・DB の行順 (インデックスの走査順で変わる) を
   結果に混ぜない。同じ入力からのビルドが同じバイト列になることで、アプリ
   だけの変更やベースイメージ更新で公開 JSON や feed の中身が動かない。
   版の選択は `PJP::M::PodFile` の `compare_version` / `get_latest` に一本化
   されていて、`static/docs.json` もこれに従う (= アプリが表示する版と常に
-  一致する)。feed と年次統計の入力になる翻訳イベントは
+  一致する)。
+- feed と年次統計の入力になる翻訳イベントは
   `PJP::M::Repository->commit_events` が git log の全走査 1 回で列挙する。
   現存ファイルごとの `git log -- <path>` を使わないのは、削除・rename された
   翻訳が見えないことに加え、translation が 2023 年に複数リポジトリを
@@ -80,10 +81,9 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   POP ごとのコールド MISS、eviction 後の再計算は Cloud Run に届くため、
   連続アクセス対策として Cloudflare のレートリミットルールの設定は引き続き
   推奨する (キャッシュはレートリミットやオリジン認証の代替ではない)。
-  ただし `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は
-  公開のままであり、Cloudflare を経由しない直アクセスにはエッジキャッシュも
-  レートリミットも効かない。直アクセス側の実質的な上限装置は max-instances
-  (=3)。ただし
+- `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は公開のままで、
+  Cloudflare を経由しない直アクセスにはエッジキャッシュもレートリミットも
+  及ばない。直アクセス側の実質的な上限装置は max-instances (=3) である。ただし
   Cloud Run はトラフィックスパイクやリビジョン切替中の新旧重複などで設定値を
   一時的に超えることがあるため、絶対的なコスト上限ではなく主要な緩和策として
   扱う (完全に塞ぐには LB + ingress 制限が必要で、本構成のコスト方針とは
@@ -183,7 +183,7 @@ RUNTIME_SA=perldoc-jp-run@${PROJECT_ID}.iam.gserviceaccount.com
 
 デフォルトの Compute Engine SA (`<PROJECT_NUMBER>-compute@developer.gserviceaccount.com`)
 は、組織ポリシーで自動付与が無効化されていない環境ではプロジェクトレベルの
-`roles/editor` を持つ。いずれの場合も使わず、ロールを持たない専用 SA に固定する。
+`roles/editor` を持つ。自動付与の有無にかかわらず使わず、ロールを持たない専用 SA に固定する。
 
 Artifact Registry からイメージを pull するのは Cloud Run のサービスエージェント
 (`service-<PROJECT_NUMBER>@serverless-robot-prod.iam.gserviceaccount.com`) で、これは
@@ -221,8 +221,8 @@ gcloud run deploy perldoc-jp \
   完全列挙なので、dashboard 等で一時的に足された変数がデプロイをまたいで
   残らない (設定の情報源をこのコマンドに一本化する)。
 - deploy.yml も `--image` と `--allow-unauthenticated` 以外は同じフラグ一式を毎回
-  指定しているため、サービス設定はデプロイの実行順序に関わらず self-correcting に
-  なる。`--allow-unauthenticated` (= allUsers への run.invoker 付与) だけは
+  指定しているため、サービス設定はデプロイの実行順序に関わらず毎回同じ値に
+  戻る。`--allow-unauthenticated` (= allUsers への run.invoker 付与) だけは
   この初回作成時のみで、以後のデプロイは IAM に触れない。デプロイ用 SA (§5) が
   IAM を書き換えられる権限を持たないためで、公開設定が消えた場合は自己修復
   されず §8 の確認で検出する。設定を変えるときは deploy.yml 側も合わせて
@@ -346,25 +346,25 @@ Data Access ログは課金対象のため、有効化後にログ量を確認�
 
 ### 7. GitHub リポジトリの Variables と Secrets
 
-認証情報 (Cloudflare API トークン) に加え、Cloud Run の deterministic URL
-(`https://<SERVICE>-<PROJECT_NUMBER>.<REGION>.run.app`) の構成要素・相関情報に
-なる識別子も secret として扱う。これは認証ではなく、公開 URL の発見可能性を
-下げる補助コントロール (§10 の「run.app への直アクセス」参照)。URL が第三者に
-知られた時点で効果を失うことは織り込んでおく。`SERVICE=perldoc-jp` と
-region は既にリポジトリ履歴で公開なので secret にしない (今から隠しても
-効果がない)。
+認証情報 (Cloudflare API トークン) に加え、Cloud Run の URL の構成要素になる
+識別子と、それと相関する識別子も secret として扱う。URL は
+`https://<SERVICE>-<PROJECT_NUMBER>.<REGION>.run.app` という決まった形なので、
+構成要素が揃えば導ける。これは認証ではなく、公開 URL の発見可能性を下げる
+補助的な対策で、URL が第三者に知られた時点で効果を失う (§10 の「run.app への
+直アクセス」)。`SERVICE=perldoc-jp` と region は既にリポジトリ履歴で公開なので
+secret にしない (今から隠しても効果がない)。
 
 | 値 | 置き場所 |
 |---|---|
 | `GCP_PROJECT_ID` | environment `gcp-production` の secret |
-| `GCP_PROJECT_NUMBER` | environment `gcp-production` の secret。ログに出る project number (service URL 内を含む) のマスクにも効く |
+| `GCP_PROJECT_NUMBER` | environment `gcp-production` の secret。ログに出る project number (service URL 内を含む) のマスクにも使われる |
 | `CLOUDFLARE_ACCOUNT_ID` | repository variable (認証情報でも URL の構成要素でもない) |
 | `CLOUD_RUN_URL` | environment `cloudflare-production` の secret (§10 の Worker のオリジン) |
 | `CLOUDFLARE_API_TOKEN` | environment `cloudflare-production` の secret |
 
 environment `master-write` は secret を持たない。deploy.yml の years ジョブが
-`data/years.pl` を master へ直接 push するため、その ref を master に限定する
-ためだけに置く (yml 内の ref ガードは workflow_dispatch では yml ごと
+`data/years.pl` を master へ直接 push するので、その ref を master に限定する
+目的だけで置く (yml 内の ref ガードは workflow_dispatch では yml ごと
 差し替えられるので境界にならない。下の `CLOUDFLARE_API_TOKEN` の項と同じ理由)。
 
 WIF provider (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/github/providers/perldoc-jp`)
@@ -372,7 +372,7 @@ WIF provider (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/
 deploy.yml が上記 2 つの secret から組み立てるため、個別には保存しない
 (project number / ID の重複保存を避ける)。
 
-同じ理由で、Cloud Build 移行 (§11) でも **secret も variable も増やしていない**。
+同じ理由で、Cloud Build 移行 (§11) でも secret も variable も増やしていない。
 builder SA email (`perldoc-jp-builder@<PROJECT_ID>.iam.gserviceaccount.com`) は
 deploy.yml が `GCP_PROJECT_ID` から組み立て、`cloudbuild.yaml` 側は built-in の
 `$PROJECT_ID` substitution を使う (リポジトリのファイルに project ID を書かない)。
@@ -380,12 +380,12 @@ Cloud Build が fetch するソースの URL は公開リポジトリのもの�
 
 environment は workflow から参照されただけでも自動作成されるが、その場合は
 branch policy の無い素通しになり、environment に secret が無ければ同名の
-repository secret にフォールバックする。**必ず 3 つの environment を作って
-branch policy を付けてから secret を置くこと**。`master-write` は secret を
-持たないが、作らずに参照されると branch policy 無しで自動作成され、master 限定の
-境界が黙って無くなる。順序も固定で、environment の作成が先
-(`gh secret set --env` は既存 environment の public key を取得して
-暗号化するため、environment が無ければ 404 で失敗する):
+repository secret にフォールバックする。**3 つの environment は、branch policy を
+付けた上で、secret を置く前に作る**。`master-write` は secret を持たないが、
+作らずに参照されると branch policy 無しで自動作成され、master 限定の境界が
+黙って無くなる。secret より先に作るのは、`gh secret set --env` が既存
+environment の public key を取得して暗号化するため、environment が無ければ
+404 で失敗するからでもある:
 
 ```sh
 # environment の作成。custom branch policy を使う (protected_branches=true は
@@ -439,7 +439,7 @@ staging の Custom Domain の新規作成 (wrangler.jsonc の routes が使う
 Attach Domain API) も、公式 API リファレンス上の必要権限は同じ
 Workers Scripts Write とされる。cutover 前の初回 staging デプロイ (= 新規の
 Attach) がこのトークンで成功することを検証する。権限エラーになった場合も
-**より広い権限のトークンへは逃げず**、次の順で切り分ける:
+より広い権限のトークンには替えず、次の順で切り分ける:
 
 1. トークンの Account Resources が対象アカウントを含むか
 2. `CLOUDFLARE_ACCOUNT_ID` が正しいか
@@ -484,19 +484,19 @@ gh api --method POST repos/perldoc-jp/perldoc.jp/rulesets --input - <<'EOF'
 }
 EOF
 
-# 確認 (master に効いているルールの一覧)
+# 確認 (master に適用されているルールの一覧)
 gh api repos/perldoc-jp/perldoc.jp/rules/branches/master
 ```
 
 pull request 必須ルールは入れていない。deploy.yml の years ジョブが
-GITHUB_TOKEN で master へ直接 push するため、PR 必須にするには push の PR 化か
-bypass 用の専用 App が必要になり、単独メンテの merge も止まるため。
+GITHUB_TOKEN で master へ直接 push するためで、PR 必須にするには push の PR 化か
+bypass 用の専用 App が必要になり、単独メンテの merge も止まる。
 したがって「write 権限を持つアカウントの侵害」に対する独立レビュー境界は
 現状存在しない (承認 0 の PR 必須を足してもこの境界にはならない)。
 メンテナが増えたときに required approvals + CODEOWNERS へ引き上げる。
-同じ ruleset を translation リポジトリの master にも適用する (GitHub App の
-private key を置くため。§9)。適用直後の Deploy workflow で years ジョブの
-push が成功することを確認すること。
+ruleset の適用直後の Deploy workflow で、years ジョブの push が成功することを
+確認する。同じ ruleset を translation リポジトリの master にも適用する
+(GitHub App の private key を置くため。§9)。
 
 ### 8. 手動でのビルドとデプロイ
 
@@ -510,7 +510,10 @@ Cloud Build 側の経路を手で回したい場合は、§11 の submit コマ�
 
 事前に `data/years.pl` が過去年 (2002〜) を含む現物になっていることを確認する。
 `.dockerignore` に含まれないため作業ツリーの内容がそのままイメージに焼き込まれ、
-databuild はそこへ前年+当年を累積マージする (「運用」の最後の項目を参照)。
+databuild はこのファイルを再生成しない (「運用」の最後の項目を参照)。手元からの
+ビルドでは years ジョブが走らないので、前年+当年を更新したい場合は
+`script/update-years.pl` で先に再導出しておく (使い方は「運用」の
+「data/years.pl の自動更新」)。
 
 ```sh
 PROJECT_ID=perldoc-jp-XXXXXX
@@ -682,7 +685,7 @@ App token (`Actions: write`) が侵害されたときにできることは dispa
   走る)・キャンセル、workflow の停止・再開、run / artifact の操作
 - deploy.yml 経由での years ジョブの起動 (= レビュー済みコードが生成する
   派生データ data/years.pl の master へのコミットまでは到達する)
-- `ref` は API 上 master 以外の**既存** ref も指定できる (`-f ref=master` は
+- `ref` は API 上 master 以外の既存 ref も指定できる (`-f ref=master` は
   呼び出し側の慣行であって token の制約ではない)。ただし別 ref への dispatch は、
   GCP 側は WIF の attribute-condition が、GCP / Cloudflare の environment secret
   は branch policy が master 限定のため拒否する。App は Contents 権限を
@@ -743,7 +746,7 @@ Cache Rules) の条件は、ビルダーを使わず **Edit expression** に式�
   落ちる
 - origin 側の障害や設定ミスは 502 にして、`cf-ray`・パス・例外の種類を
   構造化ログに出す。ログは Workers Logs で見る (wrangler.jsonc の `observability`。
-  正常なリクエスト 1 件ごとのログは保存件数を食うだけなので切ってある)
+  正常なリクエスト 1 件ごとのログは保存件数を消費するだけなので切ってある)
 
 `CLOUD_RUN_URL` に入れる値:
 
@@ -793,12 +796,12 @@ exact な devDependency で、`worker/package-lock.json` が依存グラフ全�
 `--env` を省くと `CLOUDFLARE_ENV` で環境が選ばれてしまうため、selector は
 必ず明示している。
 
-ここで `wrangler login` (OAuth) を使わないのは意図的な選択。login の既定
-スコープは d1 / pages / ssl_certs / queues など Workers Scripts を大きく
-超える write を含み、token が refresh token ごと平文の
+ここで `wrangler login` (OAuth) を使わないのは、login の既定スコープが
+d1 / pages / ssl_certs / queues など Workers Scripts を大きく超える write を
+含み、token が refresh token ごと平文の
 `~/Library/Preferences/.wrangler/config/default.toml` に永続化される
-(自動更新されるため実質無期限)。上の手順が `npm ci` をトークンより先に行う
-のと同じ脅威モデル (手元の依存・マルウェアによる資格情報の奪取) に対しては、
+(自動更新されるため実質無期限) ためである。上の手順が `npm ci` をトークンより
+先に行うのと同じ脅威モデル (手元の依存・マルウェアによる資格情報の奪取) に対しては、
 ディスクに残らない Workers Scripts のみのトークンのほうが安全になる。
 取り回しを優先して login を使う場合も
 `wrangler login --scopes account:read user:read workers_scripts:write` で
@@ -808,8 +811,8 @@ exact な devDependency で、`worker/package-lock.json` が依存グラフ全�
 され得る。`wrangler whoami` で状態を確認し、残っているセッションは
 logout しておく。
 
-Worker の通常変数は `wrangler.jsonc` が、secret (ORIGIN) は `scripts/deploy.sh` が
-所有する。dashboard で追加した通常変数は次回のデプロイで消える。secret は
+Worker の通常変数は `wrangler.jsonc` で、secret (ORIGIN) は `scripts/deploy.sh` で
+定義する。dashboard で追加した通常変数は次回のデプロイで消える。secret は
 デプロイごとに `--secrets-file` で再登録され、列挙外の既存 secret は消えない。
 
 #### DNS
@@ -818,7 +821,7 @@ Worker の通常変数は `wrangler.jsonc` が、secret (ORIGIN) は `scripts/de
   証明書は Cloudflare が自動で作る。Workers の route にプレースホルダの
   `AAAA 100::` を置く方式は Cloudflare が非推奨としている。apex は wrangler.jsonc の
   routes には書かずダッシュボードで登録する。`wrangler deploy` が DNS の切り替えを
-  伴うと事故になるため (staging は壊れても影響がないので `[env.staging]` の routes で
+  伴うと事故になるため (staging は壊れても影響がないので `env.staging` の routes で
   宣言的に作っている)
 - `www.perldoc.jp` と `new.perldoc.jp` は **proxied (オレンジ雲)** にする。
   リクエストは下の Redirect Rule がエッジで終端するのでオリジンには届かず、
@@ -845,7 +848,7 @@ Redirect Rules だけで処理される。
 
 #### エッジキャッシュ (Workers Cache と fetch の cf 設定)
 
-エッジのキャッシュポリシーは Worker が所有し、二層で構成する
+エッジのキャッシュポリシーは Worker 側で決め、二層で構成する
 (worker/src/index.js の `WORKERS_CACHE_TTL` / `ORIGIN_CACHE_TTL`):
 
 - **外側: Workers Cache** (<https://developers.cloudflare.com/workers/cache/>)。
@@ -853,8 +856,8 @@ Redirect Rules だけで処理される。
   HIT では Worker 自体が起動しない。保持の可否と TTL は Worker が全レスポンスへ
   明示する `Cloudflare-CDN-Cache-Control` ヘッダーで制御し、GET/HEAD の 200 は
   `max-age=3600`、それ以外は `no-store` を付ける。**無指定はオプトアウトに
-  ならない** — RFC 9111 のヒューリスティック (404 も 180 秒保持など) が適用
-  されるため、`cache.enabled` を残したままヘッダー側だけを消してはならない。
+  ならず**、RFC 9111 のヒューリスティック (404 も 180 秒保持など) が適用される。
+  したがって `cache.enabled` を残したままヘッダー側だけを消すわけにはいかない。
   このヘッダーはエッジで消費されクライアントへは届かない。同一キーの同時
   MISS はデータセンター内で 1 回の Worker 起動に集約される (request
   collapsing)。キャッシュは Worker 単位かつ Worker の version 単位
@@ -874,10 +877,10 @@ Redirect Rules だけで処理される。
   しない」の意味。`0` は即時失効なので使わない)。
 
 役割分担: 外側は性能最適化 (HIT で Worker の起動と CPU を省き、同時 MISS を
-束ねる)、内側はオリジン保護の backstop。外側のキーにはクライアントが自由に
+束ねる)、内側はオリジンを守る最後の層。外側のキーにはクライアントが自由に
 変えられるヘッダー (後述) が含まれるためキー分割で MISS を強制できるが、
 そうして Worker まで届いた変種も、内側では Worker が正規化した上流 URL の
-キーに寄って HIT する。**外側があるからといって内側を外してはならない**。
+キーに寄って HIT する。**外側があるからといって内側を外すわけにはいかない**。
 
 ダッシュボードの Cache Rules に同じルールを重ねない。Workers Cache には
 ゾーンの Cache Rules / Page Rules / cache level 設定がそもそも一切適用されず、
@@ -885,7 +888,7 @@ Redirect Rules だけで処理される。
 compatibility date が `request_cf_overrides_cache_rules` の既定有効日
 2025-04-02 以降であることが前提。wrangler.jsonc は 2026-07-25)。
 
-TTL の所有境界:
+TTL を決める場所:
 
 - ブラウザー向け TTL は app.psgi が付ける `Cache-Control` が唯一の情報源
   (`/static/docs.json` と `/static/rss/` は 2 時間、それ以外の `/static/*` と
@@ -899,20 +902,21 @@ TTL の所有境界:
 - 内側のエッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 1 時間)。
 - 再デプロイ後の残留は最悪で外側 + 内側の和 (内側の失効直前の応答で外側が
   充填された場合)。「最大 2 時間」の予算 (構成の概要) を保つよう二層の和を
-  7200 秒以内にする。片方の TTL だけを変えないこと。この予算は平常時のもの:
-  Worker のエラー時は、外側が失効済みの保存応答を `Cf-Cache-Status: STALE`
-  として配る。ヘッダーに `stale-if-error` を指定していないため、この stale
-  配信に時間の上限は**無く**、エントリが purge・eviction されるか Worker が
-  回復するまで続き得る。エラーを返すよりよいのでこれを許容する
-  (`UPDATING` は `stale-while-revalidate` を明示した場合だけの状態で、
-  現在のヘッダーでは発生しない)。裏返しとして、公開 URL が 200 を返し
-  続けることは障害が無いことの証明にならない — 障害の検知は
-  `Cf-Cache-Status: STALE` の有無と Workers Logs (proxy failed の
-  console.error) で行い、古い応答を止める必要があれば purge する
-  (「purge について」のとおり外側の purge API は未配線なので、緊急時は
-  Worker の再デプロイによる version 分離が実質の purge になる)。
-  鮮度に有限の上限が必要になったら、`stale-if-error=N` を明示して
-  その値をテストで固定する。
+  7200 秒以内にする。片方の TTL だけを変えないこと。
+
+この予算は平常時のもの。Worker のエラー時は、外側が失効済みの保存応答を
+`Cf-Cache-Status: STALE` として配る。ヘッダーに `stale-if-error` を指定して
+いないため、この stale 配信に時間の上限は無く、エントリが purge・eviction
+されるか Worker が回復するまで続き得る。エラーを返すよりよいのでこれを許容する
+(`UPDATING` は `stale-while-revalidate` を明示した場合だけの状態で、現在の
+ヘッダーでは発生しない)。鮮度に有限の上限が必要になったら、`stale-if-error=N`
+を明示してその値をテストで固定する。
+
+裏返しとして、公開 URL が 200 を返し続けることは障害が無いことの証明に
+ならない。障害の検知は `Cf-Cache-Status: STALE` の有無と Workers Logs
+(proxy failed の console.error) で行い、古い応答を止める必要があれば purge する
+(「purge について」のとおり外側の purge API は未配線なので、緊急時は Worker の
+再デプロイによる version 分離が実質の purge になる)。
 
 内側のキャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
 method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う。
@@ -921,7 +925,7 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
 - 一般ルートはクエリ全体がキーに残る。`/about?nonce=1` と `?nonce=2` は
   別キーになり、変種の初回はオリジンへ届く (= 現在と同じ都度計算)。アプリは
   クエリを意味に使う余地がある (`/search?q=`、tmpl/pod.tt の `c().req.uri()`
-  による Source link) ため、一般ルートのクエリを推測で削ってはならない。
+  による Source link) ため、一般ルートのクエリは推測で削らない。
   ダッシュボードの「Ignore Query String」も使わない (diff の `target` まで
   キーから消え、異なる差分の混同 = キャッシュ汚染になる)。
 - diff だけは Worker が上流クエリを再構築する。空でない `target` 1 個だけを
@@ -937,10 +941,10 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
 外側 (Workers Cache) のキャッシュキーは Cloudflare が固定で決める:
 path + クエリ (パラメーターの順序も区別)、Worker の version、それに
 method override 系・URL rewrite 系・forwarding 系のリクエストヘッダー。
-ホスト名はキーに**含まれない**が、本番と staging は別 Worker
+ホスト名はキーに含まれないが、本番と staging は別 Worker
 (perldoc-jp / perldoc-jp-staging) で、キャッシュ自体が Worker 単位に
 分かれているため混ざらない。diff のクエリ正規化は Worker の中の処理なので
-外側キーには効かず、等価表現の変種は外側では別キーになる — それらは
+外側キーには反映されず、等価表現の変種は外側では別キーになる。それらは
 Worker を起動させるだけで、正規化後の内側キーへ寄って HIT するため
 Cloud Run には届かない (Worker の起動は現状の全リクエストと同じ費用)。
 
@@ -990,13 +994,14 @@ Mode を含むゾーン設定は外側の説明にならない。内側の層を
 - `Always Use HTTPS`: **有効**。HTTP で来たリクエストをエッジで HTTPS へ 301 する
 - `Minimum TLS Version`: **1.2**
 - perldoc.jp 側の証明書は Universal SSL (`*.perldoc.jp` と apex) が担う
-- **SSL/TLS の暗号化モード (Flexible / Full / Full strict) は本構成では効かない**。
+- **SSL/TLS の暗号化モード (Flexible / Full / Full strict) は本構成には影響しない**。
   Worker の `fetch()` は Worker ランタイムからオリジンへの独立した HTTPS リクエストで、
   ゾーンの暗号化モードに従わない。run.app の証明書は Google が管理するため
-  検証も常に成立する。逆に cutover 前にモードを上げると、:443 を待受していない
-  旧オリジンへの接続が壊れるので触らないこと
+  検証も常に成立する。ただし cutover 前は旧オリジンへの接続にこの設定が適用される
+  ため、モードを上げると :443 を待受していない旧オリジンへの接続が壊れる。
+  cutover までは触らない
 - 暗号化モードの `Automatic mode` (Cloudflare が定期スキャンでモードを決める) が
-  有効だと、スキャンのたびにモードが変わり得る。上記のとおり本構成では効かない
+  有効だと、スキャンのたびにモードが変わり得る。上記のとおり本構成には影響しない
   設定なので実害は無いが、意図しない変更が混ざるのを避けたいなら手動に固定する
 - `HSTS` は未設定。有効にすると HTTP でのアクセス手段を長期間放棄することになるため、
   `Always Use HTTPS` が安定してから別途判断する
@@ -1026,7 +1031,7 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    curl -fsS "$BASE/static/docs.json" | grep 'Acme::Bleach' > /dev/null
    curl -fsS -o /dev/null "$BASE/favicon.ico"
 
-   # X-Forwarded-Host が効いていること。/chomp は /func/chomp へのリダイレクトなので、
+   # X-Forwarded-Host が反映されていること。/chomp は /func/chomp へのリダイレクトなので、
    # ここに run.app が出たら Worker 側の不備 (/func/chomp 自体は 200 なので使えない)
    curl -sS -o /dev/null -D - "$BASE/chomp" | grep -i '^location:'
 
@@ -1046,7 +1051,7 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    done
 
    # エッジ制御ヘッダーがクライアントへ漏れないこと (エッジで消費される)。
-   # 出てきたら Workers Cache が効いていない構成を疑う
+   # 出てきたら Workers Cache が有効になっていない構成を疑う
    curl -sS -o /dev/null -D - "$BASE/" | grep -i '^cloudflare-cdn-cache-control:' \
      || echo 'Cloudflare-CDN-Cache-Control なし (期待どおり)'
 
@@ -1059,7 +1064,7 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
 
    # diff の未知パラメーターは Worker がキーから除き、内側では同じキャッシュへ
    # 寄る。外側 (Workers Cache) のキーはクエリをそのまま含むため、この変種は
-   # 外側では MISS になり得る — その場合も Worker 経由で内側の HIT に寄り、
+   # 外側では MISS になり得る。その場合も Worker 経由で内側の HIT に寄り、
    # Cloud Run には届かない (Cloud Run ログ確認まで見れば合格)。
    # 一般ルートのクエリ変種が別キー (MISS) になるのは仕様
    curl -sS -o /dev/null -D - "$DIFF_URL&nonce=1" | grep -iE '^(cf-cache-status|age):'
@@ -1111,15 +1116,14 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    Cloud Run 側でも軽減を確認する: 同じ URL を短時間に複数回送り、Cloudflare で
    後続が `HIT` になる間、Cloud Run のリクエストログにはキャッシュ充填分だけが
    届いていること (HIT と同数のリクエストや diff 計算が発生していないこと) を
-   見る。エッジキャッシュ導入後の Cloud Run リクエストログは「ページビュー」
-   ではなく「origin MISS」に近い値になる。
+   見る。
 
    症状から切り分ける:
    - `/chomp` の `Location` に run.app が出る → Worker が `X-Forwarded-Host` を
      付けていない
    - 200 が `DYNAMIC` のまま → wrangler.jsonc の `cache.enabled` か
      `Cloudflare-CDN-Cache-Control` がデプロイに入っていない (Development
-     Mode は zoneless な外側には効かない) / (内側の層は) Development Mode が
+     Mode は zoneless な外側には影響しない) / (内側の層は) Development Mode が
      ON・Worker の `cf` 設定の漏れ・compatibility date
      (「エッジキャッシュ」節の切り分け順)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
@@ -1154,12 +1158,12 @@ cutover 時に確かめる。
 1. Cloud Run にデプロイし、`status.url` を確認する
 2. 「動作確認」のとおり staging で構成を検証する。SSL/TLS・Browser Cache TTL・
    URL 正規化はゾーン単位の設定なので、ここで確認したものが cutover 後の本番にも
-   そのまま効く。エッジキャッシュは Worker のデプロイに同梱されるため、
+   そのまま適用される。エッジキャッシュは Worker のデプロイに同梱されるため、
    ゾーン側の追加操作は無い
 3. 本番の Worker をデプロイする。トークンと ORIGIN の読み込みを含む実行形は
    「手元からデプロイする場合」の bash ブロックのとおり
    (`./scripts/deploy.sh production` まで一式)
-4. apex の既存レコードを Worker の Custom Domain に**置き換える**。Custom Domain の
+4. apex の既存レコードを Worker の Custom Domain に置き換える。Custom Domain の
    登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる
 5. Redirect Rule を入れてから、www/new を **proxied (オレンジ雲)** に切り替える。
    グレー雲のままではリクエストが Cloudflare のエッジを通らず Redirect Rule が
@@ -1177,18 +1181,21 @@ cutover 時に確かめる。
 #### run.app への直アクセス
 
 `--allow-unauthenticated` のため `<service>.run.app` は公開のままで、Worker を
-経由しないアクセスにはキャッシュもレートリミットも効かない (「構成の概要」のとおり
+経由しないアクセスにはキャッシュもレートリミットも及ばない (「構成の概要」のとおり
 実質的な上限装置は max-instances)。エッジキャッシュは二層とも Worker に
 属する (外側は Worker の手前、内側は Worker の `fetch()` に付く設定) ため、
 この経路では diff を含む全パスが毎回オリジンで計算される。
-これは受容している残存リスクの一部である。
 
 `X-Forwarded-Host` を信頼する構成なので、直アクセスでは `Location` のホストを
 任意の値にできる。Cloudflare のキャッシュには入らない経路なのでキャッシュ汚染には
 繋がらず、攻撃者が自分自身をリダイレクトさせられるだけ。塞ぐなら Worker が共有
-シークレットのヘッダを付け、アプリ側で一致しないリクエストを 403 にするのが最も安い。
+シークレットのヘッダを付け、アプリ側でそれを条件にする。ヘッダの無いリクエストで
+`ReverseProxy` を無効にするだけなら `enable_if` で足り (「構成の概要」)、一致しない
+リクエストを 403 にすれば、直アクセスで diff などのアプリ処理を走らせることも
+できなくなる (リクエストが Cloud Run に届くこと自体は変わらない)。いずれも下記の
+LB + ingress 制限より安い。
 
-この直アクセス経路は、構成の単純さとコストを優先して**受容している残存リスク**
+この直アクセス経路は、構成の単純さとコストを優先して受容している残存リスクである
 (完全に塞ぐには LB + ingress 制限が必要)。補助として、Cloud Run の URL と
 その構成要素 (project number / ID) は §7 の分類で secret に置き、偶発的な
 発見と無差別探索の可能性を下げる。これは認証ではないため、URL が第三者に
@@ -1206,19 +1213,18 @@ Custom Domain (perldoc.jp / staging.perldoc.jp) だけにしている。
 
 #### Workers の枠と、Worker を挟まない構成
 
-Workers Free は 10 万リクエスト/日で、**Cloudflare のキャッシュにヒットした
-リクエストも 1 件として数える**。超える場合は Workers Paid (月 $5, 1000 万
-リクエスト込み、超過 100 万あたり $0.30)。エッジキャッシュ (§10 の
-エッジキャッシュ節) はこの枠を減らさない — 外側 (Workers Cache) の HIT で
-Worker が起動しないリクエストも 1 件として数え、追加課金も無い (HIT では
-CPU 時間が課金されないだけ)。減るのは Worker の実行回数・CPU 消費と、
-Cloud Run 側のリクエスト数・CPU 消費。
+Workers Free は 10 万リクエスト/日。外側 (Workers Cache) の HIT で Worker が
+起動しないリクエストも 1 件として数えるため、エッジキャッシュ (上の
+「エッジキャッシュ」節) はこの枠の消費を減らさない (HIT では CPU 時間が課金
+されないだけで、追加課金も無い)。減るのは Worker の実行回数・CPU 消費と、
+Cloud Run 側のリクエスト数・CPU 消費。超える場合は Workers Paid (月 $5, 1000 万
+リクエスト込み、超過 100 万あたり $0.30)。
 
 Worker を挟まない構成にする場合の選択肢:
 
 - Origin Rules の Host header override で run.app を直接オリジンにする。DNS だけでは
   `Host: perldoc.jp` が run.app に届いて 404 になるため書き換えが必須で、この機能は
-  **Enterprise 限定** (SNI override も同様)
+  Enterprise 限定 (SNI override も同様)
 - Cloud Run を Global External Application Load Balancer の背後に置く。自前証明書
   (Cloudflare Origin CA) が使えて Google が推奨する構成でもあるが、転送ルールだけで
   概算 月 $18〜25 かかり、min-instances=0 のコスト方針とは釣り合わない
@@ -1226,7 +1232,7 @@ Worker を挟まない構成にする場合の選択肢:
 ### 11. Cloud Build (本番イメージのビルド)
 
 `.github/workflows/deploy.yml` の deploy ジョブは、ビルド・テスト・smoke test を
-Cloud Build (`cloudbuild.yaml`) に投げる。GitHub-hosted runner が Artifact Registry から
+Cloud Build (`cloudbuild.yaml`) で実行する。GitHub-hosted runner が Artifact Registry から
 buildcache や runtime イメージを引くと、そのたびにインターネットへの data transfer out に
 なるため、大きいレイヤ転送を asia-northeast1 の中で完結させる。
 
@@ -1276,7 +1282,8 @@ builder SA には **Cloud Run の権限を一切与えない**。デプロイは
 
 Cloud Storage は使わない。ビルドの成果物を GitHub へ取り出す経路が無いので専用の
 バケットは不要で、`gcloud builds submit .` を使わないためソースの staging bucket も
-作られない。
+作られない。`logging: CLOUD_LOGGING_ONLY` により `defaultLogsBucketBehavior` も
+無視され、ログバケットも作られない。
 
 #### 11-2. preflight (cutover の必須前提)
 
@@ -1481,7 +1488,7 @@ gcloud artifacts docker images delete \
 
 いずれかの assertion が崩れた場合は、`cloudbuild.yaml` の該当ステップを
 `gcr.io/cloud-builders/*` に寄せる、`docker run` の入れ子にする等の代替へ切り替えてから
-cutover する。**preflight が全部通るまで cutover しない。**
+cutover する。
 
 #### 11-3. デプロイ用 SA への追加バインディングと cutover
 
@@ -1507,7 +1514,7 @@ gcloud iam service-accounts add-iam-policy-binding "$BUILDER_SA" \
 
 任意: ビルドログを GitHub Actions のログに出したい場合。`cloudbuild.yaml` は
 `logging: CLOUD_LOGGING_ONLY` なので、`gcloud builds log` は Cloud Logging を読む。
-付与しなくても workflow は動く (ログ取得に失敗しても握りつぶし、Cloud Console の URL を
+付与しなくても workflow は動く (ログ取得に失敗しても無視して、Cloud Console の URL を
 案内する)。プロジェクト全体のログ閲覧権限になるので、要否は判断すること。
 
 ```sh
@@ -1526,8 +1533,7 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   `build-runtime` を分割するか、machine type を上げてビルド時間を短くする
 - 実ビルド時間を測り、`cloudbuild.yaml` の `timeout` と deploy.yml の
   `timeout-minutes` を実測に合わせて詰めること (「運用」の `gcloud builds list`)。
-  移行直後の実測はレイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いた
-  ビルドが 6 分程度
+  移行直後の実測値は「Cloud Build 移行で課金対象になり得るもの」の表にある
 - 無料枠 2,500 build-minutes に対する消費ペース
 
 **post-cutover: Artifact Registry の権限を降格する。** cutover と同時に行わないこと
@@ -1559,33 +1565,25 @@ gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
 7. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
 
 **GitHub 側で必要なのは 3 の environment だけ** (§7 の environment 作成コマンドに
-含めてある)。secret も variable も増えない。作らずに参照されると branch policy 無しで
-自動作成され、years ジョブの master 限定の境界が黙って無くなるので、cutover の前に
-必ず作ること。
+含めてある)。secret も variable も増えない。作らずに参照されたときの影響は §7 の
+とおりなので、cutover の前に作る。
 Cloud Build の 2nd-gen connection、Cloud Build GitHub App のインストール、
 Secret Manager はいずれも使わない。
 
-## この変更で課金対象になり得るもの
+## Cloud Build 移行で課金対象になり得るもの
 
 イメージのビルドを Cloud Build へ移したことで増減するもの。金額は 2026-09 時点の
 公式 pricing を参照した値で、実際に請求される単価は最新のページで確認すること。
 
 | 項目 | 単価 | 見込み |
 |---|---|---|
-| Cloud Build build-minutes | **billing account あたり月 2,500 分が無料**。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 移行直後の実測では、レイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いたビルドが 6 分程度 (`build-runtime` が 5 分)。日次 schedule と translation 通知の頻度を考えても無料枠には大きな余裕がある |
+| Cloud Build build-minutes | billing account あたり月 2,500 分が無料。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 移行直後の実測では、レイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いたビルドが 6 分程度 (`build-runtime` が 5 分)。日次 schedule と translation 通知の頻度を考えても無料枠には大きな余裕がある |
 | Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | 既存費用。§2 の cleanup policy のまま変わらない |
-| Artifact Registry ↔ Cloud Build (同一ロケーション) | **$0.00 (Free)**。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | **この変更の主目的**。buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
-| Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | **削減対象**。GitHub-hosted runner は Google のサービスではないので、runner が引くイメージ・キャッシュはここに入っていた。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
-| Cloud Logging | $0.50/GiB、**50 GiB/project/month が無料**。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | `logging: CLOUD_LOGGING_ONLY` にしたビルドログの分。無料枠に収まる想定 |
-| Cloud Storage | — | **使わない**。ビルドの成果物を GitHub へ取り出す経路が無いので専用バケットは要らず、`gcloud builds submit .` を使わないためソースの staging bucket も作られない |
-| Artifact Analysis (脆弱性スキャン) | $0.26/scan。**Container Scanning API を有効化したときにだけ**課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため、**この変更で新たに発生する費用ではない**。有効化した場合も、push 元が GitHub Actions か Cloud Build かで差は出ない |
-
-避けている費用:
-
-- `gcloud builds submit .` を使わないので、ソースの staging bucket
-  (`gs://<PROJECT_ID>_cloudbuild`) は作られない。
-- `logging: CLOUD_LOGGING_ONLY` により `defaultLogsBucketBehavior` は無視され、
-  自プロジェクト内に GCS のログバケットは作られない。
+| Artifact Registry ↔ Cloud Build (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | この移行の主目的。buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
+| Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | 削減対象。GitHub-hosted runner は Google のサービスではないので、runner が引くイメージ・キャッシュはここに入っていた。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
+| Cloud Logging | $0.50/GiB、50 GiB/project/month が無料。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | `logging: CLOUD_LOGGING_ONLY` にしたビルドログの分。無料枠に収まる想定 |
+| Cloud Storage | — | 使わない (11-1)。専用バケットも、ソースの staging bucket も、ログバケットも作られない |
+| Artifact Analysis (脆弱性スキャン) | $0.26/scan。Container Scanning API を有効化したときにだけ課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため、この移行で新たに発生する費用ではない。有効化した場合も、push 元が GitHub Actions か Cloud Build かで差は出ない |
 
 ## 旧 VPS の cron ジョブとの対応
 
@@ -1597,13 +1595,13 @@ VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移�
 | `script/create_recent.pl` | 毎時 | 同上 (databuild)。`script/create_data.pl` に統合 |
 | `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | `script/update-years.pl`。deploy.yml の years ジョブがイメージのビルドより前に実行し、結果を master へコミットする。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎回 git から再導出する (年またぎの欠落を自己修復) |
 | `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_data.pl` に置き換え |
-| `script/generate_heavy_diff.pl` | 毎時 | **廃止**。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため都度計算で足り、同じ比較の反復は Cloudflare のエッジキャッシュ (§10) が吸収する |
+| `script/generate_heavy_diff.pl` | 毎時 | 廃止。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため都度計算で足り、同じ比較の反復は Cloudflare のエッジキャッシュ (§10) が吸収する |
 | `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
 
 反映頻度は旧構成 (1日4回) より速くなる。translation の push を
 workflow_dispatch (§9) で受けるため、翻訳がマージされてから数分で反映される。
 
-### `static/docs.json` は外部から参照されている
+### `static/docs.json` の外部利用者
 
 `static/docs.json` は Chrome 拡張と Firefox アドオンが参照している。
 移行後もパスと JSON 構造 (`{パッケージ名: パス}`) を変えないこと。
@@ -1611,10 +1609,10 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
 - <https://chrome.google.com/webstore/detail/iedgkpbokcjamkpoglfbefmdmclkljhc>
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
-デプロイ後に古い docs.json が残る時間は、ブラウザーは app.psgi が付ける
+デプロイ後に古い docs.json が残る時間は、ブラウザーでは app.psgi が付ける
 `Cache-Control` (2 時間) で決まる。エッジでは、平常時は外側の Workers Cache
 (1 時間) と内側の `fetch()` キャッシュ (1 時間) の二層合計で最大 2 時間 (§10)。
-障害時の stale 配信はこの上限に含めない (§10 の TTL の所有境界)。
+障害時の stale 配信はこの上限に含めない (§10 の「TTL を決める場所」)。
 旧構成の更新間隔は 6 時間毎だった。
 
 ## 運用
@@ -1677,7 +1675,7 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   そのとき対象を引くのに使っているのは build ID ではなく run ごとに一意な
   `_TAG` substitution で、`gcloud builds submit` が ID を返す前に中断されても
   受理済みのビルドを回収できるようにしてある。`_TAG` の先頭は `github.sha` では
-  なく **実際にビルドした commit** (years ジョブが書き戻していればその commit)。
+  なく実際にビルドした commit (years ジョブが書き戻していればその commit)。
   手で探す場合も同じ引き方をする:
   ```sh
   gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --ongoing \
@@ -1687,9 +1685,9 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   進行中のものを全部見たいときは `--filter` を外す。放置すると、次の run のビルドと
   同時に `:buildcache` を書きに行き、last-writer-wins で以後のキャッシュヒット率が落ちる
 - **gcloud SDK のバージョン**: deploy.yml は `setup-gcloud` の `version` を固定して
-  いる。`cloudbuild.yaml` の解釈は client 側 (gcloud) で行われ、gcloud は知らない
+  いる。`cloudbuild.yaml` の解釈は client 側 (gcloud) で行われ、gcloud は未知の
   enum 値を「そのフィールドは未使用」として扱う。`options.machineType` の
-  `E2_STANDARD_2` がクライアントの enum に入ったのは **572.0.0** で、571.0.0 以前には
+  `E2_STANDARD_2` がクライアントの enum に入ったのは 572.0.0 で、571.0.0 以前には
   無い (450 / 500 / 570 で不在、572 以降で存在することを確認)。machine type 自体は
   2023 年から使えるため、値の古さからは判断できない。それ以前の版で submit すると
   `.options.machineType: unused` で submit の手前で落ちる。
@@ -1704,16 +1702,15 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   runner だった頃より匿名 pull のレート制限に当たりやすい。当たった場合は
   Artifact Registry の remote repository (Docker Hub のプロキシ) を作ってそちらを
   参照するように `cloudbuild.yaml` と `Dockerfile` を書き換える
-- **無料枠の消費を見る**: Cloud Build の無料枠は billing account あたり月 2,500
-  build-minutes で、default pool の `e2-standard-2` にだけ適用される promotional な枠
-  (「この変更で課金対象になり得るもの」参照)。所要時間は
+- **無料枠の消費を見る**: 無料枠の条件は「Cloud Build 移行で課金対象になり得る
+  もの」の表のとおり。所要時間は
   `gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --limit 20 --format='table(id,status,createTime,startTime,finishTime)'`
   で確認する
 - **data/years.pl の自動更新 (年次作業は不要)**: `.github/workflows/deploy.yml` の
   years ジョブが、イメージをビルドする前に `script/update-years.pl` で前年+当年
   (対象年は translation の最新イベントから導出) を translation の git 履歴から
   再導出し、差分があれば master へ自動コミットする。ビルドはそのコミットを
-  ソースにするので、リポジトリにある years.pl とイメージが読むものは同じ現物になる。
+  ソースにする (構成の概要)。
   コミットの親は `github.sha` に固定してあり、push の時点で master が進んでいれば
   その run の再導出結果は捨てて `github.sha` のままビルドする (master が進んだ
   ということは後続の run があり、書き戻しはそちらに任せる)。
@@ -1723,8 +1720,8 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   `perl script/update-years.pl <対象年>` の結果をコミットすれば回復する。
   対象年を過去に指定すればその年以降を git 履歴からまとめて再導出できる。
   ただし**指定してよいのは 2023 年以降**。
-  2022 年以前は CVS 期の別実装が書いた記録で、**現在の git 履歴からは同じ値を
-  再現できない** (訳者名も件数の数え方も別系統)。再導出は「復元」ではなく
+  2022 年以前は CVS と複数の旧リポジトリを当時の別実装で観測した記録で、現在の
+  git 履歴からは同じ値を再現できない (訳者名も件数の数え方も別系統)。再導出は「復元」ではなく
   別の指標への置換になるため、指定しない。
   2023 年以降は現行の規則で再生成済みなので、同じ translation commit から
   再導出した結果は `data/years.pl` と一致する (回復手順は冪等)。
@@ -1737,8 +1734,7 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   対象年以降を git 履歴から再構築する (イベントが削除だけになった年の
   ブロックは残らない)。イメージのビルド (databuild) はこのファイルを再生成せず、
   コミットされている現物をそのまま取り込む。
-  2022 年以前の統計は CVS と複数の旧リポジトリを当時の
-  システムで観測した結果の凍結で、現在の git 履歴からは再現できないため、
+  2022 年以前の統計は前項のとおり現在の git 履歴から再現できないため、
   過去年を含む現物が **git 管理下にコミットされていること** が前提になる。
   ローカルビルドで `/translators` が 200 を返しても、それはページが
   描画されたことを示すだけで年次データの完全性は保証しない。
