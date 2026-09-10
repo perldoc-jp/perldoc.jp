@@ -4,15 +4,15 @@ perldoc.jp のソース
 
 # DESCRIPTION
 
-Perl の公式ドキュメント、モジュールドキュメントを日本語に翻訳したものを表示するサイト
-perldoc.jp のソースコードです
+Perl の公式ドキュメントとモジュールドキュメントの日本語訳を表示するサイト
+perldoc.jp のソースコードです。
 
 # ARCHITECTURE
 
-perldoc.jpの翻訳データは、https://github.com/perldoc-jp/translation から取得し、
-SQLiteに保存しておき、それを表示しています。
+perldoc.jp の翻訳データは、https://github.com/perldoc-jp/translation から取得して
+SQLite に保存し、それを表示しています。
 
-組み込み関数や組み込み変数などの一覧情報は、perldocの情報を元に生成しています.
+組み込み関数や組み込み変数などの一覧情報は、perldoc の出力を元に生成しています。
 
 Google Cloud Run 上で動作しています。翻訳データや一覧情報はイメージのビルド時に
 生成して焼き込むので、配信するデータの更新はイメージの再ビルドと再デプロイで行います。
@@ -28,7 +28,7 @@ Google Cloud Run 上で動作しています。翻訳データや一覧情報は
 
 - Requirements
   - Docker
-  - docker-compose v3 
+  - docker-compose v3
 
 
 ```shell
@@ -46,7 +46,7 @@ make down
 make test
 ```
 
-## Carmel や Cartonを利用する場合
+## Carmel や Carton を利用する場合
 
 - Requirements
   - Git
@@ -57,8 +57,8 @@ make test
 
 #### DBの準備
 
-SQLiteのDBが必要です。DBの場所は、config/development.pl に定義しています。
-そのままであれば、ユーザーのホームディレクトリの直下になります。
+SQLite の DB が必要です。DB の場所は config/development.pl に定義してあり、
+そのままであればユーザーのホームディレクトリの直下になります。
 
 ```sh
 test ! -e ~/perldocjp.master.db && sqlite3 ~/perldocjp.master.db < sql/sqlite.sql
@@ -73,7 +73,7 @@ carmel install
 
 #### 翻訳データの取得
 
-※ `conf/development.pl` の `assets_dir` を変更しておくのをおすすめします(デフォルトでは、ホームディレクトリの直下に `assets` というディレクトリが必要になります)。
+`config/development.pl` の `assets_dir` は変更しておくことをおすすめします (デフォルトでは、ホームディレクトリの直下に `assets` というディレクトリが必要になります)。
 
 ```sh
 # 翻訳されたpodの取得や必要なデータベースの構築
@@ -81,7 +81,7 @@ carmel install
 perl script/update.pl
 ```
 
-※翻訳データのアップデートを行いたくないが、関連するファイルやDBのみ更新したい場合は、`SKIP_ASSETS_UPDATE=1`を環境変数に設定してください。
+翻訳データは更新せず、関連するファイルや DB だけを更新したい場合は、環境変数 `SKIP_ASSETS_UPDATE=1` を設定してください。
 
 ### 開発をする
 
@@ -95,20 +95,17 @@ carmel exec -- prove -Ilib -r -v t
 
 ### デザインを変更する場合の環境構築
 
-デザインの管理には Scss をつかっています。
-Scss の生成は gem の Sass が必要なので
+デザインの管理には Scss を使っています。CSS の生成には gem の Sass が必要です。
 
 ```sh
 gem install haml
 ```
 
-して、
+次のコマンドで scss/ の変更を監視しながら編集します。
 
 ```sh
 sass  --compass -l --style expanded --watch scss/main.scss:static/css/main.css scss/screen.scss:static/css/screen.css
 ```
 
-してから変更してください。
-
-main.css の方を変更してはいけません。
+static/css/main.css と screen.css はこのコマンドの生成物なので、直接は編集しません。
 
