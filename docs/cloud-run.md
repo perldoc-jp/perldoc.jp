@@ -33,22 +33,23 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
 ```
 
 - **イメージのビルドは Cloud Build (asia-northeast1) で行う** (§11)。GitHub-hosted
-  runner でビルドしていた頃は、buildcache の pull と smoke test のための image pull が
-  どちらも Artifact Registry からインターネットへ出る data transfer out になっていた。
+  runner でビルドすると、buildcache の pull と smoke test のための image pull が
+  どちらも Artifact Registry からインターネットへ出る data transfer out になる。
   同一ロケーション内の転送は無料なので、数百 MB〜GB 級のレイヤ転送を
   asia-northeast1 の中で完結させる。
   `script/smoke-test.pl` は手元に無いイメージを `docker run` の自動 pull で取りに行く
-  ため、ビルドだけを移して smoke test を GitHub Actions に残す分割では転送は消えない。
-  Cloud Run への deploy は GitHub Actions 側に残す (WIF の境界を維持し、Cloud Build の
+  ため、ビルドだけを Cloud Build にして smoke test を GitHub Actions に置く分割では
+  転送は消えない。
+  Cloud Run への deploy は GitHub Actions 側で行う (WIF の境界を維持し、Cloud Build の
   サービスアカウントに Cloud Run の権限を持たせないため)。
 - **`data/years.pl` はビルドの前に更新する**。deploy.yml の years ジョブが
   `script/update-years.pl` で再導出し、差分があれば master へコミットしてから、
   その commit をソースにしてビルドする。ビルドの成果物を GitHub へ取り出す経路が
   無いため、更新はビルドの後ではなく前に行う。イメージはコミット済みの現物を
   読むので、イメージが読む years.pl とリポジトリにあるものは常に一致する。
-- データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。VPS 時代の
-  cron (script/update.pl など。「旧 VPS の cron ジョブとの対応」の表) に相当する
-  処理は Dockerfile の databuild ステージが担う。
+- データ更新は「イメージ再ビルド + 再デプロイ」に一本化されている。翻訳データの
+  取得と生成物の作成 (script/update.pl と script/create_data.pl) は Dockerfile の
+  databuild ステージが担う。
 - databuild の生成物は translation とソースの純関数として決定的に導出する。
   壁時計・ファイルの mtime・DB の行順 (インデックスの走査順で変わる) を
   結果に混ぜない。同じ入力からのビルドが同じバイト列になることで、アプリ
@@ -68,8 +69,7 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   手前。HIT では Worker 自体が起動しない)、内側は Worker の `fetch()` の
   `cf.cacheEverything` + `cacheTtlByStatus`。TTL は 1 時間 + 1 時間に割って
   いて、再デプロイ後に旧レスポンスが残る時間は最悪で二層の和 = 最大
-  2 時間。これは従来 (単層 2 時間) から変えずに許容する。デプロイ時 purge は
-  行わない。
+  2 時間。これは許容する。デプロイ時 purge は行わない。
 - 翻訳の diff (`/docs/*/diff`) は GNU diff の外部コマンド化 (`PJP::HTMLDiff`)
   により perlfunc.pod 級の最悪ケースでも数秒以内に収まり、同じ比較の反復は
   エッジキャッシュに吸収される。diff は匿名入力で到達できる最も高コストな
@@ -128,7 +128,7 @@ gcloud services enable --project="$PROJECT_ID" \
 `compute.googleapis.com` は有効化しない。Cloud Run のランタイムには専用のサービス
 アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。Cloud Build も
 default pool (Google 管理側の VM) しか使わないので不要で、cloudbuild を有効化しても
-巻き添えで有効にはならない (移行後の稼働状態で確認済み)。
+巻き添えで有効にはならない (稼働状態で確認済み)。
 
 ### 2. Artifact Registry
 
@@ -252,15 +252,12 @@ gcloud run services add-iam-policy-binding perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" \
   --member="serviceAccount:$SA" --role=roles/run.developer
 
-# イメージの push と buildcache の読み書き。
-# 本番ビルドを Cloud Build へ移した後 (§11) は、この SA が push することは
-# なくなるので roles/artifactregistry.reader へ降格する。ただし削除はしない:
-# gcloud run deploy はデプロイ主体にも
-# artifactregistry.repositories.downloadArtifacts を要求する。
-# 降格は cutover が成功してから行う (§11-3)
+# イメージの読み取り。この SA は push しない (push するのは §11 の builder SA)
+# が、gcloud run deploy はデプロイ主体にも
+# artifactregistry.repositories.downloadArtifacts を要求する
 gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
   --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:$SA" --role=roles/artifactregistry.writer
+  --member="serviceAccount:$SA" --role=roles/artifactregistry.reader
 
 # ランタイム SA を名乗らせてデプロイする権限
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
@@ -372,7 +369,7 @@ WIF provider (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/
 deploy.yml が上記 2 つの secret から組み立てるため、個別には保存しない
 (project number / ID の重複保存を避ける)。
 
-同じ理由で、Cloud Build 移行 (§11) でも secret も variable も増やしていない。
+同じ理由で、Cloud Build (§11) のための secret や variable も置かない。
 builder SA email (`perldoc-jp-builder@<PROJECT_ID>.iam.gserviceaccount.com`) は
 deploy.yml が `GCP_PROJECT_ID` から組み立て、`cloudbuild.yaml` 側は built-in の
 `$PROJECT_ID` substitution を使う (リポジトリのファイルに project ID を書かない)。
@@ -437,7 +434,7 @@ Account Settings / User Details まで含み、この workflow に必要な範�
 
 staging の Custom Domain の新規作成 (wrangler.jsonc の routes が使う
 Attach Domain API) も、公式 API リファレンス上の必要権限は同じ
-Workers Scripts Write とされる。cutover 前の初回 staging デプロイ (= 新規の
+Workers Scripts Write とされる。初回の staging デプロイ (= 新規の
 Attach) がこのトークンで成功することを検証する。権限エラーになった場合も
 より広い権限のトークンには替えず、次の順で切り分ける:
 
@@ -460,9 +457,9 @@ environment の作成と secret の登録はこの節冒頭のコマンドで行
 deploy-worker.yml が動く前にそこまでを済ませておくこと。
 
 WIF の attribute-condition と cloudflare-production の branch policy がどちらも
-master に固定されているため、master へ merge するまで GitHub Actions からは
-デプロイできない。cutover までは §8 (Cloud Run) と §10 (Worker) の手順で
-手元からビルドとデプロイを行う。
+master に固定されているため、master に無いコードは GitHub Actions からは
+デプロイできない。手元からビルドとデプロイを行う手順は §8 (Cloud Run) と
+§10 (Worker)。
 
 #### master の保護 (server-side)
 
@@ -500,10 +497,8 @@ ruleset の適用直後の Deploy workflow で、years ジョブの push が成�
 
 ### 8. 手動でのビルドとデプロイ
 
-master へ merge する前の cutover はこの手順で行う。使うのは操作者自身の gcloud
-認証情報で、デプロイ用 SA (§5) は経由しない。本番ビルドが Cloud Build (§11) へ
-移った後もこの手順はそのまま使える (操作者の権限で手元からビルドするため、
-デプロイ用 SA の権限を絞っても影響を受けない)。
+Deploy workflow を通さずに手元からビルドしてデプロイする手順。使うのは操作者自身の
+gcloud 認証情報で、デプロイ用 SA (§5) も builder SA (§11) も経由しない。
 
 Cloud Build 側の経路を手で回したい場合は、§11 の submit コマンドを
 `--git-source-revision` に確かめたい commit SHA を渡して実行する。
@@ -544,11 +539,9 @@ docker buildx build \
   フルビルドになる。
 - push したイメージを Cloud Run が受け付けない場合は `--provenance=false` を足す
   (buildx が既定で付ける attestation により manifest が image index になるため)。
-- CI が作るイメージに揃えたい場合は `--provenance=mode=max` を足す。
-  `cloudbuild.yaml` がこれを明示しているのは、以前 GitHub Actions で使っていた
-  `docker/build-push-action` が public リポジトリの push に対して既定で
-  `--attest type=provenance,mode=max` を付けており (素の buildx の既定は
-  `mode=min`)、成果物の形を変えないため。Cloud Run 側の要件ではない。
+- CI が作るイメージに揃えたい場合は `--provenance=mode=max` を足す
+  (`cloudbuild.yaml` が明示している値。素の buildx の既定は `mode=min` で、
+  Cloud Run 側の要件ではない)。
 
 本番同等の FS 制約で起動確認してからデプロイする (cloudbuild.yaml / test.yml の
 smoke test と同じスクリプト)。ホスト側では Perl 5.38 以降を使用し、追加の
@@ -755,7 +748,7 @@ gcloud run services describe perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)'
 ```
 
-手元からデプロイする場合 (cutover 時など)。wrangler は `worker/package.json` の
+手元からデプロイする場合の手順。wrangler は `worker/package.json` の
 exact な devDependency で、`worker/package-lock.json` が依存グラフ全体を固定する。
 バージョンを変えるときは lockfile も一緒に更新すること。staging へも同じブロックで、
 最後を `./scripts/deploy.sh staging` に変えるだけ。
@@ -923,7 +916,7 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
 `cf.cacheKey` は Enterprise 限定なので使わない。この前提で:
 
 - 一般ルートはクエリ全体がキーに残る。`/about?nonce=1` と `?nonce=2` は
-  別キーになり、変種の初回はオリジンへ届く (= 現在と同じ都度計算)。アプリは
+  別キーになり、変種の初回はオリジンへ届く。アプリは
   クエリを意味に使う余地がある (`/search?q=`、tmpl/pod.tt の `c().req.uri()`
   による Source link) ため、一般ルートのクエリは推測で削らない。
   ダッシュボードの「Ignore Query String」も使わない (diff の `target` まで
@@ -986,7 +979,7 @@ Worker 内から呼ぶ purge API (`ctx.cache.purge`) があるが使っていな
 Mode を含むゾーン設定は外側の説明にならない。内側の層を調べるとき
 (外側を無効にした切り分けなど) は、(3) Development Mode が ON (4) Worker の
 `cf` 設定のデプロイ漏れ (5) compatibility date が古く Cache Rules 側が
-優先されている、が従来どおり残る。`MISS` → `HIT` の確認手順は
+優先されている、を疑う。`MISS` → `HIT` の確認手順は
 「動作確認」のとおり。
 
 #### SSL/TLS
@@ -997,9 +990,7 @@ Mode を含むゾーン設定は外側の説明にならない。内側の層を
 - **SSL/TLS の暗号化モード (Flexible / Full / Full strict) は本構成には影響しない**。
   Worker の `fetch()` は Worker ランタイムからオリジンへの独立した HTTPS リクエストで、
   ゾーンの暗号化モードに従わない。run.app の証明書は Google が管理するため
-  検証も常に成立する。ただし cutover 前は旧オリジンへの接続にこの設定が適用される
-  ため、モードを上げると :443 を待受していない旧オリジンへの接続が壊れる。
-  cutover までは触らない
+  検証も常に成立する
 - 暗号化モードの `Automatic mode` (Cloudflare が定期スキャンでモードを決める) が
   有効だと、スキャンのたびにモードが変わり得る。上記のとおり本構成には影響しない
   設定なので実害は無いが、意図しない変更が混ざるのを避けたいなら手動に固定する
@@ -1008,9 +999,9 @@ Mode を含むゾーン設定は外側の説明にならない。内側の層を
 
 #### 動作確認 (staging.perldoc.jp)
 
-本番の apex に触らないまま構成をまるごと検証する。`staging.perldoc.jp` を Worker の
+本番の apex に触らないまま構成をまるごと検証する手順。`staging.perldoc.jp` を Worker の
 Custom Domain にすれば、ゾーン設定 (URL 正規化・Redirect Rules・SSL/TLS) を通った
-cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサブドメインはゾーンの
+本番と同じ経路で挙動を確かめられる。`workers.dev` のサブドメインはゾーンの
 設定をどれも通らないため、キャッシュと正規化の確認には足りない。
 
 1. Cloud Run にデプロイしておく (§8)
@@ -1035,7 +1026,7 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    # ここに run.app が出たら Worker 側の不備 (/func/chomp 自体は 200 なので使えない)
    curl -sS -o /dev/null -D - "$BASE/chomp" | grep -i '^location:'
 
-   # ブラウザー向けの Cache-Control は従来どおりオリジン由来
+   # ブラウザー向けの Cache-Control はオリジン由来
    # (docs.json は 2 時間、css は 4 時間)。動的 HTML には現れない
    curl -sS -o /dev/null -D - "$BASE/static/docs.json"     | grep -i '^cache-control:'
    curl -sS -o /dev/null -D - "$BASE/static/css/style.css" | grep -i '^cache-control:'
@@ -1128,7 +1119,7 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
      (「エッジキャッシュ」節の切り分け順)
    - `/favicon.ico` が 404、`Cache-Control` が付かない → デプロイされているイメージが
      古い (Worker や Cloudflare の設定ではない)
-4. cutover 後に片付ける (残すと staging.perldoc.jp という公開入口と Workers の
+4. 検証が済んだら片付ける (残すと staging.perldoc.jp という公開入口と Workers の
    枠を無駄に使う)。削除も Cloudflare の認証情報と worker ディレクトリを要する
    ため、デプロイと同じ形の bash subshell で自己完結させる。削除後、Custom
    Domain が Cloudflare 側に残っていたら合わせて外す:
@@ -1150,33 +1141,12 @@ cutover 後と同じ経路で挙動を確かめられる。`workers.dev` のサ�
    )
    ```
 
-www/new の Redirect Rule は本番のホスト名にしか書けないため、この段階では確認できない。
-cutover 時に確かめる。
-
-#### 切り替え手順
-
-1. Cloud Run にデプロイし、`status.url` を確認する
-2. 「動作確認」のとおり staging で構成を検証する。SSL/TLS・Browser Cache TTL・
-   URL 正規化はゾーン単位の設定なので、ここで確認したものが cutover 後の本番にも
-   そのまま適用される。エッジキャッシュは Worker のデプロイに同梱されるため、
-   ゾーン側の追加操作は無い
-3. 本番の Worker をデプロイする。トークンと ORIGIN の読み込みを含む実行形は
-   「手元からデプロイする場合」の bash ブロックのとおり
-   (`./scripts/deploy.sh production` まで一式)
-4. apex の既存レコードを Worker の Custom Domain に置き換える。Custom Domain の
-   登録は既存の apex レコードと共存できないので、ここが切り替えの瞬間になる
-5. Redirect Rule を入れてから、www/new を **proxied (オレンジ雲)** に切り替える。
-   グレー雲のままではリクエストが Cloudflare のエッジを通らず Redirect Rule が
-   発火しない。順序を逆にすると一時的にリクエストが旧オリジンへ流れる
-6. 確認: apex が 200、`/chomp` の `Location` が perldoc.jp を指すこと、
-   `www.perldoc.jp` が 301 でクエリを保持すること、`/static/docs.json` と
-   diff の `cf-cache-status`。「動作確認」の curl を `BASE=https://perldoc.jp` で
-   回すのが早い。staging で温めたキャッシュは本番とは別 (外側は Worker 単位の
-   キャッシュで別 Worker、内側はキーに含まれる `X-Forwarded-Host` を Worker が
-   確定する) ため、cutover 直後の本番は各キー初回 MISS から始まる
-7. staging の Worker を消す
-
-ロールバックは Custom Domain を外して元の apex レコードに戻す。
+www/new の Redirect Rule は本番のホスト名にしか書けないため、staging では確認できない。
+本番では「動作確認」の curl を `BASE=https://perldoc.jp` で回し、加えて
+`www.perldoc.jp` が 301 でクエリを保持することを見る。staging で温めたキャッシュは
+本番とは別 (外側は Worker 単位のキャッシュで別 Worker、内側はキーに含まれる
+`X-Forwarded-Host` を Worker が確定する) ため、本番のキャッシュは各キー初回 MISS
+から始まる。
 
 #### run.app への直アクセス
 
@@ -1285,11 +1255,11 @@ Cloud Storage は使わない。ビルドの成果物を GitHub へ取り出す�
 作られない。`logging: CLOUD_LOGGING_ONLY` により `defaultLogsBucketBehavior` も
 無視され、ログバケットも作られない。
 
-#### 11-2. preflight (cutover の必須前提)
+#### 11-2. preflight (本番ビルドを任せる前の検証)
 
 `cloudbuild.yaml` は、Cloud Build のビルドステップ実行環境について公式ドキュメントに
 明記が無いことをいくつか前提にしている。**production の Cloud Build で 1 回検証してから**
-cutover すること。ローカルエミュレータ (`cloud-build-local`) の実装や第三者の報告を
+Deploy workflow に任せること。ローカルエミュレータ (`cloud-build-local`) の実装や第三者の報告を
 根拠にしない。
 
 公式ドキュメントで確認できている (preflight の対象外):
@@ -1487,10 +1457,9 @@ gcloud artifacts docker images delete \
 ```
 
 いずれかの assertion が崩れた場合は、`cloudbuild.yaml` の該当ステップを
-`gcr.io/cloud-builders/*` に寄せる、`docker run` の入れ子にする等の代替へ切り替えてから
-cutover する。
+`gcr.io/cloud-builders/*` に寄せる、`docker run` の入れ子にする等の代替へ切り替える。
 
-#### 11-3. デプロイ用 SA への追加バインディングと cutover
+#### 11-3. デプロイ用 SA への追加バインディング
 
 preflight が通ってから、§5 のデプロイ用 SA に Cloud Build を submit する権限を足す。
 
@@ -1522,9 +1491,9 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SA" --role=roles/logging.viewer
 ```
 
-ここまでで cutover し、Deploy workflow が 1 回成功することを確認する。
+ここまでで Deploy workflow が 1 回成功することを確認する。
 
-**cutover 時に必ず見ること:**
+**初回の Deploy workflow で見ること:**
 
 - `timeout: 3600s` に迫る長さのビルドでも、最後の `--push` と `--cache-to` が
   認証エラーにならないこと。credential helper は docker / buildx の起動ごとに
@@ -1533,24 +1502,8 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   `build-runtime` を分割するか、machine type を上げてビルド時間を短くする
 - 実ビルド時間を測り、`cloudbuild.yaml` の `timeout` と deploy.yml の
   `timeout-minutes` を実測に合わせて詰めること (「運用」の `gcloud builds list`)。
-  移行直後の実測値は「Cloud Build 移行で課金対象になり得るもの」の表にある
+  実測値は「ビルドまわりで課金対象になり得るもの」の表にある
 - 無料枠 2,500 build-minutes に対する消費ペース
-
-**post-cutover: Artifact Registry の権限を降格する。** cutover と同時に行わないこと
-(`gcloud run deploy` が失敗したとき、Cloud Build 側の配線の問題か IAM の絞りすぎかを
-切り分けられなくなる)。降格後にもう 1 回デプロイが成功することまで確認する。
-
-```sh
-gcloud artifacts repositories remove-iam-policy-binding perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:$SA" --role=roles/artifactregistry.writer
-
-# reader は残す。gcloud run deploy はデプロイ主体にも
-# artifactregistry.repositories.downloadArtifacts を要求する
-gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:$SA" --role=roles/artifactregistry.reader
-```
 
 #### 11-4. 一度きりの操作のまとめ
 
@@ -1561,50 +1514,32 @@ gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
 3. GitHub の environment `master-write` の作成 (§7)
 4. preflight ビルド (11-2)
 5. デプロイ用 SA への追加バインディング (11-3)
-6. cutover
-7. デプロイ用 SA の Artifact Registry 権限を writer → reader へ降格 (11-3)
 
 **GitHub 側で必要なのは 3 の environment だけ** (§7 の environment 作成コマンドに
 含めてある)。secret も variable も増えない。作らずに参照されたときの影響は §7 の
-とおりなので、cutover の前に作る。
+とおりなので、Deploy workflow を動かす前に作る。
 Cloud Build の 2nd-gen connection、Cloud Build GitHub App のインストール、
 Secret Manager はいずれも使わない。
 
-## Cloud Build 移行で課金対象になり得るもの
+## ビルドまわりで課金対象になり得るもの
 
-イメージのビルドを Cloud Build へ移したことで増減するもの。金額は 2026-09 時点の
+イメージのビルドと配布で課金対象になり得るもの。金額は 2026-09 時点の
 公式 pricing を参照した値で、実際に請求される単価は最新のページで確認すること。
 
 | 項目 | 単価 | 見込み |
 |---|---|---|
-| Cloud Build build-minutes | billing account あたり月 2,500 分が無料。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 移行直後の実測では、レイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いたビルドが 6 分程度 (`build-runtime` が 5 分)。日次 schedule と translation 通知の頻度を考えても無料枠には大きな余裕がある |
-| Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | 既存費用。§2 の cleanup policy のまま変わらない |
-| Artifact Registry ↔ Cloud Build (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | この移行の主目的。buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
-| Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | 削減対象。GitHub-hosted runner は Google のサービスではないので、runner が引くイメージ・キャッシュはここに入っていた。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
+| Cloud Build build-minutes | billing account あたり月 2,500 分が無料。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 実測では、レイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いたビルドが 6 分程度 (`build-runtime` が 5 分)。日次 schedule と translation 通知の頻度を考えても無料枠には大きな余裕がある |
+| Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | §2 の cleanup policy で世代数を抑える |
+| Artifact Registry ↔ Cloud Build (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
+| Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | GitHub-hosted runner のような Google 外からイメージやキャッシュを引くとここに入る (§11 で避けている)。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
 | Cloud Logging | $0.50/GiB、50 GiB/project/month が無料。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | `logging: CLOUD_LOGGING_ONLY` にしたビルドログの分。無料枠に収まる想定 |
 | Cloud Storage | — | 使わない (11-1)。専用バケットも、ソースの staging bucket も、ログバケットも作られない |
-| Artifact Analysis (脆弱性スキャン) | $0.26/scan。Container Scanning API を有効化したときにだけ課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため、この移行で新たに発生する費用ではない。有効化した場合も、push 元が GitHub Actions か Cloud Build かで差は出ない |
+| Artifact Analysis (脆弱性スキャン) | $0.26/scan。Container Scanning API を有効化したときにだけ課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため発生しない |
 
-## 旧 VPS の cron ジョブとの対応
-
-VPS で `PLACK_ENV=deployment` の crontab が回していたジョブと、移行後の担当:
-
-| 旧 cron ジョブ | 旧頻度 | 移行後 |
-|---|---|---|
-| `update_deployment.sh` (= `script/update.pl`) | 1日4回 (3〜6時台) | Dockerfile の databuild ステージ。translation への push で即時、加えて日次 schedule |
-| `script/create_recent.pl` | 毎時 | 同上 (databuild)。`script/create_data.pl` に統合 |
-| `script/create_year_data.pl $(date +%Y)` | 毎日 4:05 | `script/update-years.pl`。deploy.yml の years ジョブがイメージのビルドより前に実行し、結果を master へコミットする。ターゲットは translation の最新イベントの前年 (script 側で導出) に変更し、前年+当年を毎回 git から再導出する (年またぎの欠落を自己修復) |
-| `script/create_docs.json.sh` | 6時間毎 | 同上。`script/create_data.pl` に置き換え |
-| `script/generate_heavy_diff.pl` | 毎時 | 廃止。diff 計算を GNU diff 外部コマンド化 (`PJP::HTMLDiff`) で高速化したため都度計算で足り、同じ比較の反復は Cloudflare のエッジキャッシュ (§10) が吸収する |
-| `script/scrape_cpan.pl` | (コメントアウト済み) | 廃止 |
-
-反映頻度は旧構成 (1日4回) より速くなる。translation の push を
-workflow_dispatch (§9) で受けるため、翻訳がマージされてから数分で反映される。
-
-### `static/docs.json` の外部利用者
+## `static/docs.json` の外部利用者
 
 `static/docs.json` は Chrome 拡張と Firefox アドオンが参照している。
-移行後もパスと JSON 構造 (`{パッケージ名: パス}`) を変えないこと。
+パスと JSON 構造 (`{パッケージ名: パス}`) を変えないこと。
 
 - <https://chrome.google.com/webstore/detail/iedgkpbokcjamkpoglfbefmdmclkljhc>
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
@@ -1613,7 +1548,6 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
 `Cache-Control` (2 時間) で決まる。エッジでは、平常時は外側の Workers Cache
 (1 時間) と内側の `fetch()` キャッシュ (1 時間) の二層合計で最大 2 時間 (§10)。
 障害時の stale 配信はこの上限に含めない (§10 の「TTL を決める場所」)。
-旧構成の更新間隔は 6 時間毎だった。
 
 ## 運用
 
@@ -1650,16 +1584,13 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
     [ -n "$common" ] && echo "$m: $common"
   done
   ```
-  現在の履歴で交差するのは 2023 年の 1 件だけで、並行した 2 つのコミットも
-  merge も同じ翻訳者、その path は翌年に rename で消えているため、
-  現在の統計と feed には現れない
 - **ロールバック**: `gcloud run services update-traffic perldoc-jp \
   --project <PROJECT_ID> --region asia-northeast1 --to-revisions <REVISION>=100`
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
   Cloud Logging に入る (リクエスト毎のアクセスログをアプリは出さない)。
-  エッジキャッシュ (§10) の導入後、Cloud Run のリクエストログは
+  エッジキャッシュ (§10) があるため、Cloud Run のリクエストログは
   ページビューではなく「エッジの MISS」に近い値になる。ページビューを
   見たい場合は Cloudflare 側の Analytics を使う
 - **本番イメージのビルド**: Cloud Build (asia-northeast1) が行う (§11)。ビルドログは
@@ -1698,11 +1629,11 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
 - **Docker Hub の pull 回数**: ビルド 1 回につき、ステップの image
   (`docker:<VERSION>-cli` / `moby/buildkit:<VERSION>` / `perl:5.42-trixie`) と
   Dockerfile のベース (`perl:5.42-trixie` / `perl:5.42-slim-trixie`) を Docker Hub から
-  引く。Cloud Build の default pool は共有の egress IP から出るため、GitHub-hosted
-  runner だった頃より匿名 pull のレート制限に当たりやすい。当たった場合は
+  引く。Cloud Build の default pool は共有の egress IP から出るため、匿名 pull の
+  レート制限に当たり得る。当たった場合は
   Artifact Registry の remote repository (Docker Hub のプロキシ) を作ってそちらを
   参照するように `cloudbuild.yaml` と `Dockerfile` を書き換える
-- **無料枠の消費を見る**: 無料枠の条件は「Cloud Build 移行で課金対象になり得る
+- **無料枠の消費を見る**: 無料枠の条件は「ビルドまわりで課金対象になり得る
   もの」の表のとおり。所要時間は
   `gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --limit 20 --format='table(id,status,createTime,startTime,finishTime)'`
   で確認する
@@ -1729,7 +1660,7 @@ workflow_dispatch (§9) で受けるため、翻訳がマージされてから�
   ハイフンを 1 個だけ `::` にしていた頃の値) が残るが、表示だけの差で
   件数や翻訳者ごとの集計は変わらない (同一性の判定は
   `PJP::M::YearData::_dedup_in` が両方の表記を同じものとして扱う)
-- **`data/years.pl` の完全性 (cutover の必須前提)**: `update-years.pl` は
+- **`data/years.pl` の完全性 (ビルドの前提)**: `update-years.pl` は
   既存の `data/years.pl` のうち対象年より前だけを seed として取り込み、
   対象年以降を git 履歴から再構築する (イベントが削除だけになった年の
   ブロックは残らない)。イメージのビルド (databuild) はこのファイルを再生成せず、
