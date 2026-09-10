@@ -1,0 +1,152 @@
+// 依存の自動更新 (Renovate)。実行は .github/workflows/renovate.yml が日次で行い、
+// 通常の更新 PR を月 1 回に絞るのはこのファイルの schedule。脆弱性の修正 PR は
+// schedule を無視して作られるので、日次実行の翌朝には出る。
+// セットアップ手順・権限・カバー範囲は docs/dependency-updates.md を参照。
+// 設定項目の意味は https://docs.renovatebot.com/configuration-options/
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+
+  extends: [
+    'config:recommended',
+  ],
+
+  // --- サプライチェーン対策 -------------------------------------------------
+  //
+  // 公開直後の版は取り込まない。アカウント乗っ取りで悪意ある版を公開する型の
+  // 攻撃は、レジストリからの削除や advisory の公開までが数時間〜数日で済んで
+  // いるため、待つだけで大半を踏まずに済む。
+  //
+  // 待っている間に更に新しい版が出ても、Renovate は版ごとに独立して経過日数を
+  // 見るので、結果として「7 日を満たしている中で最も新しい版」が選ばれる。
+  // 脆弱性の修正 (vulnerabilityAlerts) にはこの待ち時間を適用しない
+  minimumReleaseAge: '7 days',
+
+  // 公開日を取得できない版は「7 日経過した」とみなさない (既定値だが、上の
+  // 設定が成り立つ前提そのものなので明示する)。perl の docker イメージだけは
+  // 公開日を取れないことがあるため、下の packageRules で例外にしている
+  minimumReleaseAgeBehaviour: 'timestamp-required',
+
+  // 7 日未満の版はブランチも PR も作らない (既定値だが同上)。flexible や none
+  // だと 7 日未満の版で PR が立ち、後から古い版へ差し戻る flapping が起きる
+  internalChecksFilter: 'strict',
+
+  // strict では 7 日待ちの更新は PR にならないので、Dependency Dashboard の
+  // issue が「今どの更新が保留されているか」を見る唯一の手段になる
+  dependencyDashboard: true,
+
+  // --- 通常の更新をいつ出すか -----------------------------------------------
+  //
+  // workflow は日次で Renovate を起動するが、通常の更新ブランチを作ってよいのは
+  // 毎月 2 日 (JST) だけにする。schedule は Renovate を起動する設定ではなく、
+  // 起動済みの Renovate がブランチを作ってよい期間を絞る設定なので、日次実行と
+  // 組み合わせて使う。cron 形式では分のフィールドを * にする必要がある
+  timezone: 'Asia/Tokyo',
+  schedule: ['* * 2 * *'],
+
+  // 期間外は既存ブランチの更新もしない。既定 (true) だと rebase などの
+  // 「望ましい更新」が期間外にも走る
+  updateNotScheduled: false,
+
+  // config:recommended は prHourlyLimit=2 を含む。更新 PR が出るのは月 1 回の
+  // schedule 期間だけなので、そのままだと 1 回で 2 PR しか作られず残りが翌月
+  // 送りになる
+  prHourlyLimit: 0,
+
+  // --- 脆弱性の修正 ---------------------------------------------------------
+  //
+  // Dependabot alerts を Renovate が読んで修正 PR を作る (Dependabot 自身には
+  // PR を作らせない。docs/dependency-updates.md 参照)。この PR は schedule /
+  // minimumReleaseAge / prHourlyLimit などの制限を受けずに作られるため、
+  // 日次実行と合わせて「通常更新は月 1 回、脆弱性修正は翌朝」になる。
+  // 値はいずれも Renovate の既定と同じだが、この構成の前提なので明示する
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: ['security'],
+
+    // 通常更新の月次制限と 7 日待ちを適用しない
+    schedule: [],
+    minimumReleaseAge: null,
+
+    // 脆弱性の PR も人間がレビューする
+    automerge: false,
+
+    // 修正済みの版のうち最も低いものを選ぶ (ついでの機能追加を巻き込まない)
+    vulnerabilityFixStrategy: 'lowest',
+  },
+
+  // --- 更新のまとめ方 -------------------------------------------------------
+  //
+  // minor/patch は manager ごとに 1 PR、major は個別 PR (既定) にして、壊れた
+  // 1 件が他の更新まで巻き込んで止めないようにする
+  packageRules: [
+    {
+      description: 'Dockerfile の perl イメージは base と runtime で同じ版に保つ',
+      // base ステージ (perl:5.42-trixie) でビルドした local/lib/perl5 を runtime
+      // ステージ (perl:5.42-slim-trixie) へ COPY しているため、片方だけ上がると
+      // XS モジュールの ABI が合わない。同じ PR に入れて必ず一緒に動かす
+      matchManagers: ['dockerfile'],
+      groupName: 'perl base image',
+    },
+    {
+      description: 'perl は minor が奇数の版が開発版なので候補から外す',
+      // 5.43 / 5.45 は開発版で、docker-perl はこれらにもタグを振っている。
+      // docker versioning はこの慣習を知らないため、放っておくと本番の
+      // ベースイメージを開発版へ上げる PR が立つ。minor が偶数のものだけを
+      // 候補にする (5.42-trixie / 5.42.3-trixie のどちらの粒度でも一致する)
+      matchDatasources: ['docker'],
+      matchPackageNames: ['perl'],
+      allowedVersions: '/^\\d+\\.\\d*[02468](\\.\\d+)?(-|$)/',
+    },
+    {
+      description: 'perl イメージだけ公開日が無い版も許容する',
+      // Docker Hub の tag API は未認証だとページングの途中で 403 になり、
+      // Renovate は公開日を持たない registry API (v2 tags/list) へ fallback
+      // する。timestamp-required のままだと「7 日経過を確認できない」=
+      // 恒久的に更新されない、という気づきにくい状態になる。
+      //
+      // Dockerfile は元々 5.42-trixie という可変タグを参照していて、同じタグの
+      // 中身がビルドのたびに変わる前提なので、ここで 7 日待ちが外れても実質の
+      // 露出は増えない (公開日が取れたときは 7 日待ちが効く)。
+      // 完全に効かせたい場合は Docker Hub の認証情報を hostRules に足す。
+      //
+      // 対象は perl に限る。docker datasource 全体に広げると、他のイメージを
+      // 足したときに気づかないまま 7 日待ちが外れる
+      matchDatasources: ['docker'],
+      matchPackageNames: ['perl'],
+      minimumReleaseAgeBehaviour: 'timestamp-optional',
+    },
+    {
+      matchManagers: ['github-actions'],
+      matchUpdateTypes: ['minor', 'patch'],
+      groupName: 'github-actions minor and patch',
+    },
+    {
+      description: 'SHA ピン留めした action の digest 更新は受け入れない',
+      // digest 更新は「バージョンタグはそのままで SHA だけを、そのタグが今
+      // 指しているコミットへ差し替える」。上流でタグが付け替え (force push)
+      // されると中身が入れ替わるが、Renovate はタグの当初の公開日で経過日数を
+      // 見るため、差し替え後のコミットでも 7 日待ちを即座に通過しうる。
+      // minor/patch/major によるバージョン変更は引き続き更新対象にする
+      matchManagers: ['github-actions'],
+      matchUpdateTypes: ['digest'],
+      enabled: false,
+    },
+    {
+      matchManagers: ['npm'],
+      matchUpdateTypes: ['minor', 'patch'],
+      groupName: 'worker npm minor and patch',
+    },
+    {
+      description: 'cpanfile は Renovate に触らせない',
+      // cpanfile の版指定 (Pod::Simple 3.16 など 4 件) は「これ以上でないと
+      // 動かない」下限であって、実際に入る版ではない。実際の版は
+      // cpanfile.snapshot が決めており、そちらは Renovate も Dependabot も
+      // 管理できない (cpanfile manager に lock file 対応が無い)。
+      // 下限だけを最新へ上げても入る版は変わらず、Text::Markdown::Discount の
+      // ように理由付きで選んだ下限を意味なく書き換えてしまうため、manager ごと
+      // 無効にする。CPAN 側の更新は docs/dependency-updates.md を参照
+      matchManagers: ['cpanfile'],
+      enabled: false,
+    },
+  ],
+}
