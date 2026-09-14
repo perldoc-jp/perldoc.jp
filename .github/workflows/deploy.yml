@@ -71,7 +71,7 @@ jobs:
         id: translation
         run: |
           sha=$(git ls-remote https://github.com/perldoc-jp/translation.git refs/heads/master | cut -f1)
-          # 値は Cloud Build の substitution として別のシステムへ渡るので、
+          # 値は deploy ジョブの build-arg として buildx へ渡るので、
           # 「空でない」より強く形式そのものを確かめる。bash の =~ は文字列全体に
           # 対して照合するので、複数行が紛れ込んでも通らない
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
@@ -179,14 +179,18 @@ jobs:
   deploy:
     needs: years
     runs-on: ubuntu-latest
-    # このジョブ自身はビルドせず Cloud Build の完了を待つだけだが、待ち時間の
-    # 内訳は「Cloud Build の queue 待ち (cloudbuild.yaml の timeout には含まれない)
-    # + ビルド最大 60 分 + デプロイ」。ビルドは e2-standard-2 (2 vCPU) で走り
-    # ubuntu-latest (4 vCPU) より遅いことも織り込んで余裕を取る
-    timeout-minutes: 90
+    # ビルド・smoke test・デプロイをこの 1 ジョブで行う。ビルドを別の workflow
+    # ファイルへ分けることはできない: §5 の WIF attribute-condition が
+    # assertion.workflow_ref を deploy.yml に固定しているため、別ファイルからは
+    # Artifact Registry への push の認証が取れない。同じファイル内のジョブ分割は
+    # 自由だが、1 回のビルドで 2 つのレジストリへ push する以上、GHCR と GCP の
+    # 資格情報は同じジョブに揃っている必要がある
+    timeout-minutes: 60
     permissions:
       contents: read
       id-token: write
+      # GHCR への push に要る。GITHUB_TOKEN で足りるので secret は増えない
+      packages: write
     # GCP の識別子 (project ID / number) は deterministic URL の構成要素になる
     # ため §7 の分類で secret に置く。environment の branch policy が master のみ
     # を許可する (cloudflare-production と同じ境界)。secret にすると GitHub が
@@ -204,16 +208,11 @@ jobs:
       # 既に両方を渡している
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       IMAGE: asia-northeast1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/perldoc-jp/app
-      # Cloud Build 用の識別子は既存の secret から組み立てる。project ID の
-      # 重複保存を避けるため、専用の secret / variable は追加しない
-      # (§7 の分類と WIF provider / SA email の扱いに合わせる)
-      BUILDER_SA: perldoc-jp-builder@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
-      # Cloud Build が source を fetch する先。公開リポジトリなので connection も
-      # 資格情報も要らない (docs/cloud-run.md §11)
-      SOURCE_REPO: https://github.com/${{ github.repository }}
-      # ビルドするコミット。years ジョブが書き戻していればその commit、
-      # 書き戻しが無ければ github.sha
-      APP_SHA: ${{ needs.years.outputs.app-sha }}
+      # smoke test が検査対象を取得する先。GHCR のイメージ名は小文字でなければ
+      # ならず、github.repository (perldoc-jp/perldoc.jp) はその条件を満たす。
+      # リポジトリ名が変わればこの名前も変わるが、そのときは §5 の
+      # attribute-condition が先に fail-closed で落ちる
+      GHCR_IMAGE: ghcr.io/${{ github.repository }}/app
       # Starlet のワーカー数。Cloud Run の container concurrency と一致させる
       # (デフォルト 80 では 4 ワーカーに大量のリクエストが詰まる)。両方へ同じ値を
       # 渡すことで、一致がコメント頼みでなくなる
@@ -225,14 +224,14 @@ jobs:
       TAG: ${{ needs.years.outputs.app-sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
-      # ビルドコンテキストは Cloud Build が自分で fetch するが、gcloud は
-      # --config のファイルを手元から読んで Build を組み立てる。つまり
-      # cloudbuild.yaml はこの checkout から来るので、Cloud Build が fetch する
-      # commit と同じものを取る
+      # years ジョブが data/years.pl を書き戻していれば、そのコミットをビルドの
+      # ソースにする。書き戻しが無い run では github.sha と同じ値になる
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.years.outputs.app-sha }}
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -246,164 +245,137 @@ jobs:
           # どの GitHub Actions run が認証したか追跡できるようにする
           request_reason: gha:${{ github.run_id }}:${{ github.run_attempt }}
 
-      # SDK のバージョンも固定する。cloudbuild.yaml の解釈は client 側で行われ、
-      # gcloud は知らない enum 値を「そのフィールドは未使用」として扱うため、
-      # options.machineType の E2_STANDARD_2 を持たない版に当たると
-      # ".options.machineType: unused" で submit 前に落ちる。
-      # この enum 値がクライアントに入ったのは 572.0.0 で、571.0.0 以前には無い
-      # (450 / 500 / 570 で不在、572 / 573 / 574 / 578 / 582 / 584 で存在することを確認)。
-      # machine type 自体は 2023 年から使えるので、値の古さからは判断できない。
-      # 既定の version: latest だと run ごとに版が変わりうるので固定する。
-      # 上げるときは 572.0.0 以上であること、およびその版でこの cloudbuild.yaml が
-      # 解釈できることを確かめること
+      # SDK の版も固定する。gcloud は run ごとに新しい版が降ってくると、
+      # デプロイの引数解釈や既定値の変更がそのまま本番の挙動差になる。
+      # 上げるときは §8 の手動手順をその版で一度通してから上げること
       - uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
         with:
           version: '584.0.0'
 
-      # ビルド・テスト・smoke test は Cloud Build (asia-northeast1) で行う
-      # (cloudbuild.yaml)。GitHub-hosted runner が Artifact Registry から
-      # buildcache や runtime イメージを取得すると、そのたびにインターネットへの
-      # data transfer out になるため。
-      #
-      # source はローカルの checkout を送らず、公開リポジトリの exact commit SHA を
-      # Cloud Build 自身に fetch させる。Cloud Storage の staging bucket に
-      # ソースが溜まる構成を避けつつ、ビルドする commit を明示的に固定する
-      # (ブランチ名は使わない)
-      - name: Submit build to Cloud Build
+      # buildx が Artifact Registry へ push するための credential helper を仕込む。
+      # helper はその時点の active service account の short-lived credentials を
+      # 返すので、アクセストークンを自分で持ち回らずに済む
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker asia-northeast1-docker.pkg.dev --quiet
+
+      # GHCR への push は GITHUB_TOKEN で行う。この workflow は WIF のデプロイ
+      # 資格情報と同じジョブで動くため、docker login 1 行で済むところに外部 action
+      # を増やさない。
+      # 上の configure-docker より後に置く。docker login は既存の設定に自分の
+      # エントリを足すだけだが、gcloud auth configure-docker は設定ファイルを
+      # 書き直すため、逆順にすると GHCR の資格情報の扱いが gcloud 側の実装に依る
+      - name: Log in to GHCR
         env:
-          # 外部 Git リモートから実行時に得た値を shell のソース本文へ埋め込まない。
-          # step の env 経由なら、値は shell 変数として渡り、構文として
-          # 再解釈されない
-          TRANSLATION_SHA: ${{ needs.years.outputs.translation-sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 失敗時にどの SDK が動いたか分かるようにする。cloudbuild.yaml の
-          # 解釈は client 側で行われるため、版が違うと結果も変わる
-          gcloud version
+          printf '%s' "$GITHUB_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
-          build_id=$(gcloud builds submit "$SOURCE_REPO" \
-            --project "$GCP_PROJECT_ID" \
-            --region "$REGION" \
-            --git-source-revision "$APP_SHA" \
-            --config cloudbuild.yaml \
-            --service-account "projects/$GCP_PROJECT_ID/serviceAccounts/$BUILDER_SA" \
-            --substitutions "_TAG=$TAG,_TRANSLATION_COMMIT=$TRANSLATION_SHA" \
-            --async --format='value(id)')
-          [[ "$build_id" =~ ^[0-9a-f][0-9a-f-]{7,}$ ]]
-          echo "CLOUD_BUILD_ID=$build_id" >> "$GITHUB_ENV"
-          echo "Cloud Build: $build_id"
-          echo "https://console.cloud.google.com/cloud-build/builds;region=$REGION/$build_id"
+      # runtime を作り、同じビルド結果を GHCR と Artifact Registry の両方へ
+      # push する。tag を 2 つ渡した 1 回のビルドなので、両レジストリに入るのは
+      # バイト列として同一の manifest であり、digest も一致する。
+      #
+      # test ステージの /tests-passed への COPY があるため、prove を通らずに
+      # runtime が完成することは構造的にない (Dockerfile 参照)。
+      #
+      # provenance と sbom は明示的に切る。タグを 2 つ渡したビルドで有効にすると、
+      # provenance の subject が両方のイメージ参照を並べた 1 つの配列になり、その
+      # attestation がそのまま両レジストリへ push される (実測。docs/cloud-run.md
+      # 11-1)。公開している GHCR 側に Artifact Registry の参照 (= §7 で secret
+      # として扱う project ID) を載せないために切る。
+      # attestation は Cloud Run の要件ではなく、docker/build-push-action が
+      # public リポジトリで既定的に付けていたものを踏襲していただけなので、
+      # 落としても失うものは無い
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        # build record artifact と job summary には build inputs (project ID 入りの
+        # image tag / cache 参照) がそのまま入る。§7 の分類ではどちらも出せない
+        # (artifact は公開リポジトリでは実質公開で、secret マスクも効かない)
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+          DOCKER_BUILD_SUMMARY: 'false'
+        with:
+          context: .
+          target: runtime
+          # Cloud Run は linux/amd64 のみ。ランナーのアーキテクチャへの暗黙の
+          # 依存を残さず、設定として固定する
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ env.GHCR_IMAGE }}:${{ env.TAG }}
+            ${{ env.IMAGE }}:${{ env.TAG }}
+          # GHCR のパッケージをこのリポジトリに紐づけ、パッケージのページから
+          # 出所を辿れるようにする。run ごとに値が変わるラベル (created や
+          # revision) は付けない。中身の同じビルドで digest まで毎回変わると、
+          # 内容の同じ Cloud Run リビジョンが日次で積み上がる
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          build-args: |
+            TRANSLATION_COMMIT=${{ needs.years.outputs.translation-sha }}
+          # ビルドキャッシュは Actions Cache に置く。Artifact Registry の
+          # registry cache は使わない (GitHub-hosted runner が引くと、そのたびに
+          # インターネットへの data transfer out になる)。
+          # scope=runtime を書くのはこのジョブだけで、PR (test.yml の
+          # runtime-test) はこれを読んで自分の scope=runtime-pr へ書く。
+          # キャッシュが無い状態でもビルドは通る (フルビルドになるだけ)
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
 
-      # --async で投げたので、完了は自分で待つ。cloudbuild.yaml は
-      # logging: CLOUD_LOGGING_ONLY を使っており、そもそもビルドログの
-      # live streaming ができないため、同期実行にしても得るものがない。
-      # 逆に build ID を先に手に入れておくと、この run がキャンセルされたときに
-      # Cloud Build 側も止められる (下の Cancel ステップ)
-      - name: Wait for Cloud Build
+      # 「smoke test で検査するもの」と「Cloud Run へデプロイするもの」が同じ
+      # イメージであることを digest で確かめる。タグ名は両レジストリで同じ文字列に
+      # しているが、同一性の根拠はタグではなく digest に置く。
+      #
+      # 引くのは両レジストリの manifest 1 個ずつ (数 KB) で、レイヤは落とさない。
+      # Artifact Registry 側も同じ imagetools で引く。gcloud の
+      # artifacts docker images describe でも digest は取れるが、タグ参照の可否と
+      # 出力フィールド名という 2 つの前提が増えるので、GHCR 側と同じ経路に揃える
+      - name: Verify the pushed digests
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
-          err="$RUNNER_TEMP/cloud-build-describe.err"
-          failures=0
-          while :; do
-            # stderr は混ぜない。gcloud が終了コード 0 のまま警告を 1 行でも出すと
-            # $status が SUCCESS と一致しなくなり、成功したビルドを捨ててしまう
-            if status=$(gcloud builds describe "$CLOUD_BUILD_ID" \
-                 --project "$GCP_PROJECT_ID" --region "$REGION" \
-                 --format='value(status)' 2>"$err"); then
-              failures=0
-            else
-              # 一時的な API エラーで数十分のビルドを捨てない。続けて失敗する
-              # ようなら諦める
-              failures=$((failures + 1))
-              if [ "$failures" -ge 5 ]; then
-                echo 'gcloud builds describe が 5 回続けて失敗した:' >&2
-                cat "$err" >&2
-                exit 1
-              fi
-              sleep 15
-              continue
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          for ref in "$GHCR_IMAGE:$TAG" "$IMAGE:$TAG"; do
+            pushed=$(docker buildx imagetools inspect \
+              --format '{{.Manifest.Digest}}' "$ref")
+            if [ "$pushed" != "$DIGEST" ]; then
+              echo "$ref: expected $DIGEST but got $pushed" >&2
+              exit 1
             fi
-
-            case "$status" in
-              SUCCESS)
-                echo 'Cloud Build: SUCCESS'
-                exit 0
-                ;;
-              QUEUED | WORKING | STATUS_UNKNOWN | PENDING)
-                sleep 15
-                ;;
-              *)
-                # FAILURE / TIMEOUT / CANCELLED / EXPIRED / INTERNAL_ERROR。
-                # ここで落とすことで、以降の Cloud Run デプロイには進まない
-                echo "Cloud Build が失敗した: $status" >&2
-                exit 1
-                ;;
-            esac
           done
 
-      # この run がキャンセルされても Cloud Build 側は走り続ける。放置すると
-      # 「もう誰も使わないイメージの push」「無料枠 build-minutes の空費」に加え、
-      # 新旧 2 本のビルドが同じ :buildcache タグへ mode=max で書くことになり、
-      # last-writer-wins なので、古い方が後に書き終えればその cache manifest が
-      # 残り、以後のヒット率が下がる
-      # (キャッシュが壊れてビルドが失敗するわけではない)。
-      # concurrency の cancel-in-progress は translation 通知が連続すると
-      # 日常的に発火するため、取りこぼさないようにする。
-      # failure() も拾うのは、ジョブの timeout-minutes 超過や待機ステップ自身の
-      # 失敗でもビルドが走り続けるため
-      - name: Cancel Cloud Build
-        if: cancelled() || failure()
-        run: |
-          # CLOUD_BUILD_ID の有無で判断しない。Cloud Build は作成要求を受理した
-          # 時点でビルドを開始し、その応答が返って $GITHUB_ENV に ID が書かれるまでには
-          # 隙間がある。この間にキャンセルされると ID は空のままだが、ビルドは
-          # 走り続ける。この run の TAG は substitution として全ビルドに載っているので、
-          # ID ではなくそれで未完了のビルドを引き直す (--ongoing は QUEUED と WORKING
-          # だけを返すので、すでに終わったビルドに cancel を投げることもない)
-          if ids=$(gcloud builds list \
-              --project "$GCP_PROJECT_ID" --region "$REGION" \
-              --ongoing --limit 50 \
-              --filter="substitutions._TAG=$TAG" \
-              --format='value(id)'); then
-            :
-          else
-            # list が落ちたときだけ、保存できていれば ID にフォールバックする。
-            # 「list も失敗し、ID も保存されていない」場合だけは回収できないので、
-            # そのときは Cloud Console か下のコマンドで手動で止める
-            # (docs/cloud-run.md の「運用」参照)
-            echo 'gcloud builds list に失敗した。保存済みの ID を使う' >&2
-            ids=${CLOUD_BUILD_ID:-}
-          fi
+          echo "digest: $DIGEST"
 
-          ids=$(printf '%s\n' "$ids" | sed '/^$/d')
-          if [ -z "$ids" ]; then
-            echo '進行中の Cloud Build は無い'
-            exit 0
-          fi
-          for id in $ids; do
-            echo "cancelling Cloud Build: $id"
-            gcloud builds cancel "$id" \
-              --project "$GCP_PROJECT_ID" --region "$REGION" || true
-          done
+      # smoke test の対象は GHCR が実際に保持しているものにする (レジストリへの
+      # 往復も検証範囲に含める)。buildx の docker-container ドライバは --push しても
+      # ローカルの daemon には load しないため、明示的に pull する。
+      # 参照をタグではなく digest で書くので、検査対象が直前で照合した digest と
+      # 同じものであることは、参照そのものから読める
+      - name: Pull the image from GHCR
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: docker pull "$GHCR_IMAGE@$DIGEST"
 
-      # CLOUD_LOGGING_ONLY のビルドログは Cloud Logging から読む。deployer SA に
-      # roles/logging.viewer が無い場合はここが失敗するが、ビルドの成否は
-      # 直前のステップで確定済みなので握りつぶし、Console の URL を案内するに留める
-      - name: Show Cloud Build log
-        if: always()
-        run: |
-          if [ -z "${CLOUD_BUILD_ID:-}" ]; then
-            # submit が ID を返す前に中断された場合はここに来る。ビルド自体が
-            # 走っていた可能性はあるが、その回収は Cancel ステップが TAG で行う
-            echo 'Cloud Build の ID を保存できていないためログを取得しない'
-            exit 0
-          fi
-          gcloud builds log "$CLOUD_BUILD_ID" \
-            --project "$GCP_PROJECT_ID" --region "$REGION" || {
-            echo 'ビルドログを取得できなかった (roles/logging.viewer 未付与など)。'
-            echo "https://console.cloud.google.com/cloud-build/builds;region=$REGION/$CLOUD_BUILD_ID"
-          }
+      # 本番同等の構成 (PLACK_ENV=deployment・immutable DSN・slim イメージ) は
+      # databuild の prove (PLACK_ENV=build) では検証されないため、Cloud Run 相当の
+      # FS 制約で起動して開通確認する。使うスクリプトは PR の test.yml と同じもの。
+      #
+      # script/smoke-test.pl は手元に無いイメージを docker run の自動 pull で
+      # 取りに行くが、渡している参照は GHCR のものなので、その pull も
+      # Artifact Registry には向かない
+      - name: Smoke test image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: ./script/smoke-test.pl "$GHCR_IMAGE@$DIGEST"
 
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず
       # self-correcting にする。
+      #
+      # --image は digest で渡す。タグで渡すと、Cloud Run がタグを解決する時点で
+      # 何を引くかが、smoke test を通したイメージと同じである保証を持たない
       #
       # --set-env-vars は列挙外の既存変数を消す。アプリが必要とする環境変数は
       # STARLET_MAX_WORKERS の 1 つで完全列挙なので、dashboard 等で足された
@@ -418,10 +390,12 @@ jobs:
       # 公開設定はデプロイでは自己修復されないため、消えていれば §8 の
       # get-iam-policy 確認で気づく
       - name: Deploy to Cloud Run
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           gcloud run deploy "$SERVICE" \
             --project "$GCP_PROJECT_ID" \
-            --image "$IMAGE:$TAG" \
+            --image "$IMAGE@$DIGEST" \
             --region "$REGION" \
             --service-account "perldoc-jp-run@${GCP_PROJECT_ID}.iam.gserviceaccount.com" \
             --execution-environment gen2 \
@@ -431,3 +405,22 @@ jobs:
             --set-env-vars "STARLET_MAX_WORKERS=$STARLET_MAX_WORKERS" \
             --timeout 60 --port 8080 \
             --quiet
+
+      # GHCR のパッケージは公開していて、手元で本番と同じイメージを起動する用途に
+      # 使える。run ごとのタグ名を知らなくても引けるよう、smoke test とデプロイまで
+      # 通った digest に latest を付ける。
+      #
+      # imagetools create が作るのは元の manifest を指す index なので、:latest
+      # 自身の digest は per-run タグのそれとは異なりうる。同一性の根拠に使うのは
+      # per-run タグのほうで、latest は入口にすぎない。
+      #
+      # continue-on-error にするのは、ここまででデプロイが終わっているため。
+      # 利便のためのタグ付けに失敗しただけで、成功した本番デプロイの run を
+      # 赤くしない (失敗はステップの注釈として残る)
+      - name: Tag the deployed image as latest on GHCR
+        continue-on-error: true
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$GHCR_IMAGE:latest" "$GHCR_IMAGE@$DIGEST"

@@ -15,15 +15,12 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
                   → 使うコミットと translation の SHA を出力
                                                          v
                 GitHub Actions / deploy ジョブ (deploy.yml)
-                  WIF 認証 → その commit を固定して Cloud Build を submit
-                                                         v
-                Cloud Build (asia-northeast1 / cloudbuild.yaml)
-                  translation取得 → SQLite構築 → データ生成
-                  → テスト → Docker build → Artifact Registry push
-                  → smoke test
-                                                         v
-                GitHub Actions / deploy ジョブ (deploy.yml)
-                  Cloud Run deploy
+                  GHCR ログイン + WIF 認証
+                  → translation取得 → SQLite構築 → データ生成
+                  → テスト → Docker build
+                  → GHCR と Artifact Registry へ同じイメージを push
+                  → digest 照合 → GHCR から取得して smoke test
+                  → Cloud Run deploy (digest 指定)
                                                          v
 [ユーザー] → Cloudflare (Worker) → Cloud Run (asia-northeast1)
                            - min-instances=0 (無アクセス時のコストほぼゼロ)
@@ -32,16 +29,17 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
                              (Xslate キャッシュと diff 用の一時ファイル)
 ```
 
-- **イメージのビルドは Cloud Build (asia-northeast1) で行う** (§11)。GitHub-hosted
-  runner でビルドすると、buildcache の pull と smoke test のための image pull が
-  どちらも Artifact Registry からインターネットへ出る data transfer out になる。
-  同一ロケーション内の転送は無料なので、数百 MB〜GB 級のレイヤ転送を
-  asia-northeast1 の中で完結させる。
-  `script/smoke-test.pl` は手元に無いイメージを `docker run` の自動 pull で取りに行く
-  ため、ビルドだけを Cloud Build にして smoke test を GitHub Actions に置く分割では
-  転送は消えない。
-  Cloud Run への deploy は GitHub Actions 側で行う (WIF の境界を維持し、Cloud Build の
-  サービスアカウントに Cloud Run の権限を持たせないため)。
+- **イメージのビルドは GitHub Actions の GitHub-hosted runner で行う** (§11)。
+  1 回のビルドで GHCR と Artifact Registry の両方へ push し、smoke test は GHCR から
+  取得したイメージを検査する。Cloud Run へは Artifact Registry のイメージを digest
+  指定でデプロイするので、検査したものとデプロイしたものが同一であることは、
+  タグ名ではなく digest で確かめられる。
+- **GitHub Actions の実行経路に Artifact Registry からの取得を置かない**。
+  Artifact Registry から GitHub-hosted runner へレイヤやビルドキャッシュを引くと、
+  そのたびに数百 MB 級のデータがインターネットへ出る data transfer out になる。
+  ビルドキャッシュは Actions Cache (`type=gha`) に、smoke test の検査対象は GHCR に
+  置き、Artifact Registry に対しては push と、digest 照合のためのメタデータ照会しか
+  行わない。レイヤを引くのは同一リージョンの Cloud Run だけになる。
 - **`data/years.pl` はビルドの前に更新する**。deploy.yml の years ジョブが
   `script/update-years.pl` で再導出し、差分があれば master へコミットしてから、
   その commit をソースにしてビルドする。ビルドの成果物を GitHub へ取り出す経路が
@@ -119,16 +117,14 @@ gcloud billing projects link "$PROJECT_ID" \
 
 gcloud services enable --project="$PROJECT_ID" \
   run.googleapis.com artifactregistry.googleapis.com \
-  cloudbuild.googleapis.com \
   iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 ```
 
-`cloudbuild.googleapis.com` は §11 のイメージビルドが使う。
+イメージのビルドは GitHub Actions で行うため (§11)、`cloudbuild.googleapis.com` は
+要らない。以前有効にしていた場合の外し方は 11-5 にある。
 
-`compute.googleapis.com` は有効化しない。Cloud Run のランタイムには専用のサービス
-アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。Cloud Build も
-default pool (Google 管理側の VM) しか使わないので不要で、cloudbuild を有効化しても
-巻き添えで有効にはならない (稼働状態で確認済み)。
+`compute.googleapis.com` も有効化しない。Cloud Run のランタイムには専用のサービス
+アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。
 
 ### 2. Artifact Registry
 
@@ -138,17 +134,12 @@ gcloud artifacts repositories create perldoc-jp \
   --repository-format=docker \
   --location="$REGION"
 
-# 古いイメージの自動削除 (最新15世代 + buildcache タグを保持)。
+# 古いイメージの自動削除 (最新15世代を保持)。
 # schedule ビルドにより変更が無い日も日次でイメージが積まれるため、
 # keepCount が小さいと平穏な期間だけで実質同一イメージに埋まり
 # ロールバックに使える世代が残らなくなることに注意
 cat > /tmp/cleanup-policy.json <<'EOF'
 [
-  {
-    "name": "keep-buildcache",
-    "action": {"type": "Keep"},
-    "condition": {"tagPrefixes": ["buildcache"], "tagState": "TAGGED"}
-  },
   {
     "name": "keep-recent",
     "action": {"type": "Keep"},
@@ -166,6 +157,18 @@ gcloud artifacts repositories set-cleanup-policies perldoc-jp \
   --location="$REGION" \
   --policy=/tmp/cleanup-policy.json \
   --no-dry-run
+```
+
+ビルドを Cloud Build で行っていた頃は、registry cache を `:buildcache` タグに
+置いていた。ビルドキャッシュは Actions Cache へ移していて (§11) このタグを読む
+ものは無いので、残っていれば消す。上の policy から `keep-buildcache` を外した
+時点で 30 日後には `delete-old` の対象になるが、`mode=max` の registry cache は
+中間ステージのレイヤまで抱えていて保管料の対象が大きいため、待たずに消す:
+
+```sh
+gcloud artifacts docker images delete \
+  "${REGION}-docker.pkg.dev/${PROJECT_ID}/perldoc-jp/app:buildcache" \
+  --project="$PROJECT_ID" --delete-tags --quiet
 ```
 
 ### 3. ランタイムサービスアカウント
@@ -234,9 +237,6 @@ GitHub Actions からキーレスで認証するための設定。権限はプ�
 リソース (Cloud Run サービス / Artifact Registry リポジトリ / サービスアカウント) に
 付与する。
 
-イメージをビルドする Cloud Build 側は別のサービスアカウントを使う。作成と、この
-デプロイ用 SA に足す分のバインディングは §11 にまとめてある。
-
 ```sh
 gcloud iam service-accounts create perldoc-jp-deployer \
   --project="$PROJECT_ID" \
@@ -252,12 +252,13 @@ gcloud run services add-iam-policy-binding perldoc-jp \
   --project="$PROJECT_ID" --region="$REGION" \
   --member="serviceAccount:$SA" --role=roles/run.developer
 
-# イメージの読み取り。この SA は push しない (push するのは §11 の builder SA)
-# が、gcloud run deploy はデプロイ主体にも
-# artifactregistry.repositories.downloadArtifacts を要求する
+# イメージの push (§11 で GitHub Actions がこの SA を名乗って行う) と、
+# デプロイ時の読み取り。gcloud run deploy はデプロイ主体にも
+# artifactregistry.repositories.downloadArtifacts を要求するが、writer は
+# reader を含むのでこれ 1 つで足りる
 gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
   --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:$SA" --role=roles/artifactregistry.reader
+  --member="serviceAccount:$SA" --role=roles/artifactregistry.writer
 
 # ランタイム SA を名乗らせてデプロイする権限
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SA" \
@@ -369,11 +370,9 @@ WIF provider (`projects/<PROJECT_NUMBER>/locations/global/workloadIdentityPools/
 deploy.yml が上記 2 つの secret から組み立てるため、個別には保存しない
 (project number / ID の重複保存を避ける)。
 
-同じ理由で、Cloud Build (§11) のための secret や variable も置かない。
-builder SA email (`perldoc-jp-builder@<PROJECT_ID>.iam.gserviceaccount.com`) は
-deploy.yml が `GCP_PROJECT_ID` から組み立て、`cloudbuild.yaml` 側は built-in の
-`$PROJECT_ID` substitution を使う (リポジトリのファイルに project ID を書かない)。
-Cloud Build が fetch するソースの URL は公開リポジトリのものなので機密ではない。
+GHCR への push (§11) も secret を増やさない。deploy ジョブに `packages: write` を
+与えれば組み込みの `GITHUB_TOKEN` で push でき、イメージ名は `github.repository`
+から組み立てる。
 
 environment は workflow から参照されただけでも自動作成されるが、その場合は
 branch policy の無い素通しになり、environment に secret が無ければ同名の
@@ -498,10 +497,7 @@ ruleset の適用直後の Deploy workflow で、years ジョブの push が成�
 ### 8. 手動でのビルドとデプロイ
 
 Deploy workflow を通さずに手元からビルドしてデプロイする手順。使うのは操作者自身の
-gcloud 認証情報で、デプロイ用 SA (§5) も builder SA (§11) も経由しない。
-
-Cloud Build 側の経路を手で回したい場合は、§11 の submit コマンドを
-`--git-source-revision` に確かめたい commit SHA を渡して実行する。
+gcloud 認証情報で、デプロイ用 SA (§5) は経由しない。
 
 事前に `data/years.pl` が過去年 (2002〜) を含む現物になっていることを確認する。
 `.dockerignore` に含まれないため作業ツリーの内容がそのままイメージに焼き込まれ、
@@ -529,23 +525,22 @@ docker buildx build \
   --platform linux/amd64 \
   --target runtime \
   --build-arg "TRANSLATION_COMMIT=$TRANSLATION_COMMIT" \
-  --cache-from "type=registry,ref=$IMAGE:buildcache" \
+  --provenance=false \
   --tag "$IMAGE:$TAG" \
   --push \
   .
 ```
 
-- `$IMAGE:buildcache` がまだ push されていない場合は警告が出るだけで、通常の
-  フルビルドになる。
-- push したイメージを Cloud Run が受け付けない場合は `--provenance=false` を足す
-  (buildx が既定で付ける attestation により manifest が image index になるため)。
-- CI が作るイメージに揃えたい場合は `--provenance=mode=max` を足す
-  (`cloudbuild.yaml` が明示している値。素の buildx の既定は `mode=min` で、
-  Cloud Run 側の要件ではない)。
+- キャッシュは指定しない。CI のビルドキャッシュは GitHub の Actions Cache にあり、
+  手元からは読めないので、この経路は毎回フルビルドになる。
+- `--provenance=false` は deploy.yml に合わせたもの (11-1)。付けないと buildx が
+  attestation を付け、manifest が image index になる。
 
-本番同等の FS 制約で起動確認してからデプロイする (cloudbuild.yaml / test.yml の
+本番同等の FS 制約で起動確認してからデプロイする (deploy.yml / test.yml の
 smoke test と同じスクリプト)。ホスト側では Perl 5.38 以降を使用し、追加の
-CPAN モジュールは必要ない:
+CPAN モジュールは必要ない。手元の daemon にイメージが無い状態で実行すると、
+`docker run` が Artifact Registry から pull する。これはインターネットへの
+data transfer out にあたるが、手動の経路でしか起きないので許容している:
 
 ```sh
 ./script/smoke-test.pl "$IMAGE:$TAG"
@@ -1199,327 +1194,264 @@ Worker を挟まない構成にする場合の選択肢:
   (Cloudflare Origin CA) が使えて Google が推奨する構成でもあるが、転送ルールだけで
   概算 月 $18〜25 かかり、min-instances=0 のコスト方針とは釣り合わない
 
-### 11. Cloud Build (本番イメージのビルド)
+### 11. 本番イメージのビルド (GitHub Actions)
 
-`.github/workflows/deploy.yml` の deploy ジョブは、ビルド・テスト・smoke test を
-Cloud Build (`cloudbuild.yaml`) で実行する。GitHub-hosted runner が Artifact Registry から
-buildcache や runtime イメージを引くと、そのたびにインターネットへの data transfer out に
-なるため、大きいレイヤ転送を asia-northeast1 の中で完結させる。
+`.github/workflows/deploy.yml` の deploy ジョブが、ビルド・smoke test・デプロイを
+1 つのジョブで行う。公開リポジトリの標準 GitHub-hosted runner は実行時間が
+課金されないため、ビルドそのものに費用はかからない。
 
-ビルドの成果物を Cloud Build から GitHub へ取り出す経路は持たない。`data/years.pl` は
-その前段の years ジョブが `script/update-years.pl` で再導出して master へコミットし、
-その commit をソースにしてビルドするので、イメージはコミット済みの現物を読む。
+避けるのは Artifact Registry からの取得である。Artifact Registry から
+GitHub-hosted runner へレイヤやビルドキャッシュを引くと、そのたびにインターネットへ
+出る data transfer out として課金される。このため次のように分けてある。
 
-ソースは 2nd-gen の GitHub connection を使わず、**公開リポジトリの exact commit SHA を
-Cloud Build 自身に fetch させる** (`gcloud builds submit <URL> --git-source-revision <SHA>`)。
-`--config` に渡す `cloudbuild.yaml` だけは gcloud が手元から読んで Build を組み立てる
-(ビルドの定義は呼び出し側、ビルドコンテキストは Cloud Build が fetch したもの)。
-deploy.yml は years ジョブが出力した commit を `actions/checkout` してから渡すので、
-手元から読む `cloudbuild.yaml` と Cloud Build が fetch するソースは同じ commit になる。
+| 用途 | 置き場所 |
+|---|---|
+| ビルドキャッシュ | Actions Cache (`type=gha`, `mode=max`) |
+| 完成イメージ | 1 回のビルドから GHCR と Artifact Registry の両方へ push |
+| smoke test の検査対象 | GHCR から pull したイメージ |
+| Cloud Run のデプロイ元 | Artifact Registry のイメージ (digest 指定) |
 
-connection 方式は Cloud Build GitHub App のインストールと、Secret Manager 上に置かれる
-GitHub ユーザーの OAuth トークンを常設で必要とする。このリポジトリは公開なので、
-そのどれも持たずに済ませる。
+Artifact Registry に対して GitHub Actions が行うのは push と、digest 照合のための
+メタデータ照会だけになる。レイヤを引くのは同一リージョンの Cloud Run であり、
+同一ロケーション内の転送は無料である。
 
-ローカルの checkout を送る `gcloud builds submit .` も使わない
-(ソースが `gs://<PROJECT_ID>_cloudbuild` に溜まるため)。
+ビルドを別の workflow ファイルへ分けることはできない。§5 の WIF
+attribute-condition が `assertion.workflow_ref` を `deploy.yml` に固定しているため、
+別のファイルからは Artifact Registry への push の認証が取れない。同じファイル内での
+ジョブ分割は自由だが、1 回のビルドで 2 つのレジストリへ push する以上、GHCR と GCP の
+資格情報は同じジョブに揃っている必要がある。
 
-§2 (Artifact Registry) と §5 (デプロイ用 SA) の後に、**この順で**実行する。
+`data/years.pl` は前段の years ジョブが `script/update-years.pl` で再導出して master へ
+コミットし、その commit をソースにしてビルドする。イメージはコミットされている現物を
+読むので、ビルドの成果物を GitHub へ取り出す経路は要らない。
 
-#### 11-1. builder サービスアカウント
+#### 11-1. 同一イメージであることの確かめ方
 
-preflight (11-2) は builder SA を指定して回すので、SA と最低限の IAM が先に要る。
+`docker buildx build` にタグを 2 つ渡した 1 回のビルドなので、両レジストリに入るのは
+バイト列として同じ manifest であり、digest も一致する (ローカルレジストリ 2 台で
+実測済み)。deploy ジョブはそれを前提に置かず、`docker/build-push-action` が返した
+digest を、両レジストリのタグが実際に指している digest と突き合わせる。
+
+引くのは `docker buildx imagetools inspect --format '{{.Manifest.Digest}}'` による
+manifest 1 個ずつ (数 KB) で、レイヤは落とさない。Artifact Registry 側も
+`gcloud artifacts docker images describe` ではなく同じコマンドを使う。gcloud でも
+digest は取れるが (どちらも同じ値を返すことは確認済み)、タグ参照の可否と出力
+フィールド名という前提が増えるので、GHCR 側と同じ経路に揃えてある。
+
+smoke test に渡す参照も、Cloud Run へ渡す `--image` も、タグではなく digest で書く。
+これにより「smoke test で検査したもの」と「デプロイしたもの」が同じであることの根拠が、
+タグ名の一致ではなく digest そのものになる。
+
+provenance と sbom の attestation は明示的に切ってある。理由は digest ではなく
+公開範囲にある。タグを 2 つ渡したビルドで `--provenance=mode=max` を有効にすると、
+provenance の `subject` は両方のイメージ参照を並べた 1 つの配列になり、その
+attestation がそのまま両レジストリへ push される (ローカルレジストリ 2 台で実測):
+
+```json
+"subject": [
+  { "name": "pkg:docker/reg1%3A5000/probe@t2?platform=linux%2Famd64", "digest": {...} },
+  { "name": "pkg:docker/reg2%3A5000/probe@t2?platform=linux%2Famd64", "digest": {...} }
+]
+```
+
+つまり公開している GHCR 側の attestation に Artifact Registry の参照が載る。
+project ID は §7 の分類で secret として扱っているので、これは避ける。
+なお同じ実測で、attestation を有効にしても両レジストリの digest は一致した
+(宛先ごとに別の attestation が作られるわけではない)。上の同一性は attestation の
+有無では崩れない。
+
+attestation は Cloud Run の要件でもない。`docker/build-push-action` が公開
+リポジトリで既定的に付けていたものを踏襲していただけなので、切っても失うものは
+無い。切った結果、push されるのは単一プラットフォームの素の manifest
+(`application/vnd.oci.image.manifest.v1+json`) になる。有効なときは
+linux/amd64 の manifest と `unknown/unknown` の attestation manifest を含む
+image index になり、Cloud Run はどちらの形も受け付ける。
+
+#### 11-2. GHCR のパッケージ
+
+- 名前: `ghcr.io/perldoc-jp/perldoc.jp/app` (deploy.yml は `github.repository` から
+  組み立てる)
+- 公開範囲: public
+- 保持: 自動削除しない
+
+public にしているのは配布のためである。この構成に関わっていない利用者が、
+ビルド済みのイメージをそのまま手元で起動できるようにする。run ごとのタグを
+全世代残して自動削除を入れないのも同じ理由による。
+
+費用は公開範囲を決める理由にならない。GitHub Packages には plan ごとの storage と
+データ転送の枠があるが、Container registry (ghcr.io) はその例外で、イメージの
+storage と帯域は公開範囲によらず現在無料とされている。private にしても枠は
+消費しない。この扱いが変わる場合は 1 か月以上前に告知されるとされているので、
+告知があったときに保持方針と公開範囲を見直す。
+
+イメージの中身は公開データだけで構成されている。公開範囲を public にしてよいのは、
+上の 11-1 のとおり attestation を切ってあり、push される manifest とレイヤのどこにも
+GCP の識別子が入らないからである。イメージに付けるラベルも
+`org.opencontainers.image.source` の 1 つだけで、値はこのリポジトリの URL になる。
+`DOCKER_BUILD_RECORD_UPLOAD` と `DOCKER_BUILD_SUMMARY` を無効にしているのも同じ理由で、
+build record と job summary には Artifact Registry のタグを含む build inputs が
+そのまま入る。
+
+smoke test とデプロイまで通った digest には `latest` を付ける。run ごとのタグ名を
+知らなくても `docker pull ghcr.io/perldoc-jp/perldoc.jp/app` で引けるようにするための
+入口である。付け替えに使う `docker buildx imagetools create` は、単一の manifest を渡しても
+それを指す image index を新しく作る (実測済み)。`:latest` 自身の digest は run ごとの
+タグのそれとは一致しない。11-1 の同一性の根拠に使うのは run ごとのタグのほうで、
+`latest` はそこに含めない。
+
+#### 11-3. ビルドキャッシュ
+
+`type=gha` を `mode=max` で使う。`mode=max` にするのは、`databuild` (pod2html と
+VACUUM) と `test` (prove) という高価な中間ステージを再利用するためで、`mode=min` では
+`runtime` の最終レイヤしか残らない。
+
+scope は 3 つに分かれる。
+
+| scope | 書くジョブ | 読むジョブ |
+|---|---|---|
+| (既定) | test.yml の test (master への push のみ) | test.yml の test |
+| `runtime` | deploy.yml の deploy | deploy.yml の deploy、test.yml の runtime-test |
+| `runtime-pr` | test.yml の runtime-test | test.yml の runtime-test |
+
+`app` ターゲットと `runtime` ターゲットで scope を分けているのは、`mode=max` の
+書き込みが互いのレイヤを追い出さないようにするためである。
+
+デフォルトブランチのキャッシュは fork を含む全 PR から読めるので、PR の
+`runtime-test` は master が温めた `runtime` を読める。一方、PR が書けるのは
+`runtime-pr` だけで、しかも Actions Cache は PR 単位に隔離されている。deploy ジョブが
+読むのは `runtime` だけなので、PR の内容が本番ビルドの入力に混ざることはない。
+fork PR に GCP の資格情報を渡す必要も無い。
+
+キャッシュが無い状態でもビルドは通る。Actions Cache は 7 日間使われないと削除され、
+リポジトリあたり 10 GiB の上限でも古いものから削除されるため、キャッシュの存在を
+前提にはできない。`RUN --mount=type=cache` で持っている apt と cpm の中身は、
+そもそもこの外部キャッシュには含まれない (同一マシンでの再ビルドにだけ使われる)。
+
+キャッシュヒットは検査を飛ばさない。`prove` は Dockerfile の `test` ステージの
+レイヤなので、入力が変わらなければキャッシュから出てきて再実行されない。ただし
+このレイヤのキャッシュキーは親チェーン全体 (`t` / `tmpl` / `static` /
+`app.psgi` の COPY と、その下の `databuild` チェーン全体、つまり translation の
+commit・`lib`・`script`・`config`・`sql`・`data`) を含む。`prove` の入力が
+1 つでも変われば無効化されて走り直すので、`runtime` の
+`COPY --from=test /tests-passed` は「この入力に対して prove が通った」ことを
+指し続ける。
+
+smoke test のほうは Docker のレイヤではなく workflow のステップなので、
+キャッシュの状態によらず毎回走る。全レイヤがキャッシュに当たったビルドでも
+buildx はイメージを export して push するため、検査対象は常に存在する。
+
+**キャッシュなしで通ることの確かめ方**
+
+本番の run では確かめられない。`scope=runtime` のキャッシュは読まれるたびに
+保持が延びるので、「キャッシュが無い run」を待つことができない。使い捨てのブランチで、
+まだ存在しない scope を指してビルドする:
+
+1. ブランチを切り、test.yml の runtime-test の `cache-from` と `cache-to` を
+   `type=gha,scope=coldcheck-<日付>` のような未使用の scope 1 つに書き換える
+2. push して PR を作り、runtime-test の所要時間と、`CACHED` が出ないことを見る
+3. 確認できたらブランチごと捨てる
+
+`--no-cache` は使わない。確かめたいのは「キャッシュを無視したビルド」ではなく
+「読めるキャッシュが無い状態のビルド」である。gha キャッシュの import は scope ごとの
+index を引くところから始まるので、未使用の scope を指せば import は起きない。
+`RUN --mount=type=cache` が持つ apt と cpm も、新しいランナーでは空から始まる。
+
+この手順が確かめるのは runtime ターゲットのビルドまでで、2 つのレジストリへの push と
+digest 照合は含まない (test.yml は `load: true` でローカルに取り込むだけ)。
+
+10 GiB はリポジトリ全体で共用する。`runtime` scope の `mode=max` は中間ステージの
+レイヤまで抱えるので、PR ごとの `runtime-pr` と合わせると相応の量になる。上限に
+達したときの削除は least recently used で、対象はこのリポジトリのキャッシュ全体
+なので、years ジョブの `perl-deps-*` や worker-test の npm キャッシュも巻き込まれる。
+使用量は次で確認する:
 
 ```sh
-gcloud iam service-accounts create perldoc-jp-builder \
-  --project="$PROJECT_ID" --display-name='perldoc.jp Cloud Build builder'
+gh api repos/perldoc-jp/perldoc.jp/actions/cache/usage
+gh cache list --repo perldoc-jp/perldoc.jp --sort size_in_bytes --order desc --limit 20
+```
 
-BUILDER_SA=perldoc-jp-builder@${PROJECT_ID}.iam.gserviceaccount.com
+#### 11-4. 一度きりの操作
 
-# イメージの push と buildcache の読み書き
+リポジトリのコードだけでは完結しない操作。
+
+1. **deploy ジョブを動かす前に**、デプロイ用 SA へ Artifact Registry の writer を
+   付ける (§5)。Cloud Build でビルドしていた頃、この SA に付いていたのは reader で、
+   writer を持っているのは builder SA のほうである (現状を確認済み)。上げ忘れると
+   最初の push が権限エラーで落ちる
+
+```sh
 gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
   --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:$BUILDER_SA" --role=roles/artifactregistry.writer
+  --member="serviceAccount:perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com" \
+  --role=roles/artifactregistry.writer
 
-# ビルドログの書き込み (cloudbuild.yaml は logging: CLOUD_LOGGING_ONLY)
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$BUILDER_SA" --role=roles/logging.logWriter
+# 確認
+gcloud artifacts repositories get-iam-policy perldoc-jp \
+  --project="$PROJECT_ID" --location="$REGION"
 ```
 
-builder SA には **Cloud Run の権限を一切与えない**。デプロイは GitHub Actions 側に
-残してあり (§5 の WIF が持つ「master かつ deploy.yml からのみ」という境界を維持するため)、
-ビルド側にその境界を跨がせない。
+2. **初回の deploy が成功した後に**、GHCR のパッケージを public にする。
+   `GITHUB_TOKEN` が作るパッケージの既定は private なので、初回 push でできたものを
+   Packages の設定から切り替える。初回の run 自体はこの切り替えの前に完走する
+   (deploy ジョブは `GITHUB_TOKEN` で login していて、private のままでも pull できる)
 
-Cloud Storage は使わない。ビルドの成果物を GitHub へ取り出す経路が無いので専用の
-バケットは不要で、`gcloud builds submit .` を使わないためソースの staging bucket も
-作られない。`logging: CLOUD_LOGGING_ONLY` により `defaultLogsBucketBehavior` も
-無視され、ログバケットも作られない。
+GitHub 側で増える secret も variable も無い。GHCR への push は組み込みの
+`GITHUB_TOKEN` と、deploy ジョブの `packages: write` で足りる (§7)。
 
-#### 11-2. preflight (本番ビルドを任せる前の検証)
+**初回の run で見ること:**
 
-`cloudbuild.yaml` は、Cloud Build のビルドステップ実行環境について公式ドキュメントに
-明記が無いことをいくつか前提にしている。**production の Cloud Build で 1 回検証してから**
-Deploy workflow に任せること。ローカルエミュレータ (`cloud-build-local`) の実装や第三者の報告を
-根拠にしない。
+初回がフルビルドになるとは限らない。#78 が deploy.yml から gha キャッシュの
+書き込みを外した後も `scope=runtime` のキャッシュは残っていて (最後の書き込みは
+2026-09-08)、Actions Cache の 7 日は最終アクセスから数えるため、読まれるたびに
+保持が延びる。実際、この構成へ戻す PR の runtime-test が 2026-09-14 にそれを読み、
+base と deps (apt・Carton・cpm) が `CACHED` になっている。初回の run は
+「キャッシュなしでも通る」ことの確認にはならないので、そちらは 11-3 の手順で
+別に確かめる。
 
-公式ドキュメントで確認できている (preflight の対象外):
+- 所要時間。deploy ジョブの `timeout-minutes` (60) に収まること
+- `Verify the pushed digests` と `Smoke test image` が通ること
+- `scope=runtime` を書いた後の Actions Cache の使用量 (11-3 のコマンド)。
+  10 GiB の上限に対する余裕を数字で押さえておく
+- Cloud Build のビルドが 1 本も起動していないこと
+  (`gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --limit 5`)。
+  課金の確認は、請求への反映の遅れと切り替え前の使用分を織り込んで読む
 
-- Cloud Build は各ステップのコンテナを `cloudbuild` という docker network に接続する
-- ステップの image に Google 提供でない public / custom image を使える
+#### 11-5. Cloud Build の撤去
 
-preflight で確かめるのは次の 7 点:
+ビルドを Cloud Build で行っていた頃の設定は、次の順で外す。他に依存が無いことを
+確かめてから消すこと。
 
-1. ステップから `/var/run/docker.sock` が使える
-2. named volume がステップ間で共有される
-3. `gcr.io/cloud-builders/gcloud` の PATH 上に `docker-credential-gcloud` がある
-   (Cloud SDK には同梱されており、`gcloud auth configure-docker` が `DOCKER_CONFIG`
-   を尊重することも SDK のコードで確認済み。未確認なのはこの image の PATH だけ)
-4. その credential helper 経由で Artifact Registry に push / pull できる
-5. `docker buildx create --driver docker-container --bootstrap` が起動する
-   (= ステップが `--privileged` 相当で動く)
-6. `--network cloudbuild` で起動した隣のコンテナへ、別のステップから network 上の
-   IP で HTTP 到達できる (`script/smoke-test.pl` が通る経路)
-7. Alpine (musl) の `docker:<VERSION>-cli` から取り出した docker CLI が、glibc の
-   `perl:5.42-trixie` でも実行でき、そこから docker socket を使える
-   (smoke test のステップがまさにこの組み合わせ。ここが崩れると、ビルドと push が
-   終わった後の一番高くつく地点で落ちる)
-
-`docker:<VERSION>-cli` への buildx プラグインの同梱と、取り出す 2 つのバイナリが
-静的リンクであることは、image の config と ELF ヘッダで確認済みなので未確認項目には
-数えない。ただし `cloudbuild.yaml` と preflight のどちらにも `test -x` のガードを
-残してあるので、バージョンを上げて構成が変わればそこで落ちる (落ちた場合は
-`docker/buildx-bin:<VERSION>` から取る形に変える)。
+1. `cloudbuild.yaml` の削除 (このリポジトリからは削除済み)
+2. Artifact Registry の `:buildcache` タグと cleanup policy の `keep-buildcache`
+   規則の削除 (§2)
+3. builder サービスアカウント `perldoc-jp-builder` と、その
+   `roles/artifactregistry.writer`・`roles/logging.logWriter` の削除
+4. デプロイ用 SA から `roles/cloudbuild.builds.editor` と、builder SA に対する
+   `roles/iam.serviceAccountUser` の削除。ビルドログ取得のために
+   `roles/logging.viewer` を付けていた場合もあわせて外す
+5. `cloudbuild.googleapis.com` の無効化
 
 ```sh
-cat > /tmp/cloudbuild-preflight.yaml <<'EOF'
-timeout: 900s
-options:
-  machineType: E2_STANDARD_2
-  logging: CLOUD_LOGGING_ONLY
-steps:
-  - id: tools
-    name: 'docker:29.7.2-cli@sha256:3f4743208d2338c934d7b8bcfbe1bb54c0b2355c510ad5e0f31c0c4a54bd704e'
-    entrypoint: 'sh'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    args:
-      - -ceu
-      - |
-        test -S /var/run/docker.sock                                   # (1)
-        test -x /usr/local/libexec/docker/cli-plugins/docker-buildx    # buildx 同梱
-        mkdir -p /ci/bin /ci/docker/cli-plugins
-        install -m 0755 /usr/local/bin/docker /ci/bin/docker
-        install -m 0755 /usr/local/libexec/docker/cli-plugins/docker-buildx \
-          /ci/docker/cli-plugins/docker-buildx
-        docker version
-
-  - id: buildx
-    name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    env:
-      - 'DOCKER_CONFIG=/ci/docker'
-      - 'REGISTRY=asia-northeast1-docker.pkg.dev'
-    args:
-      - -ceu
-      - |
-        export PATH=/ci/bin:$$PATH
-        test -x /ci/bin/docker                                         # (2)
-        command -v docker-credential-gcloud                            # (3)
-        gcloud auth configure-docker "$$REGISTRY" --quiet
-        grep -q "$$REGISTRY" /ci/docker/config.json                    # (3)
-        docker buildx create --name preflight --driver docker-container \
-          --driver-opt image=moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 \
-          --bootstrap                                                  # (5)
-        docker buildx inspect preflight
-
-  - id: registry
-    name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    env:
-      - 'DOCKER_CONFIG=/ci/docker'
-      - 'IMAGE=asia-northeast1-docker.pkg.dev/$PROJECT_ID/perldoc-jp/app:preflight-$BUILD_ID'
-    args:
-      - -ceu
-      - |
-        export PATH=/ci/bin:$$PATH
-        mkdir -p /ci/preflight
-        # 到達性の検査対象。busybox の applet 構成に賭けず、この preflight が
-        # すでに使っている perl イメージの上に最小の HTTP サーバを置く
-        # (Alpine の busybox には httpd applet が入っていない)
-        cat > /ci/preflight/server.pl <<'SERVER'
-        use IO::Socket::INET;
-        my $$sock = IO::Socket::INET->new(
-            LocalAddr => '0.0.0.0', LocalPort => 8080, Listen => 8, ReuseAddr => 1)
-            or die "listen: $$!\n";
-        while (my $$conn = $$sock->accept) {
-            my $$req = <$$conn>;
-            print {$$conn} "HTTP/1.0 200 OK\r\nContent-Length: 12\r\n\r\npreflight-ok";
-            close $$conn;
-        }
-        SERVER
-        cat > /ci/preflight/Dockerfile <<'DOCKERFILE'
-        FROM perl:5.42-trixie
-        COPY server.pl /server.pl
-        ENTRYPOINT []
-        CMD ["perl", "/server.pl"]
-        DOCKERFILE
-        docker buildx build --builder preflight --platform linux/amd64 \
-          --tag "$$IMAGE" --push /ci/preflight                         # (4) push
-        docker pull "$$IMAGE"                                          # (4) pull
-        docker run -d --name preflight-app --network cloudbuild "$$IMAGE"
-
-  # smoke test と同じ image・同じ手段で検証する。
-  # まず Alpine から持ってきた docker CLI が glibc の image で動き、socket を
-  # 使えること (7)、次に隣のコンテナへ HTTP::Tiny で届くこと (6)
-  - id: reachability
-    name: 'perl:5.42-trixie'
-    entrypoint: 'sh'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    args:
-      - -ceu
-      - |
-        /ci/bin/docker --version                                       # (7) 実行できるか
-        /ci/bin/docker ps > /dev/null                                  # (7) socket を使えるか
-
-        # 相手が死んでいると「到達できない」と区別が付かないので先に確かめる
-        state=$$(/ci/bin/docker inspect --format '{{.State.Status}}' preflight-app)
-        echo "preflight-app: $$state"
-        if [ "$$state" != running ]; then
-          /ci/bin/docker logs preflight-app || true
-          exit 1
-        fi
-
-        # 本番の smoke test と同じく、コンテナ名ではなく network 上の IP で引く
-        ip=$$(/ci/bin/docker inspect \
-          --format '{{index .NetworkSettings.Networks "cloudbuild" "IPAddress"}}' \
-          preflight-app)
-        echo "preflight-app ip: $$ip"
-
-        cat > /ci/reachability.pl <<'REACH'
-        use HTTP::Tiny;
-        my ($$ip) = @ARGV;
-        $$ip =~ /\A[0-9]+(?:\.[0-9]+){3}\z/ or die "no ip on the cloudbuild network\n";
-        my $$r;
-        for (1 .. 10) {
-          $$r = HTTP::Tiny->new(timeout => 5, proxy => undef, http_proxy => undef)
-            ->get("http://$$ip:8080/");
-          last if $$r->{success};
-          sleep 2;
-        }
-        # 599 は HTTP::Tiny の内部例外で、実際の原因は content 側に入る
-        die "unreachable: $$r->{status} $$r->{reason}: $$r->{content}\n"
-            unless $$r->{success};
-        die "unexpected body: $$r->{content}\n" unless $$r->{content} eq 'preflight-ok';
-        print "reachability OK\n";
-        REACH
-        exec perl /ci/reachability.pl "$$ip"                            # (6)
-
-  - id: cleanup
-    name: 'gcr.io/cloud-builders/gcloud'
-    entrypoint: 'bash'
-    volumes:
-      - name: 'ci'
-        path: '/ci'
-    args:
-      - -ceu
-      - |
-        export PATH=/ci/bin:$$PATH
-        docker rm -f preflight-app || true
-EOF
-
-gcloud builds submit --no-source \
-  --project="$PROJECT_ID" \
-  --region="$REGION" \
-  --config=/tmp/cloudbuild-preflight.yaml \
-  --service-account="projects/${PROJECT_ID}/serviceAccounts/${BUILDER_SA}"
-```
-
-実行するのは操作者自身の資格情報 (デプロイ用 SA はまだ使わない)。
-`--service-account` を指定するので、操作者に builder SA への `iam.serviceAccounts.actAs`
-が要る (Owner なら暗黙に持つ)。
-
-preflight が push した `:preflight-<BUILD_ID>` タグは、操作者の資格情報で消しておく
-(builder SA には削除権限を与えていない。放置しても §2 の cleanup policy が 30 日で回収する):
-
-```sh
-gcloud artifacts docker images delete \
-  "${REGION}-docker.pkg.dev/${PROJECT_ID}/perldoc-jp/app:preflight-<BUILD_ID>" \
-  --project="$PROJECT_ID" --delete-tags --quiet
-```
-
-いずれかの assertion が崩れた場合は、`cloudbuild.yaml` の該当ステップを
-`gcr.io/cloud-builders/*` に寄せる、`docker run` の入れ子にする等の代替へ切り替える。
-
-#### 11-3. デプロイ用 SA への追加バインディング
-
-preflight が通ってから、§5 のデプロイ用 SA に Cloud Build を submit する権限を足す。
-
-```sh
+BUILDER_SA=perldoc-jp-builder@${PROJECT_ID}.iam.gserviceaccount.com
 SA=perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com
 
-# ビルドの submit / get / list / cancel
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:$SA" --role=roles/cloudbuild.builds.editor
 
-# roles/serviceusage.serviceUsageConsumer は付けない。gcloud の IAM ドキュメントは
-# builds submit の要件として挙げているが、それが要るのは source を Cloud Storage へ
-# staging する経路で、git URL を source にする本構成はその分岐に入らない。
-# 実際に付けない状態で submit が通ることを確認済み
+# SA ごと消せば、それを member にしたバインディングも実効しなくなる。
+# builder SA を他の用途に使っていないことを確かめてから消すこと
+gcloud iam service-accounts delete "$BUILDER_SA" --project="$PROJECT_ID"
 
-# --service-account で builder SA を指定するのに要る iam.serviceAccounts.actAs
-gcloud iam service-accounts add-iam-policy-binding "$BUILDER_SA" \
-  --project="$PROJECT_ID" \
-  --member="serviceAccount:$SA" --role=roles/iam.serviceAccountUser
+gcloud services disable cloudbuild.googleapis.com --project="$PROJECT_ID"
 ```
 
-任意: ビルドログを GitHub Actions のログに出したい場合。`cloudbuild.yaml` は
-`logging: CLOUD_LOGGING_ONLY` なので、`gcloud builds log` は Cloud Logging を読む。
-付与しなくても workflow は動く (ログ取得に失敗しても無視して、Cloud Console の URL を
-案内する)。プロジェクト全体のログ閲覧権限になるので、要否は判断すること。
+`gcloud services disable` は、依存する API がある場合に確認を求めて止まる。
+Cloud Run と Artifact Registry は Cloud Build に依存しないが、表示された内容は
+読んでから進めること。
 
-```sh
-gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$SA" --role=roles/logging.viewer
-```
-
-ここまでで Deploy workflow が 1 回成功することを確認する。
-
-**初回の Deploy workflow で見ること:**
-
-- `timeout: 3600s` に迫る長さのビルドでも、最後の `--push` と `--cache-to` が
-  認証エラーにならないこと。credential helper は docker / buildx の起動ごとに
-  呼ばれるが、buildx は 1 回の build 呼び出しの中では資格情報をキャッシュするため、
-  単一の長時間ステップの内部まで更新される保証はない。問題になるようなら
-  `build-runtime` を分割するか、machine type を上げてビルド時間を短くする
-- 実ビルド時間を測り、`cloudbuild.yaml` の `timeout` と deploy.yml の
-  `timeout-minutes` を実測に合わせて詰めること (「運用」の `gcloud builds list`)。
-  実測値は「ビルドまわりで課金対象になり得るもの」の表にある
-- 無料枠 2,500 build-minutes に対する消費ペース
-
-#### 11-4. 一度きりの操作のまとめ
-
-リポジトリのコードだけでは完結しない操作を、実行順に並べたもの:
-
-1. §1 の API 有効化 (`cloudbuild.googleapis.com` を含む)
-2. builder SA の作成と IAM (11-1)
-3. GitHub の environment `master-write` の作成 (§7)
-4. preflight ビルド (11-2)
-5. デプロイ用 SA への追加バインディング (11-3)
-
-**GitHub 側で必要なのは 3 の environment だけ** (§7 の environment 作成コマンドに
-含めてある)。secret も variable も増えない。作らずに参照されたときの影響は §7 の
-とおりなので、Deploy workflow を動かす前に作る。
-Cloud Build の 2nd-gen connection、Cloud Build GitHub App のインストール、
-Secret Manager はいずれも使わない。
+Cloud Storage は引き続き使わない。`gcloud builds submit .` を使っていなかったので
+ソースの staging bucket は作られておらず、`logging: CLOUD_LOGGING_ONLY` により
+ログバケットも作られていない。
 
 ## ビルドまわりで課金対象になり得るもの
 
@@ -1528,14 +1460,16 @@ Secret Manager はいずれも使わない。
 
 | 項目 | 単価 | 見込み |
 |---|---|---|
-| Cloud Build build-minutes | billing account あたり月 2,500 分が無料。ただし脚注に "This promotional free tier is for e2-standard-2 machine types in the default pool" とあり、**promotional かつ default pool の `e2-standard-2` 限定**で、恒久ではない。超過分は $0.006/min。端数は実消費秒数で按分され、queue 待ちの時間は課金されない | 実測では、レイヤに変更が無いビルドが 1 分前後、`databuild` 以降が動いたビルドが 6 分程度 (`build-runtime` が 5 分)。日次 schedule と translation 通知の頻度を考えても無料枠には大きな余裕がある |
+| GitHub Actions の実行時間 | 公開リポジトリの標準 GitHub-hosted runner は無料 | ビルドが GitHub Actions に戻ったことによる増加分はここに入るが、課金されない |
+| GitHub Actions Cache | 無料。リポジトリあたり 10 GiB の上限があり、超えると least recently used から削除される。7 日間使われないキャッシュも削除される | `runtime` / `runtime-pr` scope の `mode=max` が中間ステージのレイヤまで抱える。上限の削除はリポジトリ全体を対象にするので、使用量は 11-3 のコマンドで見ておく |
+| GitHub Packages (GHCR) | Container registry のイメージ storage と帯域は、公開範囲によらず現在無料とされている。plan ごとの storage・データ転送の枠が効くのは、この例外に入らない package 形式のほう。扱いが変わる場合は 1 か月以上前に告知されるとされている | 全世代を残しても課金対象にならない。告知があった場合に保持方針と公開範囲を見直す (11-2) |
 | Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | §2 の cleanup policy で世代数を抑える |
-| Artifact Registry ↔ Cloud Build (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当し、Cloud Build への data transfer in も無料 | buildcache の pull・イメージの push・smoke test のための pull がすべてここに入る |
-| Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | GitHub-hosted runner のような Google 外からイメージやキャッシュを引くとここに入る (§11 で避けている)。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
-| Cloud Logging | $0.50/GiB、50 GiB/project/month が無料。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | `logging: CLOUD_LOGGING_ONLY` にしたビルドログの分。無料枠に収まる想定 |
-| Cloud Storage | — | 使わない (11-1)。専用バケットも、ソースの staging bucket も、ログバケットも作られない |
+| Artifact Registry ↔ Cloud Run (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当する | デプロイ時のレイヤ取得がここに入る |
+| Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | この構成を避けるために §11 がある。GitHub Actions が Artifact Registry へ行うのは push (data transfer in は無料) と digest 照合のメタデータ照会だけで、レイヤは引かない。したがってここに入るのは、手元や第三者が直接 pull した分に限られる。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
+| Cloud Logging | $0.50/GiB、50 GiB/project/month が無料。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | Cloud Run のリクエストログとアプリケーションログの分。無料枠に収まる想定 |
+| Cloud Build | — | 使わない (11-5)。撤去前の使用分は、請求への反映が遅れて後から現れることがある |
+| Cloud Storage | — | 使わない。専用バケットも、ソースの staging bucket も、ログバケットも作られていない |
 | Artifact Analysis (脆弱性スキャン) | $0.26/scan。Container Scanning API を有効化したときにだけ課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため発生しない |
-
 ## `static/docs.json` の外部利用者
 
 `static/docs.json` は Chrome 拡張と Firefox アドオンが参照している。
@@ -1593,50 +1527,30 @@ Secret Manager はいずれも使わない。
   エッジキャッシュ (§10) があるため、Cloud Run のリクエストログは
   ページビューではなく「エッジの MISS」に近い値になる。ページビューを
   見たい場合は Cloudflare 側の Analytics を使う
-- **本番イメージのビルド**: Cloud Build (asia-northeast1) が行う (§11)。ビルドログは
-  Cloud Logging に入り (`logging: CLOUD_LOGGING_ONLY`)、Deploy workflow が完了後に
-  `gcloud builds log` でまとめて GitHub Actions のログへ出す。この設定では live
-  streaming ができないので、進行中の様子を見たいときは Deploy workflow が submit
-  直後に表示する Cloud Console の URL を開く。
-  デプロイ用 SA に `roles/logging.viewer` を付けていない場合はログの取り出しに
-  失敗するが、その場合も workflow はビルドの成否だけで進退を決める (§11-3)
-- **ビルドを手で止める**:
-  `gcloud builds cancel <BUILD_ID> --project <PROJECT_ID> --region asia-northeast1`。
-  Deploy workflow 側がキャンセル・失敗した場合は workflow が自動で cancel する。
-  そのとき対象を引くのに使っているのは build ID ではなく run ごとに一意な
-  `_TAG` substitution で、`gcloud builds submit` が ID を返す前に中断されても
-  受理済みのビルドを回収できるようにしてある。`_TAG` の先頭は `github.sha` では
-  なく実際にビルドした commit (years ジョブが書き戻していればその commit)。
-  手で探す場合も同じ引き方をする:
+- **本番イメージのビルド**: Deploy workflow の deploy ジョブが行う (§11)。ビルドログは
+  GitHub Actions のジョブログにそのまま出る。この run をキャンセルすればビルドも
+  一緒に止まるので、別のシステムに残ったビルドを回収する手順は要らない
+- **ビルド済みイメージを手元で動かす**: GHCR のパッケージは public なので、
+  資格情報なしで引ける。`docker run --rm -p 8080:8080 ghcr.io/perldoc-jp/perldoc.jp/app`。
+  特定の run のイメージが要る場合は、パッケージのタグ一覧から
+  `<ビルドした commit>-<RUN_ID>-<RUN_ATTEMPT>` を選ぶ
+- **どのイメージがデプロイされているかを見る**:
   ```sh
-  gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --ongoing \
-    --filter='substitutions._TAG=<ビルドした commit>-<RUN_ID>-<RUN_ATTEMPT>' \
-    --format='value(id)'
+  gcloud run services describe perldoc-jp --project <PROJECT_ID> \
+    --region asia-northeast1 --format='value(spec.template.spec.containers[0].image)'
   ```
-  進行中のものを全部見たいときは `--filter` を外す。放置すると、次の run のビルドと
-  同時に `:buildcache` を書きに行き、last-writer-wins で以後のキャッシュヒット率が落ちる
+  デプロイは digest 指定で行うので、ここに出るのも digest になる。同じ digest は
+  GHCR にも入っているため、その時点の本番と同じイメージを手元で起動できる
 - **gcloud SDK のバージョン**: deploy.yml は `setup-gcloud` の `version` を固定して
-  いる。`cloudbuild.yaml` の解釈は client 側 (gcloud) で行われ、gcloud は未知の
-  enum 値を「そのフィールドは未使用」として扱う。`options.machineType` の
-  `E2_STANDARD_2` がクライアントの enum に入ったのは 572.0.0 で、571.0.0 以前には
-  無い (450 / 500 / 570 で不在、572 以降で存在することを確認)。machine type 自体は
-  2023 年から使えるため、値の古さからは判断できない。それ以前の版で submit すると
-  `.options.machineType: unused` で submit の手前で落ちる。
-  上げるときは 572.0.0 以上であること、およびその版でこの `cloudbuild.yaml` が
-  解釈できることを確かめてから上げる (存在しない project に対して
-  `gcloud builds submit --no-source --config cloudbuild.yaml` を実行すると、
-  API 呼び出しの手前まで進むので client 側の解釈だけを試せる)
-- **Docker Hub の pull 回数**: ビルド 1 回につき、ステップの image
-  (`docker:<VERSION>-cli` / `moby/buildkit:<VERSION>` / `perl:5.42-trixie`) と
-  Dockerfile のベース (`perl:5.42-trixie` / `perl:5.42-slim-trixie`) を Docker Hub から
-  引く。Cloud Build の default pool は共有の egress IP から出るため、匿名 pull の
-  レート制限に当たり得る。当たった場合は
-  Artifact Registry の remote repository (Docker Hub のプロキシ) を作ってそちらを
-  参照するように `cloudbuild.yaml` と `Dockerfile` を書き換える
-- **無料枠の消費を見る**: 無料枠の条件は「ビルドまわりで課金対象になり得る
-  もの」の表のとおり。所要時間は
-  `gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --limit 20 --format='table(id,status,createTime,startTime,finishTime)'`
-  で確認する
+  いる。run ごとに新しい版が降ってくると、`gcloud run deploy` の引数解釈や既定値の
+  変更がそのまま本番の挙動差になるため。上げるときは §8 の手動手順をその版で
+  一度通してから上げる
+- **Actions Cache の使用量を見る**: キャッシュの scope と上限の扱いは 11-3 のとおり。
+  上限に達したときの削除はリポジトリ全体を対象にするので、本番ビルドを戻した後の
+  使用量は一度測っておく:
+  ```sh
+  gh api repos/perldoc-jp/perldoc.jp/actions/cache/usage
+  ```
 - **data/years.pl の自動更新 (年次作業は不要)**: `.github/workflows/deploy.yml` の
   years ジョブが、イメージをビルドする前に `script/update-years.pl` で前年+当年
   (対象年は translation の最新イベントから導出) を translation の git 履歴から
