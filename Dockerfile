@@ -6,7 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # apt のダウンロード済み .deb とインデックスを BuildKit の cache mount に残す
 # (既定の docker-clean はキャッシュを消すため無効化する)。cache mount は
-# 同一マシンでの再ビルドにのみ効き、registry cache には乗らない
+# 同一マシンでの再ビルドにのみ使われ、エクスポートされるビルドキャッシュ
+# (type=gha) には含まれない
 RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
   echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
@@ -78,7 +79,7 @@ RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git a
 # 生成に要るものだけを持ち込む。COPY . . にすると、データ生成が一切読まない
 # ファイル (tmpl/ の 1 行、CSS、t/ のテスト) を触っただけでこのレイヤが
 # 無効化され、update.pl の pod2html (翻訳 2500 ファイル) から VACUUM までが
-# まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (Cloud Build) で
+# まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (deploy.yml) で
 # 2 回起きる。
 # 変更頻度の低い順に重ねる。data/ (= 年次統計の years.pl) は
 # デプロイのたびに自動コミットされる最も揮発的な入力で、しかも update.pl は
@@ -171,7 +172,7 @@ COPY --from=deps /usr/src/app/local ./local
 # ファイル (google-github-actions/auth の gha-creds-*.json 等) を .dockerignore の
 # 列挙漏れひとつで拾ってしまうため、実行時に読むものだけを列挙する。
 # 列挙漏れは smoke test が検出する (toc.txt → /index/core など)。
-# 本番は Cloud Build (cloudbuild.yaml)、PR は test.yml がこれを回す
+# 本番は deploy.yml、PR は test.yml がこれを回す
 COPY app.psgi toc.txt toc-var.txt ./
 COPY config ./config
 COPY lib ./lib

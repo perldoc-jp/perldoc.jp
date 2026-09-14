@@ -1,13 +1,9 @@
 #!/usr/bin/env perl
 # ビルド済みイメージを Cloud Run 相当の FS 制約 (--read-only + /tmp の tmpfs) で
-# 起動し、主要経路の開通を確認する。cloudbuild.yaml (Cloud Build 上での、デプロイ前の
-# 検証) と test.yml (PR での runtime ビルド検証) が共用する。
+# 起動し、主要経路の開通を確認する。deploy.yml (デプロイ前の検証) と
+# test.yml (PR での runtime ビルド検証) が共用する。
 #
 # 使い方: script/smoke-test.pl <image>
-#
-# 環境変数 SMOKE_DOCKER_NETWORK を指定すると、コンテナをホストへ publish せず
-# その docker network に載せて検査する。CI ランナー自身がコンテナの中にいて
-# ホストの loopback に届かない環境 (Cloud Build) 用。未指定時の挙動は従来どおり
 #
 # 結果は TAP で出力する。失敗時は diag で HTTP のステータス・本文の先頭・
 # コンテナのログを出し、CI のログだけで原因を調査できるようにする。
@@ -111,14 +107,6 @@ SH
     );
     my $name = basename $name_reservation->dirname;
 
-    # CI ランナー自身がコンテナの中にいる場合 (Cloud Build)、ホストの loopback へ
-    # publish してもランナーの network namespace からは届かない。
-    # SMOKE_DOCKER_NETWORK が指定されたときは同じ docker network に相乗りする。
-    # 接続先はコンテナ名ではなく network 上の IP を使う。docker の埋め込み DNS が
-    # その network でコンテナ名を解決できるかどうか (名前の文字種の扱いを含む) に
-    # 依存させない
-    my $network = $ENV{SMOKE_DOCKER_NETWORK} // '';
-
     my ($cleanup_needed, $started, $completed);
     defer {
         cleanup_container(
@@ -137,45 +125,18 @@ SH
 
     $cleanup_needed = 1;
 
-    # publish する場合、ホスト側ポートは固定しない。8080 固定だと docker compose
-    # (make up) が bind している最中や並行実行と衝突する。127.0.0.1 への bind なので
+    # ホスト側ポートは固定しない。8080 固定だと docker compose (make up) が
+    # bind している最中や並行実行と衝突する。127.0.0.1 への bind なので
     # テスト中のコンテナが LAN に公開されることもない
-    my @network_args = $network ne ''
-        ? ('--network', $network)
-        : ('-p', '127.0.0.1::8080');
-
     my ($run_ok) = capture(qw(docker run -d --name), $name, @platform,
-        qw(--read-only --tmpfs /tmp -e PORT=8080), @network_args, $image);
+        qw(--read-only --tmpfs /tmp -e PORT=8080 -p 127.0.0.1::8080), $image);
     $run_ok or die "コンテナを起動できない\n";
     $started = 1;
 
-    my $base;
-    if ($network ne '') {
-        # 生存確認と IP の取得を 1 回の inspect でまとめる。生存確認は publish 経路の
-        # docker port に相当し、これが無いと起動直後に死んだコンテナでも readiness
-        # ループの上限まで繰り返してしまう。
-        # network 名はドット記法だとハイフンを含む名前で壊れるので index で引く
-        # 区切りは改行にする。値に空白を含む Go テンプレートの <no value> が
-        # 分割されて診断メッセージが切れないようにする
-        my $format = qq[{{.State.Running}}\n]
-            . qq[{{index .NetworkSettings.Networks "$network" "IPAddress"}}];
-        my ($inspect_ok, $inspected) = capture(
-            qw(docker inspect --format), $format, $name);
-        chomp $inspected;
-        my ($running, $ip) = split /\n/, $inspected;
-        $inspect_ok && ($running // '') eq 'true'
-            or die "コンテナが起動直後に停止した\n";
-        # network に繋がっていない場合、Go テンプレートは <no value> を出す
-        ($ip // '') =~ /\A[0-9]+(?:\.[0-9]+){3}\z/
-            or die "network '$network' 上の IP を取得できない (" . ($ip // '') . ")\n";
-        $base = "http://$ip:8080";
-    }
-    else {
-        my ($port_ok, $port) = capture(qw(docker port), $name, '8080/tcp');
-        ($port) = split /\n/, $port;
-        $port_ok && $port or die "公開ポートを取得できない\n";
-        $base = "http://$port";
-    }
+    my ($port_ok, $port) = capture(qw(docker port), $name, '8080/tcp');
+    ($port) = split /\n/, $port;
+    $port_ok && $port or die "公開ポートを取得できない\n";
+    my $base = "http://$port";
     pass "コンテナ起動 (--read-only + tmpfs /tmp, $base)";
 
     # ローカルコンテナだけを検査するので proxy 環境変数を無効化する。
