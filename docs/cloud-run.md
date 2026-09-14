@@ -1274,14 +1274,15 @@ image index になり、Cloud Run はどちらの形も受け付ける。
 - 公開範囲: public
 - 保持: 自動削除しない
 
-public にしているのは、ビルド済みイメージを誰でも手元で起動できるようにするため
-であり、同時に private パッケージの storage 枠を避けるためでもある。GitHub Packages の
-storage は private パッケージだけが消費し、perldoc-jp の plan (Free) では 500 MB
-(GitHub Actions の artifact と共用) しかない。圧縮後のイメージサイズは計測していないが、
-slim のベースに CPAN 依存・翻訳ドキュメント・SQLite の DB を載せたものなので、
-1 世代でこの枠に収まる保証はない。枠を使い切ると、支払い方法が無い場合はそこで
-利用が止まり、push できずにデプロイも止まる。public パッケージは storage も
-データ転送も無料なので、自動削除を入れずに全世代を残している。
+public にしているのは配布のためである。この構成に関わっていない利用者が、
+ビルド済みのイメージをそのまま手元で起動できるようにする。run ごとのタグを
+全世代残して自動削除を入れないのも同じ理由による。
+
+費用は公開範囲を決める理由にならない。GitHub Packages には plan ごとの storage と
+データ転送の枠があるが、Container registry (ghcr.io) はその例外で、イメージの
+storage と帯域は公開範囲によらず現在無料とされている。private にしても枠は
+消費しない。この扱いが変わる場合は 1 か月以上前に告知されるとされているので、
+告知があったときに保持方針と公開範囲を見直す。
 
 イメージの中身は公開データだけで構成されている。公開範囲を public にしてよいのは、
 上の 11-1 のとおり attestation を切ってあり、push される manifest とレイヤのどこにも
@@ -1339,6 +1340,25 @@ smoke test のほうは Docker のレイヤではなく workflow のステップ
 キャッシュの状態によらず毎回走る。全レイヤがキャッシュに当たったビルドでも
 buildx はイメージを export して push するため、検査対象は常に存在する。
 
+**キャッシュなしで通ることの確かめ方**
+
+本番の run では確かめられない。`scope=runtime` のキャッシュは読まれるたびに
+保持が延びるので、「キャッシュが無い run」を待つことができない。使い捨てのブランチで、
+まだ存在しない scope を指してビルドする:
+
+1. ブランチを切り、test.yml の runtime-test の `cache-from` と `cache-to` を
+   `type=gha,scope=coldcheck-<日付>` のような未使用の scope 1 つに書き換える
+2. push して PR を作り、runtime-test の所要時間と、`CACHED` が出ないことを見る
+3. 確認できたらブランチごと捨てる
+
+`--no-cache` は使わない。確かめたいのは「キャッシュを無視したビルド」ではなく
+「読めるキャッシュが無い状態のビルド」である。gha キャッシュの import は scope ごとの
+index を引くところから始まるので、未使用の scope を指せば import は起きない。
+`RUN --mount=type=cache` が持つ apt と cpm も、新しいランナーでは空から始まる。
+
+この手順が確かめるのは runtime ターゲットのビルドまでで、2 つのレジストリへの push と
+digest 照合は含まない (test.yml は `load: true` でローカルに取り込むだけ)。
+
 10 GiB はリポジトリ全体で共用する。`runtime` scope の `mode=max` は中間ステージの
 レイヤまで抱えるので、PR ごとの `runtime-pr` と合わせると相応の量になる。上限に
 達したときの削除は least recently used で、対象はこのリポジトリのキャッシュ全体
@@ -1380,14 +1400,16 @@ GitHub 側で増える secret も variable も無い。GHCR への push は組�
 
 **初回の run で見ること:**
 
-切り替え後の最初のビルドは必ずフルビルドになる。`scope=runtime` を書くジョブは
-#78 以降どこにも無く、Actions Cache は 7 日使われなければ削除されるため、
-読めるキャッシュが残っていない。apt と CPAN の XS ビルドから pod2html
-(翻訳 2500 ファイル)・VACUUM・prove までが通しで走るので、この run が
-このジョブの最長になる。
+初回がフルビルドになるとは限らない。#78 が deploy.yml から gha キャッシュの
+書き込みを外した後も `scope=runtime` のキャッシュは残っていて (最後の書き込みは
+2026-09-08)、Actions Cache の 7 日は最終アクセスから数えるため、読まれるたびに
+保持が延びる。実際、この構成へ戻す PR の runtime-test が 2026-09-14 にそれを読み、
+base と deps (apt・Carton・cpm) が `CACHED` になっている。初回の run は
+「キャッシュなしでも通る」ことの確認にはならないので、そちらは 11-3 の手順で
+別に確かめる。
 
-- 所要時間。deploy ジョブの `timeout-minutes` (60) に収まること。以降の run は
-  キャッシュが効くので短くなる
+- 所要時間。deploy ジョブの `timeout-minutes` (60) に収まること
+- `Verify the pushed digests` と `Smoke test image` が通ること
 - `scope=runtime` を書いた後の Actions Cache の使用量 (11-3 のコマンド)。
   10 GiB の上限に対する余裕を数字で押さえておく
 - Cloud Build のビルドが 1 本も起動していないこと
@@ -1440,7 +1462,7 @@ Cloud Storage は引き続き使わない。`gcloud builds submit .` を使っ�
 |---|---|---|
 | GitHub Actions の実行時間 | 公開リポジトリの標準 GitHub-hosted runner は無料 | ビルドが GitHub Actions に戻ったことによる増加分はここに入るが、課金されない |
 | GitHub Actions Cache | 無料。リポジトリあたり 10 GiB の上限があり、超えると least recently used から削除される。7 日間使われないキャッシュも削除される | `runtime` / `runtime-pr` scope の `mode=max` が中間ステージのレイヤまで抱える。上限の削除はリポジトリ全体を対象にするので、使用量は 11-3 のコマンドで見ておく |
-| GitHub Packages (GHCR) | public パッケージは storage もデータ転送も無料。private パッケージは plan ごとの枠 (Free の organization は storage 500 MB・転送 1 GiB/月、いずれも Actions の artifact と共用) を消費し、支払い方法が無い場合は枠を使い切った時点で利用が止まる | パッケージを public にしているので課金対象にならない (11-2)。private にすると、このイメージは単体で Free の枠に近く、超過でデプロイが止まりうる |
+| GitHub Packages (GHCR) | Container registry のイメージ storage と帯域は、公開範囲によらず現在無料とされている。plan ごとの storage・データ転送の枠が効くのは、この例外に入らない package 形式のほう。扱いが変わる場合は 1 か月以上前に告知されるとされている | 全世代を残しても課金対象にならない。告知があった場合に保持方針と公開範囲を見直す (11-2) |
 | Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | §2 の cleanup policy で世代数を抑える |
 | Artifact Registry ↔ Cloud Run (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当する | デプロイ時のレイヤ取得がここに入る |
 | Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | この構成を避けるために §11 がある。GitHub Actions が Artifact Registry へ行うのは push (data transfer in は無料) と digest 照合のメタデータ照会だけで、レイヤは引かない。したがってここに入るのは、手元や第三者が直接 pull した分に限られる。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
