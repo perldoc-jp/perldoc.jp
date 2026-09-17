@@ -1,4 +1,4 @@
-[% WRAPPER 'layout.html' WITH diff_page = 1 description='翻訳のdiff' %]
+[% WRAPPER 'layout.html' WITH diff_page = 1 no_index = 1 description='翻訳のdiff' %]
 
 <div class="content">
         <div class="BreadList">
