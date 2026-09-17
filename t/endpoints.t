@@ -66,8 +66,11 @@ subtest 'GET /static/docs.json' => sub {
 
     # docs.json は Chrome 拡張 / Firefox アドオンが参照する外部契約
     # (docs/cloud-run.md 参照)。生成手順の不整合で空の JSON になっても
-    # ビルド自体は成功してしまうため、中身までここでゲートする
-    my $docs = decode_json($mech->response->content);
+    # ビルド自体は成功してしまうため、中身までここでゲートする。
+    # WWW::Mechanize は Accept-Encoding: gzip を自動で送るため、Deflater が
+    # 応答を圧縮すると response->content は生の gzip バイト列になる。
+    # decoded_content で Content-Encoding に応じた展開後の本文を取る
+    my $docs = decode_json($mech->response->decoded_content);
     cmp_ok scalar(keys %$docs), '>', 500, 'has enough entries';
     like $docs->{'Acme::Bleach'}, qr{^modules/Acme-Bleach-}, 'maps package to path';
 };
