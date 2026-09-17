@@ -131,7 +131,7 @@ gcloud services enable --project="$PROJECT_ID" \
 ```
 
 イメージのビルドは GitHub Actions で行うため (§11)、`cloudbuild.googleapis.com` は
-要らない。以前有効にしていた場合の外し方は 11-5 にある。
+有効化しない。
 
 `compute.googleapis.com` も有効化しない。Cloud Run のランタイムには専用のサービス
 アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。
@@ -173,10 +173,11 @@ digest も同じになる (本番でも、1 つの digest に run ごとのタ�
 既存の version にタグが 1 つ増えるだけで、version は増えない。version が増えるのは
 イメージの中身が変わったときだけなので、5 世代は中身の異なるイメージ 5 つにあたる。
 
-`keep-recent` が効くのは、30 日より古い version に対してだけである。30 日以内の version は
-世代数によらず残る。この規則は、更新の少ない期間が続いてもロールバック先を 5 世代分
-残すためにある。それより前のイメージが要るときは、同じ digest が GHCR に全世代残って
-いる (11-2) ので、Artifact Registry へ push し直してから戻す (「運用」のロールバック)。
+`keep-recent` によって残るかどうかが変わるのは、30 日より古い version だけである。
+30 日以内の version は世代数によらず残る。この規則は、更新の少ない期間が続いても
+ロールバック先を 5 世代分残すためにある。それより前のイメージが要るときは、同じ digest が
+GHCR に全世代残っている (11-2) ので、Artifact Registry へ push し直してから戻す
+(「運用」のロールバック)。
 
 ### 3. ランタイムサービスアカウント
 
@@ -1385,171 +1386,20 @@ gh cache list --repo perldoc-jp/perldoc.jp --sort size_in_bytes --order desc --l
 
 リポジトリのコードだけでは完結しない操作。
 
-1. **deploy ジョブを動かす前に**、デプロイ用 SA へ Artifact Registry の writer を
-   付ける (§5)。Cloud Build でビルドしていた頃、この SA に付いていたのは reader で、
-   writer を持っているのは builder SA のほうである (現状を確認済み)。上げ忘れると
-   最初の push が権限エラーで落ちる
+**初回の deploy が成功した後に**、GHCR のパッケージを public にする。
+`GITHUB_TOKEN` が作るパッケージの既定は private なので、初回 push でできたものを
+Packages の設定から切り替える。初回の run 自体はこの切り替えの前に完走する
+(deploy ジョブは `GITHUB_TOKEN` で login していて、private のままでも pull できる)。
 
-```sh
-gcloud artifacts repositories add-iam-policy-binding perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com" \
-  --role=roles/artifactregistry.writer
-
-# 確認
-gcloud artifacts repositories get-iam-policy perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION"
-```
-
-2. **初回の deploy が成功した後に**、GHCR のパッケージを public にする。
-   `GITHUB_TOKEN` が作るパッケージの既定は private なので、初回 push でできたものを
-   Packages の設定から切り替える。初回の run 自体はこの切り替えの前に完走する
-   (deploy ジョブは `GITHUB_TOKEN` で login していて、private のままでも pull できる)
-
-GitHub 側で増える secret も variable も無い。GHCR への push は組み込みの
+GHCR への push のために GitHub 側へ足す secret や variable は無い。組み込みの
 `GITHUB_TOKEN` と、deploy ジョブの `packages: write` で足りる (§7)。
 
 **初回の run で見ること:**
-
-初回がフルビルドになるとは限らない。#78 が deploy.yml から gha キャッシュの
-書き込みを外した後も `scope=runtime` のキャッシュは残っていて (最後の書き込みは
-2026-09-08)、Actions Cache の 7 日は最終アクセスから数えるため、読まれるたびに
-保持が延びる。実際、この構成へ戻す PR の runtime-test が 2026-09-14 にそれを読み、
-base と deps (apt・Carton・cpm) が `CACHED` になっている。初回の run は
-「キャッシュなしでも通る」ことの確認にはならないので、そちらは 11-3 の手順で
-別に確かめる。
 
 - 所要時間。deploy ジョブの `timeout-minutes` (60) に収まること
 - `Verify the pushed digests` と `Smoke test image` が通ること
 - `scope=runtime` を書いた後の Actions Cache の使用量 (11-3 のコマンド)。
   10 GiB の上限に対する余裕を数字で押さえておく
-- Cloud Build のビルドが 1 本も起動していないこと
-  (`gcloud builds list --project <PROJECT_ID> --region asia-northeast1 --limit 5`)。
-  課金の確認は、請求への反映の遅れと切り替え前の使用分を織り込んで読む
-
-#### 11-5. Cloud Build の撤去
-
-ビルドを Cloud Build で行っていた頃の設定は、次の順で外す。他に依存が無いことを
-確かめてから消すこと。
-
-1. `cloudbuild.yaml` の削除 (このリポジトリからは削除済み)
-2. cleanup policy の `keep-buildcache` 規則と、Artifact Registry に残った
-   registry cache の manifest の削除
-3. builder サービスアカウント `perldoc-jp-builder` と、その
-   `roles/artifactregistry.writer` (リポジトリ)・`roles/logging.logWriter`
-   (プロジェクト) の削除
-4. デプロイ用 SA から `roles/cloudbuild.builds.editor` と、builder SA に対する
-   `roles/iam.serviceAccountUser` の削除。ビルドログ取得のために
-   `roles/logging.viewer` を付けていた場合もあわせて外す
-5. `cloudbuild.googleapis.com` と `containerregistry.googleapis.com` の無効化。
-   後者はこの構成では使っていない (イメージは Artifact Registry の
-   `*-docker.pkg.dev` に置く)
-
-2 の registry cache は、ビルドを Cloud Build で行っていた頃に `:buildcache` タグで
-読み書きしていたものである。ビルドキャッシュは Actions Cache へ移していて (§11)
-これを読むものは無い。`keep-buildcache` は、このタグを cleanup policy から守るための
-規則だった。規則は §2 の `set-cleanup-policies` を実行し直して消す。このコマンドは
-リポジトリの cleanup policy を渡した集合で置き換えるので、渡していない
-`keep-buildcache` は残らない (実行後の describe で確認済み)。
-
-registry cache は、`:buildcache` タグの付いた manifest を消すだけでは保管量が減らない。
-cache を push するたびにタグは新しい manifest へ移り、前の manifest はタグの無い
-version として残る。`mode=max` の cache manifest は中間ステージのレイヤまで参照して
-いて、日ごとの manifest はそのレイヤの大半を共有している。このため、タグの付いた
-1 つを消しても、レイヤはタグの無い manifest から参照されたまま残る。本番では cache
-manifest が 24 個残っていて、manifest が参照する blob を重複なく合計すると、タグの
-付いた 1 つを消しても 2.53 GiB のまま変わらず、24 個すべてを消すと 1.00 GiB になる
-計算だった。
-
-cache manifest は config の mediaType (`application/vnd.buildkit.cacheconfig.v0`) で
-見分ける。Artifact Registry が version に付ける metadata では、イメージと同じ
-`application/vnd.oci.image.manifest.v1+json` になって区別できない。そこで manifest を
-取得して確かめる。取得するのは manifest だけで、レイヤは引かない:
-
-```sh
-IMAGE=${REGION}-docker.pkg.dev/${PROJECT_ID}/perldoc-jp/app
-gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
-
-for digest in $(gcloud artifacts docker images list "$IMAGE" \
-    --project="$PROJECT_ID" --format='value(version)'); do
-  media=$(docker buildx imagetools inspect --raw "$IMAGE@$digest" |
-    jq -r '.config.mediaType // empty')
-  if [ "$media" = application/vnd.buildkit.cacheconfig.v0 ]; then
-    echo "$digest"
-  fi
-done > /tmp/buildcache-digests.txt
-
-# 件数と、:buildcache の digest が含まれていることを確かめてから消す
-for digest in $(cat /tmp/buildcache-digests.txt); do
-  gcloud artifacts docker images delete "$IMAGE@$digest" \
-    --project="$PROJECT_ID" --delete-tags --quiet
-done
-```
-
-3 から 5:
-
-```sh
-BUILDER_SA=perldoc-jp-builder@${PROJECT_ID}.iam.gserviceaccount.com
-SA=perldoc-jp-deployer@${PROJECT_ID}.iam.gserviceaccount.com
-
-# SA を消すだけでは、SA を member にしたバインディングが
-# deleted:serviceAccount:... として残る。先に外す
-gcloud artifacts repositories remove-iam-policy-binding perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION" \
-  --member="serviceAccount:$BUILDER_SA" --role=roles/artifactregistry.writer
-gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$BUILDER_SA" --role=roles/logging.logWriter
-
-# builder SA を他の用途に使っていないことを確かめてから消す。
-# SA 自身の IAM ポリシー (deployer の serviceAccountUser) は SA と一緒に消える
-gcloud iam service-accounts delete "$BUILDER_SA" --project="$PROJECT_ID"
-
-gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
-  --member="serviceAccount:$SA" --role=roles/cloudbuild.builds.editor
-
-gcloud services disable cloudbuild.googleapis.com containerregistry.googleapis.com \
-  --project="$PROJECT_ID"
-```
-
-`gcloud services disable` は、依存する API がある場合に確認を求めて止まる。
-Cloud Run と Artifact Registry は Cloud Build に依存しないが、表示された内容は
-読んでから進めること。
-
-撤去後の確認:
-
-```sh
-# keep-recent と delete-old の 2 つだけであること
-gcloud artifacts repositories describe perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION" --format='yaml(cleanupPolicies)'
-
-# builder SA も deployer の cloudbuild.builds.editor も、何も出ないこと
-gcloud projects get-iam-policy "$PROJECT_ID" \
-  --flatten='bindings[].members' \
-  --filter='bindings.members:(perldoc-jp-builder perldoc-jp-deployer)' \
-  --format='table(bindings.role, bindings.members)'
-
-# deployer の reader と writer だけが残っていること
-gcloud artifacts repositories get-iam-policy perldoc-jp \
-  --project="$PROJECT_ID" --location="$REGION"
-
-# 何も出ないこと
-gcloud iam service-accounts list --project="$PROJECT_ID" \
-  --filter='email:perldoc-jp-builder' --format='value(email)'
-gcloud services list --enabled --project="$PROJECT_ID" \
-  --filter='config.name:(cloudbuild.googleapis.com containerregistry.googleapis.com)' \
-  --format='value(config.name)'
-```
-
-API を無効化しても、有効化したときに Google が付けたバインディングはプロジェクトの
-IAM に残る。`<PROJECT_NUMBER>@cloudbuild.gserviceaccount.com` の
-`roles/cloudbuild.builds.builder` と、Cloud Build・Container Registry の service agent の
-ロール (`roles/cloudbuild.serviceAgent`・`roles/containerregistry.ServiceAgent`) である。
-どれもそれぞれのサービスが実行時に使う主体で、API が無効な間は使われないので
-残してある。
-
-Cloud Storage は引き続き使わない。`gcloud builds submit .` を使っていなかったので
-ソースの staging bucket は作られておらず、`logging: CLOUD_LOGGING_ONLY` により
-ログバケットも作られていない。
 
 ## ビルドまわりで課金対象になり得るもの
 
@@ -1558,15 +1408,13 @@ Cloud Storage は引き続き使わない。`gcloud builds submit .` を使っ�
 
 | 項目 | 単価 | 見込み |
 |---|---|---|
-| GitHub Actions の実行時間 | 公開リポジトリの標準 GitHub-hosted runner は無料 | ビルドが GitHub Actions に戻ったことによる増加分はここに入るが、課金されない |
+| GitHub Actions の実行時間 | 公開リポジトリの標準 GitHub-hosted runner は無料 | イメージのビルド (§11) はここに入るが、課金されない |
 | GitHub Actions Cache | 無料。リポジトリあたり 10 GiB の上限があり、超えると least recently used から削除される。7 日間使われないキャッシュも削除される | `runtime` / `runtime-pr` scope の `mode=max` が中間ステージのレイヤまで抱える。上限の削除はリポジトリ全体を対象にするので、使用量は 11-3 のコマンドで見ておく |
 | GitHub Packages (GHCR) | Container registry のイメージ storage と帯域は、公開範囲によらず現在無料とされている。plan ごとの storage・データ転送の枠が効くのは、この例外に入らない package 形式のほう。扱いが変わる場合は 1 か月以上前に告知されるとされている | 全世代を残しても課金対象にならない。告知があった場合に保持方針と公開範囲を見直す (11-2) |
-| Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | §2 の cleanup policy で、30 日以内の世代と最新 5 世代に抑える。Cloud Build の頃の registry cache は保管量の半分以上を占めていたので、残っていないことを確かめる (11-5) |
+| Artifact Registry storage | 0〜0.5 GiB-month が $0.00、以降 $0.10/GiB-month (billing account 単位) | §2 の cleanup policy で、30 日以内の世代と最新 5 世代に抑える |
 | Artifact Registry ↔ Cloud Run (同一ロケーション) | $0.00 (Free)。"Data moves within the same location" に該当する | デプロイ時のレイヤ取得がここに入る |
 | Artifact Registry → インターネット (Premium Tier data transfer out) | 宛先別の階梯。North America 宛: 0〜1 GiB 無料 / 1〜1,024 GiB $0.12 / 1,024〜10,240 GiB $0.11 / 10,240 GiB 超 $0.08。Europe 宛と Asia 宛 (Korea・Indonesia を除く): 0〜1 GiB 無料 / $0.12 / $0.11 / $0.085。Australia・Indonesia・Korea・South America・Saudi Arabia 宛: $0.19 / $0.18 / $0.15。Middle East (Saudi Arabia を除く)・Africa 宛: 0〜1 GiB 無料 / $0.15 / $0.13 / $0.11。China 宛 (香港を除く): $0.23 / $0.22 / $0.20。data transfer in は無料 | この構成を避けるために §11 がある。GitHub Actions が Artifact Registry へ行うのは push (data transfer in は無料) と digest 照合のメタデータ照会だけで、レイヤは引かない。したがってここに入るのは、手元や第三者が直接 pull した分に限られる。料金表は転送元リージョンで値が変わる (ページにセレクタがある) ため、`asia-northeast1` を選んだ実際の値で確認すること |
 | Cloud Logging | $0.50/GiB、50 GiB/project/month が無料。`_Default` バケットの既定保持期間 (30 日) には保持料金がかからない | Cloud Run のリクエストログとアプリケーションログの分。無料枠に収まる想定 |
-| Cloud Build | — | 使わない (11-5)。撤去前の使用分は、請求への反映が遅れて後から現れることがある |
-| Cloud Storage | — | 使わない。専用バケットも、ソースの staging bucket も、ログバケットも作られていない |
 | Artifact Analysis (脆弱性スキャン) | $0.26/scan。Container Scanning API を有効化したときにだけ課金が始まる。digest 単位で初回 push のみ課金され、タグの付け替えは無課金 | §1 で同 API を有効化していないため発生しない |
 ## `static/docs.json` の外部利用者
 
@@ -1665,12 +1513,6 @@ Cloud Storage は引き続き使わない。`gcloud builds submit .` を使っ�
   いる。run ごとに新しい版が降ってくると、`gcloud run deploy` の引数解釈や既定値の
   変更がそのまま本番の挙動差になるため。上げるときは §8 の手動手順をその版で
   一度通してから上げる
-- **Actions Cache の使用量を見る**: キャッシュの scope と上限の扱いは 11-3 のとおり。
-  上限に達したときの削除はリポジトリ全体を対象にするので、本番ビルドを戻した後の
-  使用量は一度測っておく:
-  ```sh
-  gh api repos/perldoc-jp/perldoc.jp/actions/cache/usage
-  ```
 - **data/years.pl の自動更新 (年次作業は不要)**: `.github/workflows/deploy.yml` の
   years ジョブが、イメージをビルドする前に `script/update-years.pl` で前年+当年
   (対象年は translation の最新イベントから導出) を translation の git 履歴から
