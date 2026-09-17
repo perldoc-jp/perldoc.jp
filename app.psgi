@@ -7,7 +7,7 @@ use Log::Minimal;
 
 # 静的ファイルの Cache-Control。ファイル名にダイジェストが入らないので恒久
 # キャッシュにはせず、デプロイ後に自然に入れ替わる長さに留める。docs.json と
-# rss はビルドごとに変わるため短くする (Cloudflare の Edge TTL と揃える)
+# rss はビルドごとに変わるため短くする
 my $STATIC_MAX_AGE    = 14400;
 my $GENERATED_MAX_AGE = 7200;
 

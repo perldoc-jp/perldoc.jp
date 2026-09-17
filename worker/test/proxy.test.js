@@ -275,11 +275,12 @@ describe('origin 障害時の応答', () => {
 
 // 全パスの GET/HEAD の status 200 はエッジの二層でキャッシュする
 // (docs/cloud-run.md §10)。cf は内側 (fetch) のサブリクエスト単位の設定で、
-// 200 以外は負数 = 保存しない。TTL は外側 (Workers Cache) との和が
-// 2 時間の残留予算に収まるよう 3600 に割っている
+// 200 以外は負数 = 保存しない。内側は deploy.yml の purge ジョブがデプロイの
+// たびに消すので、TTL は purge が失敗したときの残留の上限として 24 時間に
+// してある。外側 (Workers Cache) は purge できないため 1 時間のまま
 const EDGE_CACHE = {
   cacheEverything: true,
-  cacheTtlByStatus: { '200': 3600, '201-599': -1 },
+  cacheTtlByStatus: { '200': 86400, '201-599': -1 },
 };
 
 const DIFF = '/docs/perl/5.42.0/perlfunc.pod/diff';
@@ -314,7 +315,7 @@ describe('全パス共通のエッジキャッシュ設定', () => {
     assert.equal(await new Response(calls[0].init.body).text(), 'hello');
   });
 
-  // 2 時間はエッジ TTL であり、ブラウザーへ新しい TTL を公開しない
+  // cf の TTL はエッジ専用であり、ブラウザーへ新しい TTL を公開しない
   it('レスポンスへ Cache-Control を追加しない', async () => {
     const res = await proxy('https://perldoc.jp/');
     assert.equal(res.headers.get('Cache-Control'), null);
