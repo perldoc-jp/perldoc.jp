@@ -130,10 +130,7 @@ gcloud services enable --project="$PROJECT_ID" \
   iam.googleapis.com iamcredentials.googleapis.com sts.googleapis.com
 ```
 
-イメージのビルドは GitHub Actions で行うため (§11)、`cloudbuild.googleapis.com` は
-有効化しない。
-
-`compute.googleapis.com` も有効化しない。Cloud Run のランタイムには専用のサービス
+`compute.googleapis.com` は有効化しない。Cloud Run のランタイムには専用のサービス
 アカウントを作る (§3) ため、Compute Engine のデフォルト SA を使わない。
 
 ### 2. Artifact Registry
