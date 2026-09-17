@@ -45,6 +45,18 @@ sub static_max_age {
 }
 
 builder {
+    # 最も外側に置き、Static が返す静的ファイルの応答も含めて圧縮する。
+    # 対象は HTML・JSON・CSS・JavaScript・RSS・text/plain (.pod のソース表示)
+    enable 'Plack::Middleware::Deflater',
+        content_type => [qw(
+            text/html
+            application/json
+            text/css
+            application/javascript
+            text/javascript
+            application/rss+xml
+            text/plain
+        )];
     # Static より外側に置き、配信されたレスポンスにヘッダを足す
     enable sub {
         my $app = shift;

@@ -126,35 +126,6 @@ DISTRIBUTIONS
     requirements:
       ExtUtils::MakeMaker 0
       Test::More 0
-  Cache-Cache-1.08
-    pathname: R/RJ/RJBS/Cache-Cache-1.08.tar.gz
-    provides:
-      Cache::BaseCache undef
-      Cache::BaseCacheTester undef
-      Cache::Cache 1.08
-      Cache::CacheMetaData undef
-      Cache::CacheSizer undef
-      Cache::CacheTester undef
-      Cache::CacheUtils undef
-      Cache::FileBackend undef
-      Cache::FileCache undef
-      Cache::MemoryBackend undef
-      Cache::MemoryCache undef
-      Cache::NullCache undef
-      Cache::Object undef
-      Cache::SharedMemoryBackend undef
-      Cache::SharedMemoryCache undef
-      Cache::SizeAwareCache undef
-      Cache::SizeAwareCacheTester undef
-      Cache::SizeAwareFileCache undef
-      Cache::SizeAwareMemoryCache undef
-      Cache::SizeAwareSharedMemoryCache undef
-    requirements:
-      Digest::SHA1 2.02
-      Error 0.15
-      ExtUtils::MakeMaker 0
-      File::Spec 0.82
-      Storable 1.014
   Cache-LRU-0.04
     pathname: K/KA/KAZUHO/Cache-LRU-0.04.tar.gz
     provides:
@@ -1119,24 +1090,6 @@ DISTRIBUTIONS
       Encode::Alias 0
       ExtUtils::MakeMaker 0
       perl 5.008
-  Error-0.17029
-    pathname: S/SH/SHLOMIF/Error-0.17029.tar.gz
-    provides:
-      Error 0.17029
-      Error::Simple 0.17029
-      Error::WarnDie 0.17029
-      Error::subs 0.17029
-    requirements:
-      Carp 0
-      Exporter 0
-      ExtUtils::MakeMaker 0
-      Module::Build 0.28
-      Scalar::Util 0
-      overload 0
-      perl 5.006
-      strict 0
-      vars 0
-      warnings 0
   Eval-Closure-0.14
     pathname: D/DO/DOY/Eval-Closure-0.14.tar.gz
     provides:
@@ -1245,30 +1198,6 @@ DISTRIBUTIONS
       Number::Compare 0
       Test::More 0
       Text::Glob 0.07
-  File-HomeDir-1.006
-    pathname: R/RE/REHSACK/File-HomeDir-1.006.tar.gz
-    provides:
-      File::HomeDir 1.006
-      File::HomeDir::Darwin 1.006
-      File::HomeDir::Darwin::Carbon 1.006
-      File::HomeDir::Darwin::Cocoa 1.006
-      File::HomeDir::Driver 1.006
-      File::HomeDir::FreeDesktop 1.006
-      File::HomeDir::MacOS9 1.006
-      File::HomeDir::Test 1.006
-      File::HomeDir::Unix 1.006
-      File::HomeDir::Windows 1.006
-    requirements:
-      Carp 0
-      Cwd 3.12
-      ExtUtils::MakeMaker 0
-      File::Basename 0
-      File::Path 2.01
-      File::Spec 3.12
-      File::Temp 0.19
-      File::Which 0.05
-      POSIX 0
-      perl 5.008003
   File-Listing-6.14
     pathname: P/PL/PLICEASE/File-Listing-6.14.tar.gz
     provides:
@@ -1311,14 +1240,6 @@ DISTRIBUTIONS
       perl 5.006
       strict 0
       warnings 0
-  File-Which-1.27
-    pathname: P/PL/PLICEASE/File-Which-1.27.tar.gz
-    provides:
-      File::Which 1.27
-    requirements:
-      ExtUtils::MakeMaker 0
-      base 0
-      perl 5.006
   Filesys-Notify-Simple-0.14
     pathname: M/MI/MIYAGAWA/Filesys-Notify-Simple-0.14.tar.gz
     provides:
@@ -1380,16 +1301,6 @@ DISTRIBUTIONS
       URI::URL 0
       XSLoader 0
       strict 0
-  HTML-Selector-XPath-0.26
-    pathname: C/CO/CORION/HTML-Selector-XPath-0.26.tar.gz
-    provides:
-      HTML::Selector::XPath 0.26
-    requirements:
-      Carp 0
-      Exporter 0
-      ExtUtils::MakeMaker 0
-      perl 5.008001
-      strict 0
   HTML-Tagset-3.20
     pathname: P/PE/PETDANCE/HTML-Tagset-3.20.tar.gz
     provides:
@@ -1419,20 +1330,6 @@ DISTRIBUTIONS
       base 0
       integer 0
       perl 5.008
-  HTML-TreeBuilder-XPath-0.14
-    pathname: M/MI/MIROD/HTML-TreeBuilder-XPath-0.14.tar.gz
-    provides:
-      HTML::Element 0.14
-      HTML::TreeBuilder::XPath 0.14
-      HTML::TreeBuilder::XPath::Attribute 0.14
-      HTML::TreeBuilder::XPath::Node 0.14
-      HTML::TreeBuilder::XPath::Root 0.14
-      HTML::TreeBuilder::XPath::TextNode 0.14
-    requirements:
-      ExtUtils::MakeMaker 0
-      HTML::TreeBuilder 0
-      List::Util 0
-      XML::XPathEngine 0.12
   HTTP-Cookies-6.10
     pathname: O/OA/OALDERS/HTTP-Cookies-6.10.tar.gz
     provides:
@@ -1629,15 +1526,6 @@ DISTRIBUTIONS
       Scalar::Util 0
       perl 5.006002
       strict 0
-  LWP-UserAgent-WithCache-0.13
-    pathname: S/SE/SEKIMURA/LWP-UserAgent-WithCache-0.13.tar.gz
-    provides:
-      LWP::UserAgent::WithCache 0.13
-    requirements:
-      Cache::FileCache 0
-      ExtUtils::MakeMaker 0
-      File::HomeDir 0
-      LWP::UserAgent 0
   List-MoreUtils-0.430
     pathname: R/RE/REHSACK/List-MoreUtils-0.430.tar.gz
     provides:
@@ -2103,6 +1991,19 @@ DISTRIBUTIONS
       WWW::Form::UrlEncoded 0.23
       parent 0
       perl 5.008001
+  Plack-Middleware-Deflater-0.14
+    pathname: M/MI/MIYAGAWA/Plack-Middleware-Deflater-0.14.tar.gz
+    provides:
+      Plack::Middleware::Deflater 0.14
+      Plack::Middleware::Deflater::Encoder 0.14
+    requirements:
+      Compress::Zlib 0
+      ExtUtils::MakeMaker 6.59
+      Module::Build::Tiny 0.034
+      Plack 0
+      Test::More 0.96
+      Test::Requires 0
+      perl 5.008001
   Plack-Middleware-ReverseProxy-0.16
     pathname: M/MI/MIYAGAWA/Plack-Middleware-ReverseProxy-0.16.tar.gz
     provides:
@@ -2381,13 +2282,6 @@ DISTRIBUTIONS
       strict 0
       version 0.83
       warnings 0
-  Spiffy-0.46
-    pathname: I/IN/INGY/Spiffy-0.46.tar.gz
-    provides:
-      Spiffy 0.46
-      Spiffy::mixin undef
-    requirements:
-      ExtUtils::MakeMaker 6.30
   Starlet-0.31
     pathname: K/KA/KAZUHO/Starlet-0.31.tar.gz
     provides:
@@ -2454,20 +2348,6 @@ DISTRIBUTIONS
       perl 5.006
       strict 0
       warnings 0
-  Test-Base-0.89
-    pathname: I/IN/INGY/Test-Base-0.89.tar.gz
-    provides:
-      Test::Base 0.89
-      Test::Base::Block 0.89
-      Test::Base::Filter undef
-      Test::Base::Handle 0.89
-    requirements:
-      ExtUtils::MakeMaker 0
-      Filter::Util::Call 0
-      Scalar::Util 1.07
-      Spiffy 0.40
-      Test::More 0.88
-      perl 5.008001
   Test-Deep-1.130
     pathname: R/RJ/RJBS/Test-Deep-1.130.tar.gz
     provides:
@@ -2814,17 +2694,6 @@ DISTRIBUTIONS
     requirements:
       ExtUtils::MakeMaker 0
       common::sense 0
-  UNIVERSAL-require-0.19
-    pathname: N/NE/NEILB/UNIVERSAL-require-0.19.tar.gz
-    provides:
-      UNIVERSAL::require 0.19
-    requirements:
-      Carp 0
-      ExtUtils::MakeMaker 0
-      Test::More 0.47
-      perl 5.006
-      strict 0
-      warnings 0
   URI-5.10
     pathname: O/OA/OALDERS/URI-5.10.tar.gz
     provides:
@@ -2969,30 +2838,6 @@ DISTRIBUTIONS
       Fcntl 0
       URI 1.10
       perl 5.008001
-  Web-Scraper-0.38
-    pathname: M/MI/MIYAGAWA/Web-Scraper-0.38.tar.gz
-    provides:
-      Web::Scraper 0.38
-      Web::Scraper::Filter undef
-      Web::Scraper::LibXML undef
-    requirements:
-      ExtUtils::MakeMaker 6.59
-      HTML::Entities 0
-      HTML::Selector::XPath 0.03
-      HTML::Tagset 0
-      HTML::TreeBuilder 3.23
-      HTML::TreeBuilder::XPath 0.08
-      LWP 5.827
-      Module::Build::Tiny 0.039
-      Scalar::Util 0
-      Test::Base 0
-      Test::More 0
-      Test::Requires 0
-      UNIVERSAL::require 0
-      URI 0
-      XML::XPathEngine 0.08
-      YAML 0
-      perl 5.008001
   XML-Parser-2.46
     pathname: T/TO/TODDR/XML-Parser-2.46.tar.gz
     provides:
@@ -3030,23 +2875,6 @@ DISTRIBUTIONS
       strict 0
       vars 0
       warnings 0
-  XML-XPathEngine-0.14
-    pathname: M/MI/MIROD/XML-XPathEngine-0.14.tar.gz
-    provides:
-      XML::XPathEngine 0.14
-      XML::XPathEngine::Boolean undef
-      XML::XPathEngine::Expr undef
-      XML::XPathEngine::Function undef
-      XML::XPathEngine::Literal undef
-      XML::XPathEngine::LocationPath undef
-      XML::XPathEngine::NodeSet undef
-      XML::XPathEngine::Number undef
-      XML::XPathEngine::Root undef
-      XML::XPathEngine::Step undef
-      XML::XPathEngine::Variable undef
-    requirements:
-      ExtUtils::MakeMaker 0
-      Test::More 0
   XString-0.005
     pathname: A/AT/ATOOMIC/XString-0.005.tar.gz
     provides:
@@ -3054,34 +2882,6 @@ DISTRIBUTIONS
     requirements:
       ExtUtils::MakeMaker 0
       perl 5.008
-  YAML-1.30
-    pathname: T/TI/TINITA/YAML-1.30.tar.gz
-    provides:
-      YAML 1.30
-      YAML::Any 1.30
-      YAML::Dumper undef
-      YAML::Dumper::Base undef
-      YAML::Error undef
-      YAML::Loader undef
-      YAML::Loader::Base undef
-      YAML::Marshall undef
-      YAML::Mo undef
-      YAML::Node undef
-      YAML::Tag undef
-      YAML::Type::blessed undef
-      YAML::Type::code undef
-      YAML::Type::glob undef
-      YAML::Type::ref undef
-      YAML::Type::regexp undef
-      YAML::Type::undef undef
-      YAML::Types undef
-      YAML::Warning undef
-      yaml_mapping undef
-      yaml_scalar undef
-      yaml_sequence undef
-    requirements:
-      ExtUtils::MakeMaker 0
-      perl 5.008001
   bareword-filehandles-0.007
     pathname: I/IL/ILMARI/bareword-filehandles-0.007.tar.gz
     provides:
