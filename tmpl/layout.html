@@ -9,6 +9,9 @@
     <meta http-equiv="Content-Script-Type" content="text/javascript" />
     <meta name="description" content="[% IF description %][% description %][% ELSE %]このサイトはPerlの公式ドキュメント、モジュールのドキュメントを日本語に翻訳したものを表示するサイトです。[% END %]" />
     <meta name="keywords" content="Perl,翻訳,モジュール">
+    [% IF diff_page %]
+    <meta name="robots" content="noindex, nofollow" />
+    [% END %]
     [% IF top_page %]
     <link rel="alternate" type="application/rss+xml" title="perldoc.jp 最近の更新" href="https://perldoc.jp/static/rss/recent.rss" />
     [% END %]

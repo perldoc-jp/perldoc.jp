@@ -81,11 +81,12 @@ subtest 'GET /favicon.ico' => sub {
 };
 
 subtest 'GET /robots.txt' => sub {
-    # 本番はエッジ (Cloudflare のゾーン管理) が配信するが、エッジ管理を
-    # 無効化した場合に origin が 404 を返さないことをここで守る
+    # Cloudflare のゾーン管理 (Content Signals) は、この origin の
+    # robots.txt に指示を足す形で動いている
     $mech->get('/robots.txt');
     is $mech->status, 200, 'status is 200';
     like $mech->content, qr{^User-agent: \*}m, 'robots.txt の実体が返る';
+    like $mech->content, qr{^Disallow: /docs/\*/diff$}m, 'diff への Disallow が含まれる';
 };
 
 subtest '静的ファイルの Cache-Control' => sub {
@@ -294,6 +295,7 @@ subtest '/docs/(modules|perl)/*.pod/diff' => sub {
         is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
         $mech->content_contains(q{<table class='diff'>}, 'diff テーブルが描画される');
         $mech->content_contains(q{<tr class='match'>}, '共通行が描画される');
+        $mech->content_contains(q{<meta name="robots" content="noindex, nofollow" />}, 'noindex, nofollow が付く');
     };
 
     subtest 'DBに存在しないpodの場合、404が返る (500にならない)' => sub {

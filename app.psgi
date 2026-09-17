@@ -27,9 +27,9 @@ my @STATIC = (
     },
     {
         # ルート直下で配信するファイル。実体は static/ に置くので root を分ける。
-        # 本番の robots.txt は Cloudflare のゾーン管理 (Content Signals) がエッジで
-        # 配信しており、この実体はエッジ管理を無効化した場合に origin が 404 を
-        # 返さないためのもの
+        # /robots.txt はリクエストログで 1 日 76 回 origin に届いており、
+        # Cloudflare のゾーン管理 (Content Signals) はエッジで配信を完結させる
+        # のではなく、この origin の robots.txt に指示を足す形で動いている
         path    => qr{^/(?:favicon\.ico|robots\.txt)$},
         root    => './static/',
         max_age => sub { $STATIC_MAX_AGE },
