@@ -34,6 +34,19 @@ export default {
 async function proxy(request, env, url) {
   assertValidOrigin(env.ORIGIN);
 
+  if (isScannerPath(url.pathname)) {
+    // このサイトに存在したことのない path への既知のスキャン (issue #89)。
+    // Worker は 200 以外を保存しない (§10) ため同じ path への再訪も毎回ここへ
+    // 来るが、100 ms 単位で課金される Cloud Run へは fetch せずに 404 を返す
+    return new Response('Not Found\n', {
+      status: 404,
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cloudflare-CDN-Cache-Control': 'no-store',
+      },
+    });
+  }
+
   const diff = classifyDiffRequest(url);
   if (diff.kind === 'reject') {
     // 重複 target とエスケープ入りの diff 形パスは、キー分割や非正規化キーでの
@@ -167,6 +180,17 @@ const ORIGIN_CACHE_TTL = 3600;
 // diff の canonical path。エスケープ (%XX) を含む形は canonical になり得ない
 // (実在する POD パスは英数と . _ / - だけで構成される。classifyDiffRequest 参照)
 const DIFF_PATH = /^\/docs\/(?:modules|perl)\/.+\.pod\/diff$/;
+
+// このサイトに存在したことのない path への既知のスキャン (issue #89 の
+// 費用調査。/wp-login.php・/.env・/wp-json/・/wp-admin/・/.env.local・
+// /xmlrpc.php・/.git/config が上位)。一覧は短く保ち、アプリが将来使いうる
+// path (/.well-known/ 配下など) やクローラの正当なリクエスト (/sitemap.xml) は
+// 含めない
+const SCANNER_PATH_PATTERNS = [/^\/wp-/, /^\/xmlrpc\.php$/, /^\/\.env/, /^\/\.git\//];
+
+function isScannerPath(pathname) {
+  return SCANNER_PATH_PATTERNS.some((pattern) => pattern.test(pathname));
+}
 
 // キャッシュ対象の GET/HEAD で上流サブリクエストから削るヘッダー。
 // Origin と override 系 6 つは Cloudflare の既定キャッシュキーに含まれ、

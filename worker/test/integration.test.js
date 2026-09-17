@@ -125,6 +125,21 @@ describe('実 workerd 上の Worker', () => {
     assert.deepEqual(captured, []);
   });
 
+  // スキャン path の遮断 (src/index.js の isScannerPath、issue #89) が bundle 後の
+  // 実ランタイムでも効いていること
+  it('スキャン path は origin に届かず 404 を返す', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.text('origin body');
+      }),
+    );
+    const res = await production.fetch('https://perldoc.jp/wp-login.php');
+    assert.equal(res.status, 404);
+    assert.deepEqual(captured, []);
+  });
+
   // ORIGIN の検証が実ランタイムでも効いていること (設定ミスのまま
   // デプロイされた場合に、origin を叩かず 502 で止まる)
   it('不正な ORIGIN では 502 を返す', async () => {

@@ -623,6 +623,51 @@ describe('diff のパス等価表現', () => {
 // diff 以外のクエリはアプリが意味を持ち得る (例: tmpl/pod.tt は c().req.uri() を
 // Source link に使う) ため、削除も並べ替えもせずそのまま渡す。クエリ全体が
 // 既定キャッシュキーに含まれるので、変種は別キー = 現在と同じ都度計算になる
+// このサイトに存在したことのない path への既知のスキャン (issue #89)。
+// origin へ fetch せずに Worker が 404 を返し、Cloud Run の課金対象リクエストを
+// 減らす
+describe('スキャン path の遮断', () => {
+  for (const path of [
+    '/wp-login.php',
+    '/wp-admin/',
+    '/wp-json/',
+    '/wp-content/plugins/x',
+    '/xmlrpc.php',
+    '/.env',
+    '/.env.local',
+    '/.git/config',
+    '/.git/HEAD',
+  ]) {
+    it(`${path} は origin に fetch せず 404 を返す`, async () => {
+      const res = await proxy(`https://perldoc.jp${path}`);
+      assert.equal(res.status, 404);
+      assert.equal(calls.length, 0);
+    });
+  }
+
+  it('HEAD でも同様に 404 で、fetch を呼ばない', async () => {
+    const res = await proxy('https://perldoc.jp/wp-login.php', { method: 'HEAD' });
+    assert.equal(res.status, 404);
+    assert.equal(calls.length, 0);
+  });
+
+  it('404 は固定文言の text/plain で、Workers Cache に保存しない', async () => {
+    const res = await proxy('https://perldoc.jp/.env');
+    assert.equal(res.headers.get('Content-Type'), 'text/plain; charset=utf-8');
+    assert.equal(res.headers.get('Cloudflare-CDN-Cache-Control'), 'no-store');
+    assert.equal(await res.text(), 'Not Found\n');
+  });
+
+  // アプリのルートに当たる正当なリクエストや、将来使いうる path、クローラの
+  // 正当なリクエストは遮断しない
+  for (const path of ['/wp', '/sitemap.xml', '/.well-known/traffic-advice', '/', '/func/chomp']) {
+    it(`${path} は通常どおり origin に転送する`, async () => {
+      await proxy(`https://perldoc.jp${path}`);
+      assert.equal(calls.length, 1);
+    });
+  }
+});
+
 describe('一般ルートのクエリ互換', () => {
   it('diff 以外はクエリを順序ごと素通しする', async () => {
     await proxy('https://perldoc.jp/docs/perl/5.42.0/perlfunc.pod?b=2&a=1');
