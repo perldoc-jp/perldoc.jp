@@ -230,6 +230,10 @@ gcloud run deploy perldoc-jp \
   IAM を書き換えられる権限を持たないためで、公開設定が消えた場合は自己修復
   されず §8 の確認で検出する。設定を変えるときは deploy.yml 側も合わせて
   更新すること。
+- ただし、この自己修復が働くのは `gcloud run deploy` を実際に実行した run に
+  限る。稼働中のリビジョンが指す digest とビルドした digest が一致する run は
+  デプロイのステップ自体を飛ばすため (#85)、ダッシュボード等で変えられた設定は
+  次に digest が変わる run まで元に戻らない。
 
 ### 5. デプロイ用サービスアカウントと Workload Identity Federation
 

@@ -371,8 +371,36 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: ./script/smoke-test.pl "$GHCR_IMAGE@$DIGEST"
 
+      # gcloud run deploy はリビジョンのテンプレートに nonce ラベルを付けるため、
+      # イメージと引数が前回と同じでも毎回新しいリビジョンを作る。中身の同じ
+      # ビルドが日次で積み上がるのを避けるため、稼働中のリビジョンが指す digest を
+      # 読み、ビルドした digest と一致すればデプロイ自体を飛ばす (#85)。
+      #
+      # --image は常に digest 参照で渡している (下の Deploy to Cloud Run 参照) ので、
+      # spec.template.spec.containers[0].image はタグではなく `IMAGE@sha256:...` の
+      # 形で読める。describe が失敗する場合 (初回デプロイ前でサービスが未作成、
+      # 権限不足など) は current が空になり一致しないので、fail-closed でデプロイ
+      # 側に倒れる
+      - name: Check the currently deployed digest
+        id: current
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          current=$(gcloud run services describe "$SERVICE" \
+            --project "$GCP_PROJECT_ID" --region "$REGION" \
+            --format='value(spec.template.spec.containers[0].image)' \
+            2>/dev/null || true)
+
+          if [ "$current" = "$IMAGE@$DIGEST" ]; then
+            echo "already deployed: $current"
+            echo 'same-digest=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'same-digest=false' >> "$GITHUB_OUTPUT"
+          fi
+
       # サービス設定を毎回明示し、デプロイの実行順序に依存せず
-      # self-correcting にする。
+      # self-correcting にする (このステップを飛ばした run では起きない。
+      # docs/cloud-run.md §4)。
       #
       # --image は digest で渡す。タグで渡すと、Cloud Run がタグを解決する時点で
       # 何を引くかが、smoke test を通したイメージと同じである保証を持たない
@@ -390,6 +418,7 @@ jobs:
       # 公開設定はデプロイでは自己修復されないため、消えていれば §8 の
       # get-iam-policy 確認で気づく
       - name: Deploy to Cloud Run
+        if: steps.current.outputs.same-digest != 'true'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -408,7 +437,8 @@ jobs:
 
       # GHCR のパッケージは公開していて、手元で本番と同じイメージを起動する用途に
       # 使える。run ごとのタグ名を知らなくても引けるよう、smoke test とデプロイまで
-      # 通った digest に latest を付ける。
+      # 通った digest に latest を付ける。デプロイを飛ばした run では、その digest に
+      # は前回の run で既に latest が付いているので、このステップも飛ばす。
       #
       # imagetools create が作るのは元の manifest を指す index なので、:latest
       # 自身の digest は per-run タグのそれとは異なりうる。同一性の根拠に使うのは
@@ -418,6 +448,7 @@ jobs:
       # 利便のためのタグ付けに失敗しただけで、成功した本番デプロイの run を
       # 赤くしない (失敗はステップの注釈として残る)
       - name: Tag the deployed image as latest on GHCR
+        if: steps.current.outputs.same-digest != 'true'
         continue-on-error: true
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
