@@ -701,4 +701,34 @@ describe('一般ルートのクエリ互換', () => {
     await proxy('https://perldoc.jp/docs/perl/5.42.0/perlfunc.pod?b=2&a=1');
     assert.equal(calls[0].url.href, `${ORIGIN}/docs/perl/5.42.0/perlfunc.pod?b=2&a=1`);
   });
+
+  it('docs.json 以外の静的ファイルもクエリを素通しする', async () => {
+    await proxy('https://perldoc.jp/static/css/style.css?v=2');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/css/style.css?v=2`);
+  });
+});
+
+// 拡張機能の一部の版は docs.json を毎回 ?time=<ミリ秒> 付きで取る。クエリを残すと
+// 内側のキャッシュキーが 1 回ごとに別になり、全件が origin に届く
+describe('docs.json のクエリ除去', () => {
+  it('?time= を上流 URL から除く', async () => {
+    await proxy('https://perldoc.jp/static/docs.json?time=1789799603251');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+  });
+
+  it('time 以外のパラメーターも除く', async () => {
+    await proxy('https://perldoc.jp/static/docs.json?time=1789799603251&nonce=x');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+  });
+
+  it('HEAD でも除き、メソッドは HEAD のまま', async () => {
+    await proxy('https://perldoc.jp/static/docs.json?time=1789799603251', { method: 'HEAD' });
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+    assert.equal(calls[0].init.method, 'HEAD');
+  });
+
+  it('クエリ無しはそのまま転送する', async () => {
+    await proxy('https://perldoc.jp/static/docs.json');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+  });
 });
