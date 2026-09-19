@@ -181,12 +181,20 @@ const ORIGIN_CACHE_TTL = 3600;
 // (実在する POD パスは英数と . _ / - だけで構成される。classifyDiffRequest 参照)
 const DIFF_PATH = /^\/docs\/(?:modules|perl)\/.+\.pod\/diff$/;
 
-// このサイトに存在したことのない path への既知のスキャン (issue #89 の
-// 費用調査。/wp-login.php・/.env・/wp-json/・/wp-admin/・/.env.local・
-// /xmlrpc.php・/.git/config が上位)。一覧は短く保ち、アプリが将来使いうる
-// path (/.well-known/ 配下など) やクローラの正当なリクエスト (/sitemap.xml) は
-// 含めない
-const SCANNER_PATH_PATTERNS = [/^\/wp-/, /^\/xmlrpc\.php$/, /^\/\.env/, /^\/\.git\//];
+// このサイトに存在したことのない path への既知のスキャン (issue #89)。path の
+// 先頭一致を列挙するのではなく、スキャンにしか現れない断片で判定する。一覧は
+// 短く保ち、アプリが将来使いうる path (/.well-known/ 配下や /api/ のような
+// 汎用名) やクローラの正当なリクエスト (/sitemap.xml) は含めない。正当な URL
+// 空間 (文書一覧・関数名・変数名・static/) にこれらの断片は現れない
+const SCANNER_PATH_PATTERNS = [
+  /^\/\.(?!well-known\/)/, // ルート直下の dot 名 (.env* .git/ .aws/ .bashrc ...)
+  /\.env/, // dir の下 (/static//.env) や符号化した区切りの後ろ (%2F.env) も含む
+  /\.php$/, // /index.php /xmlrpc.php /wp-login.php、webshell 探索
+  /\/wp-/, // /wp-admin /blog/wp-json など、dir の下も含む
+  // Vite の @fs 探索。/@fs/ はアプリの変数名ルートが /variable/%40fs%2F... へ
+  // 302 するので、1 回のスキャンで origin を 2 回叩く
+  /\/@fs\/|%40fs%2F/,
+];
 
 function isScannerPath(pathname) {
   return SCANNER_PATH_PATTERNS.some((pattern) => pattern.test(pathname));

@@ -79,16 +79,17 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   POP ごとのコールド MISS、eviction 後の再計算は Cloud Run に届くため、
   連続アクセス対策として Cloudflare のレートリミットルールの設定は引き続き
   推奨する (キャッシュはレートリミットやオリジン認証の代替ではない)。
-- このサイトに存在したことのない path への既知のスキャン (`/wp-login.php`・
-  `/.env`・`/xmlrpc.php`・`/.git/config` など) は、Worker が origin へ `fetch()`
-  する前に path だけを見て 404 を返す (worker/src/index.js の
+- このサイトに存在したことのない path への既知のスキャンは、Worker が origin へ
+  `fetch()` する前に path だけを見て 404 を返す (worker/src/index.js の
   `isScannerPath`)。Cloud Run の課金時間は 100 ms 単位の切り上げで、実処理が
   数 ms の 404 でも 1 リクエスト分の費用になるうえ、Worker は 200 以外を
-  保存しない (§10) ため同じ path への再訪も毎回 origin に届く。一覧は短く
-  保ち、アプリが将来使いうる path (`/.well-known/` 配下など) やクローラの
-  正当なリクエスト (`/sitemap.xml`) は含めない。アプリのルートに当たって DB を
-  引いた結果の 404 (`/pod/WWW::SourceForge` など) はこの対象ではなく、従来
-  どおり origin まで届く (issue #89)。
+  保存しない (§10) ため同じ path への再訪も毎回 origin に届く。判定は path の
+  先頭一致の列挙ではなく、スキャンにしか現れない断片 (ルート直下の dot 名、
+  任意位置の `.env` と `/wp-`、`.php` 末尾、Vite の `/@fs/`) で行い、一覧は
+  短く保つ。アプリが将来使いうる path (`/.well-known/` 配下や `/api/` のような
+  汎用名) やクローラの正当なリクエスト (`/sitemap.xml`) は含めない。アプリの
+  ルートに当たって DB を引いた結果の 404 (`/pod/WWW::SourceForge` など) は
+  この対象ではなく、従来どおり origin まで届く (issue #89)。
 - `--allow-unauthenticated` のため `<service>.run.app` の URL 自体は公開のままで、
   Cloudflare を経由しない直アクセスにはエッジキャッシュもレートリミットも
   及ばない。直アクセス側の実質的な上限装置は max-instances (=3) である。ただし
