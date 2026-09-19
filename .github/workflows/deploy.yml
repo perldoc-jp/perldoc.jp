@@ -455,3 +455,63 @@ jobs:
         run: |
           docker buildx imagetools create \
             --tag "$GHCR_IMAGE:latest" "$GHCR_IMAGE@$DIGEST"
+
+  # Cloudflare のゾーンのキャッシュを purge する。
+  #
+  # Worker の内側のキャッシュ (fetch の cf 設定) は TTL が 24 時間ある。配信
+  # データが変わるのは Cloud Run のデプロイのときだけなので、TTL で鮮度を
+  # 保つ代わりに、ここで消す (docs/cloud-run.md §10)。外側の Workers Cache は
+  # ゾーンに属さず purge できないため、古い応答が残るのはこの purge から最大
+  # 1 時間になる。
+  #
+  # deploy ジョブが digest の一致でデプロイを飛ばした run でも purge する。
+  # 「この run がデプロイしたか」を条件にすると、デプロイした run が下の待ち
+  # 時間のあいだに後続の run にキャンセルされた場合 (concurrency の
+  # cancel-in-progress)、後続の run は同じ digest を見てデプロイを飛ばすので、
+  # purge がどの run からも呼ばれなくなる。毎回 purge する費用は小さい。purge
+  # しなくてもエントリは 24 時間で失効するので、日次の purge が増やす origin への
+  # 取得は、URL ごとに 1 日あたり高々 1 回である。
+  #
+  # deploy ジョブが失敗した run では purge しない (needs の既定)。origin が
+  # 壊れているかもしれないときに、origin の代わりに応答できるキャッシュを
+  # 捨てないためである。上のキャンセルの直後にその run まで失敗した場合は
+  # purge が抜けるが、次に成功する run (遅くとも翌日の schedule) か、内側の
+  # TTL の 24 時間で解消する。
+  #
+  # deploy ジョブと分けるのは、1 つのジョブが 1 つの environment しか持てない
+  # ためである。GCP の資格情報と Cloudflare の token を同じジョブに置かない
+  purge:
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # purge 専用の token だけを置く environment (§7)。Worker をデプロイする
+    # token (cloudflare-production) とは分ける。branch policy は master のみ
+    environment: cloudflare-cache-purge
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Cloud Run のトラフィックの切り替えは即時ではなく、移行のあいだは新旧
+      # どちらのリビジョンにもリクエストが届きうる (Cloud Run のドキュメント
+      # "Rollbacks, gradual rollouts, and traffic migration")。gcloud run deploy の
+      # 直後に purge すると、旧リビジョンの応答が空になった内側のキャッシュへ
+      # 入り、次の purge まで最大 24 時間残りうる。移行にかかる時間は公表されて
+      # いないので、120 秒は実測に基づかない余裕である。待つあいだは古い応答が
+      # 配られ続けるだけで、害は無い。
+      #
+      # デプロイを飛ばした run では待つ必要が無いが、条件を分けない。直前の run が
+      # デプロイの直後にキャンセルされていた場合は、この run が移行の完了を待つ
+      # 役を引き継ぐ
+      - name: Wait for the traffic migration to finish
+        run: sleep 120
+
+      # CLOUDFLARE_ZONE_ID は認証情報でも URL の構成要素でもないので repository
+      # variable に置く (§7)。どちらかが未設定ならスクリプトが非ゼロで終わる
+      - name: Purge the Cloudflare zone cache
+        env:
+          CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
+          CLOUDFLARE_CACHE_PURGE_TOKEN: ${{ secrets.CLOUDFLARE_CACHE_PURGE_TOKEN }}
+        run: ./worker/scripts/purge-cache.sh

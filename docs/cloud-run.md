@@ -22,6 +22,10 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
                   → digest 照合 → GHCR から取得して smoke test
                   → Cloud Run deploy (digest 指定)
                                                          v
+                GitHub Actions / purge ジョブ (deploy.yml)
+                  トラフィックの移行を待つ
+                  → Cloudflare のゾーンのキャッシュを purge
+                                                         v
 [ユーザー] → Cloudflare (Worker) → Cloud Run (asia-northeast1)
                            - min-instances=0 (無アクセス時のコストほぼゼロ)
                            - イメージに read-only SQLite + translation docs を焼き込み
@@ -65,9 +69,12 @@ perldoc.jp を Google Cloud Run で動かすための構成と、初期セット
   依存の生成が無い) ため、全パスの GET/HEAD の status 200 をエッジの二層で
   キャッシュする (§10 のエッジキャッシュ節)。外側は Workers Cache (Worker の
   手前。HIT では Worker 自体が起動しない)、内側は Worker の `fetch()` の
-  `cf.cacheEverything` + `cacheTtlByStatus`。TTL は 1 時間 + 1 時間に割って
-  いて、再デプロイ後に旧レスポンスが残る時間は最悪で二層の和 = 最大
-  2 時間。これは許容する。デプロイ時 purge は行わない。
+  `cf.cacheEverything` + `cacheTtlByStatus`。TTL は外側が 1 時間、内側が
+  24 時間。内側は deploy.yml の purge ジョブが Deploy workflow の run のたびに
+  ゾーンごと消すので、再デプロイ後に旧レスポンスが残るのは、purge できない
+  外側の TTL の分、つまり purge から最大 1 時間になる。これは許容する。
+  purge が失敗した run では、次に成功する run か内側の TTL までの最大
+  24 時間に延びる。
 - 翻訳の diff (`/docs/*/diff`) は GNU diff の外部コマンド化 (`PJP::HTMLDiff`)
   により perlfunc.pod 級の最悪ケースでも数秒以内に収まり、同じ比較の反復は
   エッジキャッシュに吸収される。diff は匿名入力で到達できる最も高コストな
@@ -369,6 +376,8 @@ secret にしない (今から隠しても効果がない)。
 | `CLOUDFLARE_ACCOUNT_ID` | repository variable (認証情報でも URL の構成要素でもない) |
 | `CLOUD_RUN_URL` | environment `cloudflare-production` の secret (§10 の Worker のオリジン) |
 | `CLOUDFLARE_API_TOKEN` | environment `cloudflare-production` の secret |
+| `CLOUDFLARE_ZONE_ID` | repository variable (認証情報でも URL の構成要素でもない) |
+| `CLOUDFLARE_CACHE_PURGE_TOKEN` | environment `cloudflare-cache-purge` の secret (§10 の purge ジョブ) |
 
 environment `master-write` は secret を持たない。deploy.yml の years ジョブが
 `data/years.pl` を master へ直接 push するので、その ref を master に限定する
@@ -386,7 +395,7 @@ GHCR への push (§11) も secret を増やさない。deploy ジョブに `pac
 
 environment は workflow から参照されただけでも自動作成されるが、その場合は
 branch policy の無い素通しになり、environment に secret が無ければ同名の
-repository secret にフォールバックする。**3 つの environment は、branch policy を
+repository secret にフォールバックする。**4 つの environment は、branch policy を
 付けた上で、secret を置く前に作る**。`master-write` は secret を持たないが、
 作らずに参照されると branch policy 無しで自動作成され、master 限定の境界が
 黙って無くなる。secret より先に作るのは、`gh secret set --env` が既存
@@ -397,7 +406,7 @@ environment の public key を取得して暗号化するため、environment �
 # environment の作成。custom branch policy を使う (protected_branches=true は
 # 「保護ルールを持つ全ブランチを許可」の意味で、後からどこかのブランチに
 # 保護ルールを足すと許可範囲も一緒に広がってしまう)
-for env in gcp-production cloudflare-production master-write; do
+for env in gcp-production cloudflare-production cloudflare-cache-purge master-write; do
   gh api --method PUT "repos/perldoc-jp/perldoc.jp/environments/$env" \
     -F 'deployment_branch_policy[protected_branches]=false' \
     -F 'deployment_branch_policy[custom_branch_policies]=true'
@@ -412,10 +421,13 @@ gh secret set GCP_PROJECT_ID --env gcp-production
 gh secret set GCP_PROJECT_NUMBER --env gcp-production
 gh secret set CLOUD_RUN_URL --env cloudflare-production
 gh secret set CLOUDFLARE_API_TOKEN --env cloudflare-production
+gh secret set CLOUDFLARE_CACHE_PURGE_TOKEN --env cloudflare-cache-purge
 
 # 非機密の識別子は repository variable に置く
-# (deploy-worker.yml が vars.CLOUDFLARE_ACCOUNT_ID を読む)
+# (deploy-worker.yml が vars.CLOUDFLARE_ACCOUNT_ID を、deploy.yml の purge ジョブが
+# vars.CLOUDFLARE_ZONE_ID を読む。Zone ID はダッシュボードのゾーンの Overview にある)
 gh variable set CLOUDFLARE_ACCOUNT_ID
+gh variable set CLOUDFLARE_ZONE_ID
 ```
 
 GitHub の自動マスクは secret の完全一致に対して働く。変換・分割された値まで
@@ -462,8 +474,24 @@ Attach) がこのトークンで成功することを検証する。権限エラ
 <https://developers.cloudflare.com/fundamentals/api/get-started/account-owned-tokens/>
 (account-owned token の位置付け)
 
+`CLOUDFLARE_CACHE_PURGE_TOKEN` は deploy.yml の purge ジョブ (§10) だけが使う。
+`CLOUDFLARE_API_TOKEN` に権限を足さず、別の Custom Token として作る。
+
+- Permissions: **Zone / Cache Purge / Purge** のみ
+- Zone Resources: perldoc.jp の 1 ゾーンのみ
+- account-owned token で作る (上の参考の対応製品の一覧に Cache が含まれる)。
+  purge が認証エラーになる場合は、同じ権限の user-owned token で切り分ける
+- TTL (有効期限) を設定し、失効したら再発行する
+
+この token が漏れても、できるのはゾーンのキャッシュを消すことだけで、Worker や
+DNS は書き換えられない。消されるたびに origin への取得が増えるので、被害は
+Cloud Run の費用と負荷になる。environment を `cloudflare-production` と分けるのは、
+purge ジョブに Worker を書き換えられる token を見せないためである。失効や
+権限の誤りで purge が失敗すると、purge ジョブが失敗として残る。
+
 environment の作成と secret の登録はこの節冒頭のコマンドで行う。
-deploy-worker.yml が動く前にそこまでを済ませておくこと。
+deploy-worker.yml と deploy.yml の purge ジョブが動く前にそこまでを済ませて
+おくこと。
 
 WIF の attribute-condition と cloudflare-production の branch policy がどちらも
 master に固定されているため、master に無いコードは GitHub Actions からは
@@ -866,11 +894,11 @@ Redirect Rules だけで処理される。
   ```js
   cf: {
     cacheEverything: true,
-    cacheTtlByStatus: { "200": 3600, "201-599": -1 },
+    cacheTtlByStatus: { "200": 86400, "201-599": -1 },
   }
   ```
 
-  を付けて Cloud Run へ `fetch()` する。status 200 だけが 1 時間エッジに残り、
+  を付けて Cloud Run へ `fetch()` する。status 200 だけが最大 24 時間エッジに残り、
   404 / 503 / 3xx と Worker 自身の 400 / 502 は保存されない (負数は「保存
   しない」の意味。`0` は即時失効なので使わない)。
 
@@ -897,10 +925,12 @@ TTL を決める場所:
   情報源 (全 200 で 1 時間)。オリジンの `Cache-Control` より優先され、
   オリジンが誤って `Cloudflare-CDN-Cache-Control` を返しても Worker が
   上書きする。
-- 内側のエッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 1 時間)。
-- 再デプロイ後の残留は最悪で外側 + 内側の和 (内側の失効直前の応答で外側が
-  充填された場合)。「最大 2 時間」の予算 (構成の概要) を保つよう二層の和を
-  7200 秒以内にする。片方の TTL だけを変えないこと。
+- 内側のエッジ TTL は Worker の `cf` 設定が唯一の情報源 (全 200 で 24 時間)。
+- 再デプロイ後の残留は、purge から外側の TTL までの最大 1 時間 (構成の概要)。
+  内側は deploy.yml の purge ジョブが run のたびに消すので、内側の TTL は
+  この予算に入らない。内側の TTL は、purge が失敗したときに古い応答が残る
+  時間の上限を決める。外側は purge できないので、外側の TTL を延ばすと
+  この予算がそのまま延びる。
 
 この予算は平常時のもの。Worker のエラー時は、外側が失効済みの保存応答を
 `Cf-Cache-Status: STALE` として配る。ヘッダーに `stale-if-error` を指定して
@@ -912,9 +942,10 @@ TTL を決める場所:
 
 裏返しとして、公開 URL が 200 を返し続けることは障害が無いことの証明に
 ならない。障害の検知は `Cf-Cache-Status: STALE` の有無と Workers Logs
-(proxy failed の console.error) で行い、古い応答を止める必要があれば purge する
-(「purge について」のとおり外側の purge API は未配線なので、緊急時は Worker の
-再デプロイによる version 分離が実質の purge になる)。
+(proxy failed の console.error) で行い、古い応答を止める必要があれば purge する。
+内側は「運用」の手順で手から purge できる。外側の purge API は「purge について」の
+とおり未配線なので、外側は Worker の再デプロイによる version 分離が実質の
+purge になる。
 
 内側のキャッシュキーは Cloudflare の既定 (サブリクエスト URL 全体と、`Origin` /
 method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う。
@@ -946,13 +977,35 @@ method override 系・URL rewrite 系・forwarding 系のリクエストヘッ�
 Worker を起動させるだけで、正規化後の内側キーへ寄って HIT するため
 Cloud Run には届かない (Worker の起動は現状の全リクエストと同じ費用)。
 
-purge について: 内側は上流サブリクエストの run.app URL を基準に保持される
-ため、perldoc.jp の URL からの単一ファイル purge は期待できない。外側には
-Worker 内から呼ぶ purge API (`ctx.cache.purge`) があるが使っていない
-(呼び出し経路を作ること自体が新しい入口になる)。どちらもデプロイ時 purge は
-行わず、二層合計で最大 2 時間の自然失効を前提にする。Worker のデプロイは
-外側を version 分離で空にするが、配信データの更新は Cloud Run 側の
-デプロイなのでどちらの層も消さない。
+purge について: 内側は deploy.yml の purge ジョブが、ゾーンの Purge Everything
+(`worker/scripts/purge-cache.sh`) で消す。ゾーンごと消すのは、内側のエントリが
+上流サブリクエストの run.app URL を基準に保持されていて、perldoc.jp の URL を
+指定した単一ファイル purge では消えないためである。Purge Everything が
+このエントリまで消すことは Cloudflare のドキュメントに明記が無いので、構築時に
+「動作確認」の手順で確かめる。Purge Everything は Free プランで使え、レート制限は
+5 回/分である。
+
+purge ジョブは次のように動く。
+
+- Deploy workflow の run のたびに purge する。deploy ジョブが digest の一致で
+  デプロイを飛ばした run も含む。デプロイした run が purge の前に後続の run に
+  キャンセルされると、後続の run は同じ digest を見てデプロイを飛ばすので、
+  「デプロイした run だけが purge する」条件では purge が抜ける。毎回 purge する
+  費用は小さい。purge しなくてもエントリは 24 時間で失効するので、日次の purge が
+  増やす origin への取得は、URL ごとに 1 日あたり高々 1 回である。
+- purge の前に 120 秒待つ。Cloud Run のトラフィックの切り替えは即時ではなく、
+  移行のあいだは旧リビジョンにもリクエストが届きうる。デプロイの直後に purge
+  すると、旧リビジョンの応答が空になった内側へ入り、次の purge まで残りうる。
+  移行にかかる時間は公表されていないので、120 秒は実測に基づかない余裕である。
+- deploy ジョブが失敗した run では purge しない。origin が壊れているかも
+  しれないときに、origin の代わりに応答できるキャッシュを捨てないためである。
+- purge が失敗すると purge ジョブが失敗として残る。Re-run failed jobs で
+  purge ジョブだけを再実行できる。放置しても、次に成功する run か内側の TTL の
+  24 時間で解消する。
+
+外側には Worker 内から呼ぶ purge API (`ctx.cache.purge`) があるが使っていない
+(呼び出し経路を作ること自体が新しい入口になる)。外側は 1 時間の自然失効に
+任せる。Worker のデプロイは外側を version 分離で空にするが、内側は消さない。
 
 **将来、認証・セッション・Cookie・ユーザー別表示・時刻依存のルートを追加する
 場合は、同じ変更で Worker がそのルートへ (1) `cf` のキャッシュ設定を付けない
@@ -1113,6 +1166,32 @@ Custom Domain にすれば、ゾーン設定 (URL 正規化・Redirect Rules・S
    後続が `HIT` になる間、Cloud Run のリクエストログにはキャッシュ充填分だけが
    届いていること (HIT と同数のリクエストや diff 計算が発生していないこと) を
    見る。
+
+   purge が内側のキャッシュまで消すことを確認する。内側の状態はクライアントから
+   直接は見えない (`cf-cache-status` は外側の状態を返す) ので、外側のキーだけを
+   変えるリクエストヘッダーで外側を MISS させ、内側の HIT を `age` の有無で見る。
+   method override 系のヘッダーは外側のキーに含まれる一方、Worker が上流へ
+   渡さないので内側のキーには入らない:
+   ```sh
+   # 他のリクエストと重ならない URL にする (一般ルートのクエリはキーに残る)
+   URL="$BASE/about?purge-check=$(date +%s)"
+   probe() {
+     curl -sS -o /dev/null -D - -H "X-HTTP-Method-Override: $1" "$URL" \
+       | grep -iE '^(cf-cache-status|age):'
+   }
+
+   probe a   # 外側 MISS・内側 MISS。Cloud Run のリクエストログに 1 件届く
+   sleep 15  # 書き込んだ直後 (2 秒後) の再取得は、内側でも MISS になることがある
+   probe b   # 外側 MISS で age が付く = 内側 HIT。Cloud Run には届かない
+   ```
+   ここで purge する (「運用」の「エッジキャッシュを手で purge する」)。
+   ```sh
+   probe c   # 外側 MISS で age が無く、Cloud Run に 2 件目が届けば内側は消えている
+   ```
+   `probe c` に `age` が付いたままなら、ゾーンの purge は内側に届いていない。
+   その場合は、内側の TTL を 24 時間にしておく前提 (purge が鮮度を保つ) が
+   成り立たないので、worker/src/index.js の `ORIGIN_CACHE_TTL` を外側と同じ
+   1 時間にする。
 
    症状から切り分ける:
    - `/chomp` の `Location` に run.app が出る → Worker が `X-Forwarded-Host` を
@@ -1423,8 +1502,8 @@ GHCR への push のために GitHub 側へ足す secret や variable は無い�
 - <https://addons.mozilla.org/ja/firefox/addon/perldocjp-firefox-addon/>
 
 デプロイ後に古い docs.json が残る時間は、ブラウザーでは app.psgi が付ける
-`Cache-Control` (2 時間) で決まる。エッジでは、平常時は外側の Workers Cache
-(1 時間) と内側の `fetch()` キャッシュ (1 時間) の二層合計で最大 2 時間 (§10)。
+`Cache-Control` (2 時間) で決まる。エッジでは、平常時はデプロイ後の purge から
+最大 1 時間 (外側の Workers Cache の TTL。§10)。
 障害時の stale 配信はこの上限に含めない (§10 の「TTL を決める場所」)。
 
 ## 運用
@@ -1486,6 +1565,32 @@ GHCR への push のために GitHub 側へ足す secret や variable は無い�
     --location asia-northeast1 --repository perldoc-jp --package app \
     --format='value(createTime)'
   ```
+  ロールバックは deploy.yml を通らないので、purge が走らない。内側のキャッシュには
+  戻す前のリビジョンの応答が最大 24 時間残るため、トラフィックを戻した後に
+  手で purge する (次の項)。
+- **エッジキャッシュを手で purge する**: deploy.yml の purge ジョブと同じ
+  `worker/scripts/purge-cache.sh` を使う。ロールバックの後と、purge ジョブが
+  失敗して再実行もできないときに要る。消えるのは内側 (fetch の cf 設定) だけで、
+  外側の Workers Cache は最大 1 時間残る。外側もすぐに消す必要があるなら、
+  Worker を再デプロイして version を変える (§10)。token は §7 の
+  `CLOUDFLARE_CACHE_PURGE_TOKEN` と同じ権限のものを使う。実値をコマンドラインに
+  書かないのは §10 の Worker のデプロイ手順と同じ理由による:
+  ```bash
+  (
+    set -euo pipefail
+    export CLOUDFLARE_ZONE_ID=...   # 非機密 (§7)
+
+    printf 'CLOUDFLARE_CACHE_PURGE_TOKEN: ' >&2
+    IFS= read -r -s CLOUDFLARE_CACHE_PURGE_TOKEN
+    printf '\n' >&2
+    export CLOUDFLARE_CACHE_PURGE_TOKEN
+
+    ./worker/scripts/purge-cache.sh
+  )
+  ```
+  Actions から行う場合は、失敗した run の purge ジョブを Re-run failed jobs で
+  再実行するか、Deploy workflow を workflow_dispatch で実行する (digest が
+  同じならデプロイは飛ばされ、purge だけが走る)。
 - **ログ**: Cloud Console の Cloud Run → perldoc-jp → ログ。
   リクエストログは Cloud Run が自動で記録する。アプリケーションログ
   (Log::Minimal) は app.psgi のミドルウェアが STDERR に出したものが
