@@ -625,18 +625,35 @@ describe('diff のパス等価表現', () => {
 // 既定キャッシュキーに含まれるので、変種は別キー = 現在と同じ都度計算になる
 // このサイトに存在したことのない path への既知のスキャン (issue #89)。
 // origin へ fetch せずに Worker が 404 を返し、Cloud Run の課金対象リクエストを
-// 減らす
+// 減らす。判定は path の先頭一致の列挙ではなく、スキャンにしか現れない断片
+// (ルート直下の dot 名、任意位置の .env と /wp-、.php 末尾、Vite の /@fs/) で行う
 describe('スキャン path の遮断', () => {
   for (const path of [
-    '/wp-login.php',
-    '/wp-admin/',
-    '/wp-json/',
-    '/wp-content/plugins/x',
-    '/xmlrpc.php',
+    // ルート直下の dot 名
     '/.env',
     '/.env.local',
     '/.git/config',
     '/.git/HEAD',
+    '/.aws/credentials',
+    '/.bashrc',
+    // 任意位置の .env (dir の下、符号化した区切りの後ろ)
+    '/static//.env',
+    '/docs/perl/5.38.0/.env',
+    '/variable/%40fs%2F.env',
+    // .php 末尾
+    '/wp-login.php',
+    '/xmlrpc.php',
+    '/index.php',
+    '/docs/wp-login.php',
+    // 任意位置の /wp-
+    '/wp-admin/',
+    '/wp-json/',
+    '/wp-content/plugins/x',
+    '/blog/wp-json/batch/v1',
+    '/wordpress/wp-includes/wlwmanifest.xml',
+    // Vite の /@fs/ (アプリの変数名ルートが /variable/%40fs%2F... へ 302 する分も含む)
+    '/@fs/.env',
+    '/@fs/root/.aws/credentials',
   ]) {
     it(`${path} は origin に fetch せず 404 を返す`, async () => {
       const res = await proxy(`https://perldoc.jp${path}`);
@@ -659,8 +676,19 @@ describe('スキャン path の遮断', () => {
   });
 
   // アプリのルートに当たる正当なリクエストや、将来使いうる path、クローラの
-  // 正当なリクエストは遮断しない
-  for (const path of ['/wp', '/sitemap.xml', '/.well-known/traffic-advice', '/', '/func/chomp']) {
+  // 正当なリクエストは遮断しない。断片に近い正当な名前 (PHP::Session、変数の
+  // @ARGV、core の Env) も通す
+  for (const path of [
+    '/wp',
+    '/sitemap.xml',
+    '/.well-known/traffic-advice',
+    '/',
+    '/func/chomp',
+    '/pod/PHP::Session',
+    '/docs/modules/PHP-Session-0.15/lib/PHP/Session.pod',
+    '/variable/%40ARGV',
+    '/pod/Env',
+  ]) {
     it(`${path} は通常どおり origin に転送する`, async () => {
       await proxy(`https://perldoc.jp${path}`);
       assert.equal(calls.length, 1);
