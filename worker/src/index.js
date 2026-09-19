@@ -70,7 +70,17 @@ async function proxy(request, env, url) {
   // diff の search は元の文字列を渡さず、Worker が分類した値から再構築する。
   // Plack 側のクエリパーサー (WWW::Form::UrlEncoded) は `;` も区切りに使うため、
   // 素通しすると Worker には見えない target が diff 計算へ到達し得る
-  target.search = diff.kind === 'rebuild' ? diff.search : url.search;
+  if (diff.kind === 'rebuild') {
+    target.search = diff.search;
+  } else if (url.pathname === DOCS_JSON_PATH) {
+    // 拡張機能の一部の版は docs.json を毎回 ?time=<ミリ秒> 付きで取るため、
+    // クエリを残すと内側のキーが 1 回ごとに別になり、全件が origin に届く。
+    // Plack::Middleware::Static は PATH_INFO だけで応答を決めるので、time に
+    // 限らずクエリ全体を落としても応答は変わらない
+    target.search = '';
+  } else {
+    target.search = url.search;
+  }
 
   const headers = new Headers(request.headers);
   // Plack::Middleware::ReverseProxy が読む X-Forwarded-* は
@@ -180,6 +190,10 @@ const ORIGIN_CACHE_TTL = 3600;
 // diff の canonical path。エスケープ (%XX) を含む形は canonical になり得ない
 // (実在する POD パスは英数と . _ / - だけで構成される。classifyDiffRequest 参照)
 const DIFF_PATH = /^\/docs\/(?:modules|perl)\/.+\.pod\/diff$/;
+
+// Chrome 拡張と Firefox アドオンが取る文書一覧 (docs/cloud-run.md の
+// 「static/docs.json の外部利用者」)
+const DOCS_JSON_PATH = '/static/docs.json';
 
 // このサイトに存在したことのない path への既知のスキャン (issue #89)。path の
 // 先頭一致を列挙するのではなく、スキャンにしか現れない断片で判定する。一覧は

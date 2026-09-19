@@ -125,6 +125,21 @@ describe('実 workerd 上の Worker', () => {
     assert.deepEqual(captured, []);
   });
 
+  // docs.json のクエリ除去が bundle 後の実ランタイムでも効いていること。
+  // 内側のキーが 1 つに寄ることはローカルで観測できないため、上流 URL だけを見る
+  it('docs.json はクエリを落として上流に渡す', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await production.fetch('https://perldoc.jp/static/docs.json?time=1789799603251');
+    assert.equal(res.status, 200);
+    assert.deepEqual(captured, [`${ORIGIN}/static/docs.json`]);
+  });
+
   // スキャン path の遮断 (src/index.js の isScannerPath、issue #89) が bundle 後の
   // 実ランタイムでも効いていること
   it('スキャン path は origin に届かず 404 を返す', async () => {

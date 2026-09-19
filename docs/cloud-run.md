@@ -926,10 +926,15 @@ method override 系 / `X-Forwarded-Host` などの一部ヘッダー) を使う�
   による Source link) ため、一般ルートのクエリは推測で削らない。
   ダッシュボードの「Ignore Query String」も使わない (diff の `target` まで
   キーから消え、異なる差分の混同 = キャッシュ汚染になる)。
-- diff だけは Worker が上流クエリを再構築する。空でない `target` 1 個だけを
+- diff は Worker が上流クエリを再構築する。空でない `target` 1 個だけを
   正規化してキーに残し、未知パラメーターは受理しつつ上流 URL から除く。
   重複 `target` とエスケープ (`%`) 入りの diff 形パスは 400 で止め、
   キー分割や Worker/Plack のパーサー差を突いたすり抜けを上流に到達させない。
+- `/static/docs.json` は Worker が上流クエリを丸ごと落とす。拡張機能の一部の版
+  (「`static/docs.json` の外部利用者」) が毎回 `?time=<ミリ秒>` を付けて取る
+  ため、クエリを残すと内側のキーが 1 回ごとに別になり、全件がオリジンへ届く。
+  静的ファイルの応答はクエリで変わらない (`Plack::Middleware::Static` は
+  PATH_INFO だけを見る) ので、`time` 以外のパラメーターも落としてよい。
 - キャッシュキーを分割・迂回できるリクエストヘッダー (`Origin`、method
   override 系、`Cache-Control: no-cache`、`Pragma`、`Cookie`、
   `Authorization` など) は、キャッシュ対象の GET/HEAD では Worker が上流へ
@@ -941,9 +946,9 @@ path + クエリ (パラメーターの順序も区別)、Worker の version、�
 method override 系・URL rewrite 系・forwarding 系のリクエストヘッダー。
 ホスト名はキーに含まれないが、本番と staging は別 Worker
 (perldoc-jp / perldoc-jp-staging) で、キャッシュ自体が Worker 単位に
-分かれているため混ざらない。diff のクエリ正規化は Worker の中の処理なので
-外側キーには反映されず、等価表現の変種は外側では別キーになる。それらは
-Worker を起動させるだけで、正規化後の内側キーへ寄って HIT するため
+分かれているため混ざらない。diff と docs.json のクエリ正規化は Worker の中の
+処理なので外側キーには反映されず、等価表現の変種は外側では別キーになる。
+それらは Worker を起動させるだけで、正規化後の内側キーへ寄って HIT するため
 Cloud Run には届かない (Worker の起動は現状の全リクエストと同じ費用)。
 
 purge について: 内側は上流サブリクエストの run.app URL を基準に保持される
@@ -1426,6 +1431,13 @@ GHCR への push のために GitHub 側へ足す secret や variable は無い�
 `Cache-Control` (2 時間) で決まる。エッジでは、平常時は外側の Workers Cache
 (1 時間) と内側の `fetch()` キャッシュ (1 時間) の二層合計で最大 2 時間 (§10)。
 障害時の stale 配信はこの上限に含めない (§10 の「TTL を決める場所」)。
+
+この上限は、クエリを付けずに取る利用者のものである。Firefox アドオンと、
+クエリを外す前の版の Chrome 拡張 (ktat/perldocjp-chrome-extension#1) は、
+docs.json を毎回 `?time=<ミリ秒>` 付きで取る。この URL は毎回違うので、
+ブラウザーのキャッシュにも外側の Workers Cache にも当たらず、古さは内側の
+キャッシュだけで決まる。Worker はこのクエリを落としてからオリジンへ渡すので
+(§10)、内側のキャッシュには 1 つのキーで乗る。
 
 ## 運用
 
