@@ -438,7 +438,8 @@ Custom Token で作る。テンプレートは Workers KV / R2 / Routes / Tail /
 Account Settings / User Details まで含み、この workflow に必要な範囲
 (Worker script のアップロード・secret の登録・デプロイ) を大きく超える。
 
-- Permissions: **Account / Workers Scripts / Edit** のみ
+- Permissions: **Account > Workers Scripts > Edit** のみ (ダッシュボードの 3 つの
+  ドロップダウン、スコープ > 権限 > アクセスレベルの順)
 - Account Resources: 対象アカウント 1 つのみ
 - account-owned token で作る (CI/CD 向けの service principal として公式に
   案内されており、user のライフサイクルから切り離せる)
@@ -476,11 +477,13 @@ Attach) がこのトークンで成功することを検証する。権限エラ
 `CLOUDFLARE_CACHE_PURGE_TOKEN` は deploy.yml の purge ジョブ (§10) だけが使う。
 `CLOUDFLARE_API_TOKEN` に権限を足さず、別の Custom Token として作る。
 
-- Permissions: **Zone / Cache Purge / Purge** のみ
+- Permissions: **Zone > Cache Purge > Purge** のみ (`CLOUDFLARE_API_TOKEN` と同じく、
+  スコープ > 権限 > アクセスレベルの順)
 - Zone Resources: perldoc.jp の 1 ゾーンのみ
 - account-owned token で作る (上の参考の対応製品の一覧に Cache が含まれる)。
   purge が認証エラーになる場合は、同じ権限の user-owned token で切り分ける
-- TTL (有効期限) を設定し、失効したら再発行する
+- 有効期限は設定しない。この token でできるのはゾーンのキャッシュを消すことだけで、
+  失効させて purge ジョブが失敗し、古い応答が最大 24 時間残るほうが実害として大きい
 
 この token が漏れても、できるのはゾーンのキャッシュを消すことだけで、Worker や
 DNS は書き換えられない。消されるたびに origin への取得が増えるので、被害は
