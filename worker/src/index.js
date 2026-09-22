@@ -181,11 +181,14 @@ async function proxy(request, env, url) {
 //   内側: fetch の cf 設定。Worker が一掃・確定したヘッダーと正規化した
 //         上流 URL がキーになるため、外側をすり抜けた変種はここへ寄る。
 //         オリジン保護の backstop はこちら
-// 再デプロイ後の残留は最悪で二層の TTL の和になる (内側の失効直前の応答で
-// 外側が充填された場合)。「最大 2 時間」の予算 (docs/cloud-run.md 構成の
-// 概要) を保つため 3600 + 3600 に分割している。片方だけ変えないこと
+// 配信データが変わるのは Cloud Run のデプロイのときだけなので、内側は
+// deploy.yml の purge ジョブがデプロイのたびにゾーンごと消す。内側の TTL は
+// 鮮度の予算ではなく、purge が失敗したときに古い応答が残る時間の上限として
+// 24 時間にしてある。外側には purge の経路が無いので、外側の TTL が
+// 「purge から最大 1 時間」という再デプロイ後の残留の予算 (docs/cloud-run.md
+// 構成の概要) をそのまま決める。外側を延ばすときは、この予算ごと見直すこと
 const WORKERS_CACHE_TTL = 3600;
-const ORIGIN_CACHE_TTL = 3600;
+const ORIGIN_CACHE_TTL = 86400;
 
 // diff の canonical path。エスケープ (%XX) を含む形は canonical になり得ない
 // (実在する POD パスは英数と . _ / - だけで構成される。classifyDiffRequest 参照)
