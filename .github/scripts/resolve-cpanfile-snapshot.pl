@@ -1,0 +1,284 @@
+#!/usr/bin/env perl
+# cpanfile.snapshot を CPAN の最新へ解決し直す。ただし公開から --min-age-days
+# (既定 7 日) 経っていない配布物は、その日数を満たす中で最も新しい版に固定する。
+# Renovate の minimumReleaseAge と同じ扱いを CPAN に対して行うためのもの
+# (Renovate の cpanfile manager は cpanfile.snapshot を扱えない)。
+# 使い方と設計は docs/dependency-updates.md の「CPAN (cpanfile.snapshot)」を参照。
+#
+# carton と curl が要る。Dockerfile の base ステージの中で、リポジトリの
+# ルートをカレントにして実行する:
+#
+#   docker run --rm -v "$PWD:/usr/src/app" perl-app-image \
+#     perl .github/scripts/resolve-cpanfile-snapshot.pl --summary cpan-update-summary.md
+#
+# 手順:
+#   1. cpanfile の先頭に固定用の requires を足した一時 cpanfile を作り、
+#      空の local から carton install して snapshot を作る
+#   2. 元の snapshot に無かった配布物それぞれについて、MetaCPAN で公開日を引く
+#   3. 7 日未満のものがあれば、7 日以上経過した中で最新の版を固定に加えて 1 へ。
+#      無ければその snapshot を cpanfile.snapshot にする
+#
+# cpanfile 自体は書き換えない。固定は解決のためだけの一時 cpanfile に置く
+# (cpanfile が変わらなければ cpanfile.target も一致したままなので、
+# update-cpanfile-snapshot.yml は走らない)。
+use v5.36;
+use Getopt::Long qw(GetOptions);
+use JSON::PP ();
+use POSIX qw(strftime);
+use File::Temp ();
+
+my $min_age_days = 7;
+my $max_rounds   = 5;
+my $summary_path;
+my @allow_young;
+GetOptions(
+    'min-age-days=i' => \$min_age_days,
+    'max-rounds=i'   => \$max_rounds,
+    'summary=s'      => \$summary_path,
+    # 脆弱性の修正など、待たずに取り込みたい配布物 (例: DBI)。
+    # Renovate の vulnerabilityAlerts が minimumReleaseAge を無視するのと同じ扱い
+    'allow-young=s'  => \@allow_young,
+) or die "invalid options\n";
+my %allow_young = map { $_ => 1 } map { split /[\s,]+/ } @allow_young;
+
+my $CPANFILE      = 'cpanfile';
+my $SNAPSHOT      = 'cpanfile.snapshot';
+my $WORK_CPANFILE = 'cpanfile.resolve';
+# carton は --cpanfile で渡したファイル名に .snapshot を付けた名前で書き出す
+my $WORK_SNAPSHOT = "$WORK_CPANFILE.snapshot";
+my $METACPAN      = 'https://fastapi.metacpan.org/v1';
+
+my $JSON   = JSON::PP->new->utf8->canonical;
+my $cutoff = strftime('%Y-%m-%dT%H:%M:%S', gmtime(time - $min_age_days * 86400));
+
+my $old = read_snapshot($SNAPSHOT);
+my %old_by_dist = map { dist_of($_) => $_ } keys %$old;
+
+my $cpanfile_body = do {
+    open my $fh, '<', $CPANFILE or die "$CPANFILE: $!";
+    local $/;
+    <$fh>;
+};
+
+my %pin;          # distribution => { modules, path, release, skipped }
+my %release_cache;
+my $new;
+
+ROUND: for my $round (1 .. $max_rounds) {
+    say "== round $round: resolving with " . scalar(keys %pin) . ' pin(s)';
+    write_work_cpanfile();
+    unlink $WORK_SNAPSHOT;
+
+    # 前の round で入ったモジュールが残っていると carton は「満たされている」と
+    # みなして解決し直さないので、毎回空の local から始める
+    my $local = File::Temp->newdir('carton-local-XXXXXX', TMPDIR => 1);
+    local $ENV{PERL_CARTON_PATH} = "$local";
+    system('carton', 'install', '--cpanfile', $WORK_CPANFILE) == 0
+        or die "carton install failed (round $round)\n";
+
+    $new = read_snapshot($WORK_SNAPSHOT);
+    check_duplicates($new);
+
+    my @young;
+    for my $name (sort keys %$new) {
+        # 元の snapshot にあった版は、既に取り込んだものなので問わない
+        next if $old->{$name} && $old->{$name}{pathname} eq $new->{$name}{pathname};
+
+        my $rel = release_of($new->{$name}{pathname}, $name);
+        next if $rel->{date} le $cutoff;
+        if ($allow_young{ $rel->{distribution} }) {
+            say "  $name: published $rel->{date}, allowed by --allow-young";
+            next;
+        }
+        push @young, [$name, $rel];
+    }
+
+    if (!@young) {
+        say "== resolved in $round round(s)";
+        last ROUND;
+    }
+
+    for (@young) {
+        my ($name, $rel) = @$_;
+        my $dist = $rel->{distribution};
+        die "$name: $dist is pinned but was resolved to a release newer than the pin. "
+          . "Something requires a newer $dist than the one published $min_age_days+ days ago.\n"
+          if $pin{$dist};
+
+        my $cand = latest_release_before($dist, $cutoff);
+
+        # 元の snapshot が既にそれより新しい版を持っているなら (手で上げた等)、
+        # 下げずにそれを使う
+        if (my $old_name = $old_by_dist{$dist}) {
+            my $old_rel = release_of($old->{$old_name}{pathname}, $old_name);
+            $cand = $old_rel if !$cand || $old_rel->{date} gt $cand->{date};
+        }
+        die "$name: no release of $dist was published $min_age_days+ days ago. "
+          . "Wait, or pass --allow-young $dist if it is urgent.\n"
+          unless $cand;
+
+        say "  $name: published $rel->{date}, pinning $cand->{name} ($cand->{date})";
+        $pin{$dist} = {
+            modules => pin_modules($cand, $new->{$name}),
+            path    => author_path($cand->{download_url}),
+            release => $cand->{name},
+            skipped => $name,
+        };
+    }
+
+    die "not resolved in $max_rounds rounds\n" if $round == $max_rounds;
+}
+
+rename $WORK_SNAPSHOT, $SNAPSHOT or die "rename: $!";
+unlink $WORK_CPANFILE;
+write_summary($summary_path) if $summary_path;
+exit 0;
+
+sub write_work_cpanfile {
+    open my $fh, '>', $WORK_CPANFILE or die "$WORK_CPANFILE: $!";
+    # 同じモジュールへの requires が複数あると carton は最初のものを使うので、
+    # 固定は元の cpanfile より前に置く (後ろに置くと直接依存の固定が効かない)
+    print $fh "# generated by $0; do not commit\n";
+    for my $dist (sort keys %pin) {
+        my $p = $pin{$dist};
+        printf $fh "requires '%s', 0, dist => '%s';\n", $_, $p->{path} for @{ $p->{modules} };
+    }
+    print $fh "\n", $cpanfile_body;
+    close $fh or die "$WORK_CPANFILE: $!";
+}
+
+# carton snapshot format: version 1.0 を読む。
+# { 'Try-Tiny-0.30' => { pathname => 'E/ET/ETHER/Try-Tiny-0.30.tar.gz', provides => [...] } }
+sub read_snapshot ($path) {
+    open my $fh, '<', $path or die "$path: $!";
+    my $header = <$fh> // '';
+    die "$path: not a carton snapshot\n"
+        unless $header =~ /^# carton snapshot format: version 1\.0$/;
+    my (%dists, $cur, $section);
+    while (<$fh>) {
+        chomp;
+        if (/^  (\S+)$/) {
+            $cur = $dists{$1} = { provides => [] };
+        } elsif (/^    (\w+):\s*(\S*)$/) {
+            $section = $1;
+            $cur->{$1} = $2 if length $2;
+        } elsif (/^      (\S+)/ && $cur && ($section // '') eq 'provides') {
+            push @{ $cur->{provides} }, $1;
+        }
+    }
+    return \%dists;
+}
+
+# 同じ配布物の別の版が 2 つ入っていると、どちらが使われるかは
+# インストール順次第になる
+sub check_duplicates ($snapshot) {
+    my %seen;
+    for my $name (keys %$snapshot) {
+        my $dist = dist_of($name);
+        die "$dist appears twice in the snapshot ($seen{$dist}, $name)\n" if $seen{$dist};
+        $seen{$dist} = $name;
+    }
+}
+
+# 'Try-Tiny-0.30' -> 'Try-Tiny'。表示と同一配布物の突き合わせにだけ使う
+# (MetaCPAN を引ける場面では、そちらの distribution を使う)
+sub dist_of ($name) {
+    (my $dist = $name) =~ s/-v?\d[\d._]*(?:-TRIAL)?$//;
+    return $dist;
+}
+
+# 'E/ET/ETHER/Try-Tiny-0.30.tar.gz' の版を MetaCPAN で引く
+sub release_of ($pathname, $name) {
+    return $release_cache{$pathname} //= do {
+        my ($author) = $pathname =~ m{^./../([^/]+)/} or die "$name: unexpected pathname $pathname\n";
+        my $res = metacpan_get("/release/$author/$name")->{release}
+            or die "$name: not found on MetaCPAN ($pathname)\n";
+        # 公開日が取れない版を「経過した」とはみなさない
+        # (Renovate の minimumReleaseAgeBehaviour=timestamp-required と同じ)
+        die "$name: MetaCPAN has no release date\n" unless $res->{date};
+        $res;
+    };
+}
+
+sub latest_release_before ($dist, $before) {
+    my $res = metacpan_post('/release/_search', {
+        size   => 1,
+        query  => { bool => { filter => [
+            { term  => { distribution => $dist } },
+            { term  => { maturity => 'released' } },
+            { term  => { authorized => JSON::PP::true } },
+            { range => { date => { lte => $before } } },
+        ] } },
+        sort    => [ { date => 'desc' } ],
+        _source => [qw(name distribution date download_url version provides)],
+    });
+    my ($hit) = @{ $res->{hits}{hits} };
+    return $hit ? $hit->{_source} : undef;
+}
+
+# 固定の requires に使うモジュール名。その配布物が提供するモジュールを全部並べる。
+# cpanm は dist => の指定をモジュール名ごとに覚えるので、1 つだけ固定すると、
+# 同じ配布物の別のモジュール (HTML-Parser なら HTML::Entities に対する
+# HTML::HeadParser) を要求する依存が、それを最新の配布物から入れ直してしまう
+sub pin_modules ($release, $entry) {
+    my @modules = @{ $release->{provides} // [] };
+    @modules = @{ $entry->{provides} } unless @modules;
+    die "$release->{name}: no modules to pin\n" unless @modules;
+    return [ sort @modules ];
+}
+
+# https://cpan.metacpan.org/authors/id/E/ET/ETHER/Try-Tiny-0.30.tar.gz
+#   -> ETHER/Try-Tiny-0.30.tar.gz (cpanfile の dist => の形式)
+sub author_path ($url) {
+    $url =~ m{/authors/id/./../(.+)$} or die "unexpected download_url: $url\n";
+    return $1;
+}
+
+sub metacpan_get ($path) {
+    return curl_json("$METACPAN$path");
+}
+
+sub metacpan_post ($path, $body) {
+    return curl_json("$METACPAN$path",
+        '-X', 'POST', '-H', 'Content-Type: application/json', '--data-binary', $JSON->encode($body));
+}
+
+sub curl_json ($url, @args) {
+    open my $fh, '-|', 'curl', '-fsSL', '--retry', '3', @args, $url or die "curl: $!";
+    my $body = do { local $/; <$fh> };
+    close $fh or die "curl failed: $url\n";
+    return $JSON->decode($body);
+}
+
+sub write_summary ($path) {
+    my %old_v = map { dist_of($_) => $_ } keys %$old;
+    my %new_v = map { dist_of($_) => $_ } keys %$new;
+    my %held  = map { $_ => $pin{$_} } keys %pin;
+    my (@changed, @added, @removed);
+    for my $dist (sort { lc $a cmp lc $b } keys %{ { %old_v, %new_v } }) {
+        my ($o, $n) = ($old_v{$dist}, $new_v{$dist});
+        if    (!$o)      { push @added,   "| $dist | | $n |" }
+        elsif (!$n)      { push @removed, "| $dist | $o | |" }
+        elsif ($o ne $n) { push @changed, "| $dist | $o | $n |" }
+    }
+
+    open my $fh, '>', $path or die "$path: $!";
+    print $fh "公開から $min_age_days 日以上経過した版だけで cpanfile.snapshot を解決し直した"
+            . " (基準: $cutoff UTC 以前に公開)。\n\n";
+    if (@changed || @added || @removed) {
+        print $fh "| 配布物 | 変更前 | 変更後 |\n|---|---|---|\n";
+        print $fh "$_\n" for @changed, @added, @removed;
+        print $fh "\n";
+    }
+    if (%held) {
+        print $fh "7 日未満のため見送った版:\n\n";
+        for my $dist (sort keys %held) {
+            print $fh "- $held{$dist}{skipped} (代わりに $held{$dist}{release})\n";
+        }
+        print $fh "\n";
+    }
+    if (%allow_young) {
+        print $fh "7 日待ちを外した配布物: " . join(', ', sort keys %allow_young) . "\n";
+    }
+    close $fh or die "$path: $!";
+}

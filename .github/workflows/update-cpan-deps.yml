@@ -1,0 +1,188 @@
+name: Update CPAN dependencies
+
+# cpanfile.snapshot を CPAN の最新へ解決し直し、差分を PR にする。Renovate は
+# cpanfile.snapshot を扱えないので、CPAN だけはこの workflow が受け持つ。
+# 公開から 7 日未満の版を取り込まない点と、月 1 回 (2 日 JST) である点は
+# Renovate の設定 (.github/renovate.json5) に揃えている。
+# 設計は docs/dependency-updates.md の「CPAN (cpanfile.snapshot)」を参照。
+#
+# 21:00 UTC の 1 日 = 6:00 JST の 2 日。renovate.yml と同じ時刻
+on:
+  schedule:
+    - cron: '0 21 1 * *'
+  # 脆弱性の修正を月次を待たずに取り込むときに使う (cpan-audit.yml が立てる
+  # issue に手順がある)。renovate.yml の workflow_dispatch と同じく、Actions:
+  # write だけを持つ主体からも起動できる経路ではあるが、起こせるのは解決の
+  # 実行と cpan-deps/update ブランチへの push・PR の作成だけ。ref を master
+  # 以外にしても environment の branch policy により private key を読めない
+  workflow_dispatch:
+    inputs:
+      allow_young:
+        description: '7 日待ちを外す配布物 (例: DBI HTTP-Tiny)。空なら通常どおり'
+        required: false
+        default: ''
+
+concurrency:
+  group: update-cpan-deps
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # 解決 (carton install) はここだけで行う。CPAN の配布物の Makefile.PL /
+  # Build.PL は任意のコードを実行できるので、このジョブには書き込み権限も
+  # 資格情報も持たせない。成果物は cpanfile.snapshot と要約だけ
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # GHA のビルドキャッシュは使わない。master 上の schedule で書き込むと、
+      # deploy.yml が読むキャッシュに解決中の中身が混ざりうるため
+      - name: Build base image
+        run: docker build . -t perl-app-base --target base
+
+      # 解決の途中では 7 日未満の版も一度インストールされ、その Makefile.PL 等が
+      # 動く (snapshot に残るのは 7 日以上経った版だけ)。そのコードが runner 側に
+      # 手を出せないよう、コンテナには解決に要る 3 ファイルだけを渡す。
+      # 作業ツリーごと渡すと .git/config (core.fsmonitor 等) を書き換えられ、
+      # 後続の git コマンドを通じて runner 上でコードが動く
+      - name: Resolve cpanfile.snapshot
+        env:
+          ALLOW_YOUNG: ${{ inputs.allow_young }}
+          WORK: ${{ runner.temp }}/resolve
+        run: |
+          # 入力はシェルに展開せず、配布物名として妥当な文字だけを通す
+          if ! printf '%s' "$ALLOW_YOUNG" | grep -Eq '^[A-Za-z0-9_. -]*$'; then
+            echo "invalid allow_young: $ALLOW_YOUNG" >&2
+            exit 1
+          fi
+          mkdir -p "$WORK"
+          cp cpanfile cpanfile.snapshot "$WORK/"
+          args=(--summary cpan-update-summary.md)
+          for d in $ALLOW_YOUNG; do args+=(--allow-young "$d"); done
+          docker run --rm -v "$WORK:/usr/src/app" \
+            -v "$PWD/.github/scripts/resolve-cpanfile-snapshot.pl:/opt/resolve-cpanfile-snapshot.pl:ro" \
+            perl-app-base perl /opt/resolve-cpanfile-snapshot.pl "${args[@]}"
+
+      # 結果はコンテナが書いたファイルなので git には渡さず、cmp で比べる
+      - name: Check for changes
+        id: diff
+        env:
+          WORK: ${{ runner.temp }}/resolve
+        run: |
+          if cmp -s cpanfile.snapshot "$WORK/cpanfile.snapshot"; then
+            echo 'cpanfile.snapshot is up to date'
+            echo changed=false >> "$GITHUB_OUTPUT"
+          else
+            echo changed=true >> "$GITHUB_OUTPUT"
+          fi
+          head -c 65536 "$WORK/cpan-update-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload result
+        if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cpan-update
+          path: |
+            ${{ runner.temp }}/resolve/cpanfile.snapshot
+            ${{ runner.temp }}/resolve/cpan-update-summary.md
+          retention-days: 7
+          if-no-files-found: error
+
+  # PR の作成だけを行う。resolve の成果物はデータとして読むだけで、何も実行しない
+  pull-request:
+    needs: resolve
+    if: needs.resolve.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Renovate と同じ App・同じ environment を使う (branch policy は master のみ)。
+    # 組み込み GITHUB_TOKEN で作った PR には test.yml が走らないため
+    environment: renovate
+    env:
+      BRANCH: cpan-deps/update
+    steps:
+      - name: Create installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.RENOVATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          owner: perldoc-jp
+          repositories: perldoc.jp
+          # contents / pull-requests: ブランチの push と PR の作成・更新。
+          # workflows: このジョブが書き換えるのは cpanfile.snapshot だけだが、
+          # 前回の PR ブランチを新しい master の上に作り直して force push すると、
+          # その間に master で変わった .github/workflows/ も ref の更新に含まれ、
+          # workflows 権限の無い token では push が拒否される (Renovate が毎月
+          # action の SHA を書き換えるので、前月の PR が残っていれば毎回起きる)。
+          # このジョブは artifact を検査してコミットするだけで何も実行しない
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Download result
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cpan-update
+          path: ${{ runner.temp }}/cpan-update
+
+      - name: Validate result
+        env:
+          DIR: ${{ runner.temp }}/cpan-update
+        run: |
+          # 期待する 2 ファイル以外が無いこと、snapshot の形式と大きさ
+          test "$(cd "$DIR" && find . -type f | LC_ALL=C sort | tr '\n' ' ')" = './cpan-update-summary.md ./cpanfile.snapshot '
+          test "$(head -1 "$DIR/cpanfile.snapshot")" = '# carton snapshot format: version 1.0'
+          test "$(stat -c %s "$DIR/cpanfile.snapshot")" -lt 1048576
+          test "$(stat -c %s "$DIR/cpan-update-summary.md")" -lt 65536
+
+      - name: Push branch and open pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          DIR: ${{ runner.temp }}/cpan-update
+        run: |
+          git config user.name 'GitHub Actions'
+          git config user.email 'noreply@github.com'
+
+          # 前回の PR のブランチに人がコミットを足していたら上書きしない
+          # (CI を通すための修正などが消えるため)。その場合は手で片付ける
+          if git rev-parse --verify --quiet "origin/$BRANCH" >/dev/null; then
+            others=$(git log --format=%ae "origin/master..origin/$BRANCH" | grep -vxF 'noreply@github.com' || true)
+            if [ -n "$others" ]; then
+              echo "::warning::$BRANCH has commits by others; not updating it"
+              exit 0
+            fi
+          fi
+
+          git switch -C "$BRANCH" origin/master
+          cp "$DIR/cpanfile.snapshot" cpanfile.snapshot
+          git add cpanfile.snapshot
+          git commit -m 'cpanfile.snapshot を CPAN の最新 (公開から 7 日以上) へ更新する'
+          git push --force origin "$BRANCH"
+
+          {
+            cat "$DIR/cpan-update-summary.md"
+            echo
+            echo 'update-cpan-deps.yml が作成した。docs/dependency-updates.md の「CPAN (cpanfile.snapshot)」を参照。'
+          } > "$RUNNER_TEMP/body.md"
+          title='CPAN 依存 (cpanfile.snapshot) を更新する'
+          if [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            gh pr edit "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh pr create --base master --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
