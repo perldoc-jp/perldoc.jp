@@ -103,6 +103,12 @@ Renovate のコンテナを動かす) にしている。
 docs/cloud-run.md §9 の translation 通知用 App と同じ考え方で、Renovate 専用の
 App を perldoc-jp org に作る。
 
+現在の App は `perldoc-jp-renovate`
+(org の Settings → Developer settings → GitHub Apps)。鍵のローテーションや
+失効 (後述) はこの App の設定画面で行う。`renovate` という名前は予約されていて
+使えない。workflow は environment の Client ID と private key で App を特定する
+ので、名前はどこからも参照していない。
+
 - Repository permissions:
   - **Contents: Read and write** — ブランチの作成と push
   - **Pull requests: Read and write** — PR の作成・更新・close
