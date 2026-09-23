@@ -77,18 +77,30 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      # cpanfile.snapshot が変わらない限り再利用する。Deploy は日次 schedule で
-      # 動くので、7 日の未使用による eviction には基本かからない
+      # local/ の XS モジュールは Perl の API バージョンとアーキテクチャに縛られる。
+      # 以前はキーに 5.42 を直書きしていたため、Renovate が container: だけを
+      # 5.44 に上げたときに 5.42 でビルドしたキャッシュが当たり、
+      # "Perl API version v5.42.0 of XS.c does not match v5.44.0" で落ちた。
+      # 実際に動いている perl から導出して、イメージの更新に自動で追従させる
+      - name: Resolve Perl ABI
+        id: perl
+        run: |
+          abi=$(perl -MConfig -e 'print "$Config{api_versionstring}-$Config{archname}"')
+          [[ -n "$abi" ]]
+          echo "abi=$abi" >> "$GITHUB_OUTPUT"
+
+      # cpanfile.snapshot と Perl の ABI が変わらない限り再利用する。Deploy は
+      # 日次 schedule で動くので、7 日の未使用による eviction には基本かからない
       - name: Restore CPAN dependencies
         id: deps
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: local
-          key: perl-deps-5.42-trixie-${{ hashFiles('cpanfile.snapshot') }}
+          key: perl-deps-${{ steps.perl.outputs.abi }}-trixie-${{ hashFiles('cpanfile.snapshot') }}
 
       # Dockerfile の base / deps ステージと同じ手順。cpm --resolver snapshot は
       # Carton::Snapshot を require するので Carton が先に要る。
-      # perl:5.42-trixie は buildpack-deps 由来で gcc/g++/make と各種 dev ライブラリを
+      # perl:*-trixie は buildpack-deps 由来で gcc/g++/make と各種 dev ライブラリを
       # 持つが、Dockerfile と同じ集合を明示して XS のビルド条件を揃える
       - name: Install CPAN dependencies
         if: steps.deps.outputs.cache-hit != 'true'
