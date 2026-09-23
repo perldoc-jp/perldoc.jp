@@ -43,15 +43,24 @@ jobs:
       # を含む全体、snapshot.json は --no-corelist で cpanfile.snapshot の分だけ。
       # 前者は perl イメージの更新 (Renovate) で、後者は update-cpan-deps.yml で
       # 直すので、issue で経路を分けて示す
+      #
+      # コンテナには cpanfile.snapshot だけを渡す (作業ツリーごと渡すと
+      # .git/config を書き換えられ、runner 上の git コマンドでコードが動く)
       - name: Run cpan-audit
+        env:
+          WORK: ${{ runner.temp }}/audit
         run: |
-          mkdir -p out
-          docker run --rm -v "$PWD:/usr/src/app" perl-app-base bash -c '
+          mkdir -p "$WORK"
+          cp cpanfile.snapshot "$WORK/"
+          docker run --rm -v "$WORK:/usr/src/app" perl-app-base bash -c '
             set -e
             cpm install -g --show-build-log-on-failure CPAN::Audit CPANSA::DB >&2
-            cpan-audit --json --exit-zero --no-color deps . > out/all.json
-            cpan-audit --json --exit-zero --no-color --no-corelist deps . > out/snapshot.json
+            cpan-audit --json --exit-zero --no-color deps . > all.json.tmp
+            cpan-audit --json --exit-zero --no-color --no-corelist deps . > snapshot.json.tmp
           '
+          mkdir -p out
+          mv "$WORK/all.json.tmp" out/all.json
+          mv "$WORK/snapshot.json.tmp" out/snapshot.json
           for f in out/all.json out/snapshot.json; do
             jq -e '.dists | type == "object"' "$f" > /dev/null
           done

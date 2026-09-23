@@ -277,8 +277,16 @@ update-cpanfile-snapshot.yml は走らない。Dockerfile の deps ステージ�
   (その配布物側の更新が 7 日経つのを待つ)
 
 ジョブは 2 つに分けている。CPAN の配布物の `Makefile.PL` / `Build.PL` は任意の
-コードを実行できるので、解決する `resolve` ジョブは書き込み権限も資格情報も
+コードを実行できる。しかも 7 日待ちが防ぐのは「snapshot に載ること」だけで、
+解決の途中 (1 回目の `carton install`) では公開直後の版も一度インストールされ、
+そのコードが動く。そこで解決する `resolve` ジョブは書き込み権限も資格情報も
 持たず、成果物 (`cpanfile.snapshot` と要約) を artifact に置くだけにしている。
+さらにコンテナには解決に要るファイル (`cpanfile`・`cpanfile.snapshot`・
+スクリプト) だけを渡し、作業ツリーは渡さない。作業ツリーごと渡すと `.git/config`
+(`core.fsmonitor` など) を書き換えられ、後続の git コマンドを通じて runner 上で
+コードが動く。runner 上で動けば、master の GHA キャッシュ (deploy.yml が読む) を
+汚染する手口がある。cpan-audit.yml も毎日 CPAN の最新のコードを動かすので、
+同じく `cpanfile.snapshot` だけを渡している。
 PR を作る `pull-request` ジョブは App token を持つが、artifact をデータとして
 検査してコミットするだけで、何も実行しない。
 

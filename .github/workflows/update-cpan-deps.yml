@@ -43,8 +43,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # 作業ツリーをコンテナへ bind mount するので、.git/config に token を
-          # 残さない
           persist-credentials: false
 
       # GHA のビルドキャッシュは使わない。master 上の schedule で書き込むと、
@@ -52,31 +50,42 @@ jobs:
       - name: Build base image
         run: docker build . -t perl-app-base --target base
 
+      # 解決の途中では 7 日未満の版も一度インストールされ、その Makefile.PL 等が
+      # 動く (snapshot に残るのは 7 日以上経った版だけ)。そのコードが runner 側に
+      # 手を出せないよう、コンテナには解決に要る 3 ファイルだけを渡す。
+      # 作業ツリーごと渡すと .git/config (core.fsmonitor 等) を書き換えられ、
+      # 後続の git コマンドを通じて runner 上でコードが動く
       - name: Resolve cpanfile.snapshot
         env:
           ALLOW_YOUNG: ${{ inputs.allow_young }}
+          WORK: ${{ runner.temp }}/resolve
         run: |
           # 入力はシェルに展開せず、配布物名として妥当な文字だけを通す
           if ! printf '%s' "$ALLOW_YOUNG" | grep -Eq '^[A-Za-z0-9_. -]*$'; then
             echo "invalid allow_young: $ALLOW_YOUNG" >&2
             exit 1
           fi
+          mkdir -p "$WORK"
+          cp cpanfile cpanfile.snapshot "$WORK/"
           args=(--summary cpan-update-summary.md)
           for d in $ALLOW_YOUNG; do args+=(--allow-young "$d"); done
-          docker run --rm -v "$PWD:/usr/src/app" perl-app-base \
-            perl .github/scripts/resolve-cpanfile-snapshot.pl "${args[@]}"
+          docker run --rm -v "$WORK:/usr/src/app" \
+            -v "$PWD/.github/scripts/resolve-cpanfile-snapshot.pl:/opt/resolve-cpanfile-snapshot.pl:ro" \
+            perl-app-base perl /opt/resolve-cpanfile-snapshot.pl "${args[@]}"
 
+      # 結果はコンテナが書いたファイルなので git には渡さず、cmp で比べる
       - name: Check for changes
         id: diff
+        env:
+          WORK: ${{ runner.temp }}/resolve
         run: |
-          if git diff --quiet -- cpanfile.snapshot; then
+          if cmp -s cpanfile.snapshot "$WORK/cpanfile.snapshot"; then
             echo 'cpanfile.snapshot is up to date'
             echo changed=false >> "$GITHUB_OUTPUT"
           else
-            git diff --stat -- cpanfile.snapshot
             echo changed=true >> "$GITHUB_OUTPUT"
           fi
-          cat cpan-update-summary.md >> "$GITHUB_STEP_SUMMARY"
+          head -c 65536 "$WORK/cpan-update-summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload result
         if: steps.diff.outputs.changed == 'true'
@@ -84,8 +93,8 @@ jobs:
         with:
           name: cpan-update
           path: |
-            cpanfile.snapshot
-            cpan-update-summary.md
+            ${{ runner.temp }}/resolve/cpanfile.snapshot
+            ${{ runner.temp }}/resolve/cpan-update-summary.md
           retention-days: 7
           if-no-files-found: error
 
