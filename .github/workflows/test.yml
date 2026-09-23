@@ -138,7 +138,7 @@ jobs:
     # wrangler は Node 22 以上を要求する。deploy-worker.yml と同じ版に固定する
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: '22'
+        node-version: '24'
         cache: npm
         # uses: の step には後続 step の working-directory が効かないので、
         # lock file の位置をリポジトリルートからの相対で明示する
