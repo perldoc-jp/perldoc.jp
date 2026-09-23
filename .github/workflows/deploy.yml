@@ -37,7 +37,7 @@ jobs:
     # 触らないが、script/create_data.pl は冒頭で PJP::M を useall するため CPAN
     # 依存一式が要る。ubuntu-latest の system perl とは版が合わないので、
     # Dockerfile の base と同じイメージの中で走らせる
-    container: perl:5.42-trixie
+    container: perl:5.44-trixie
     # コンテナジョブの run は既定が sh になる (bash ではない)。ここは [[ ]] を使う
     timeout-minutes: 45
     permissions:
@@ -231,7 +231,7 @@ jobs:
         with:
           ref: ${{ needs.years.outputs.app-sha }}
 
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -288,7 +288,7 @@ jobs:
       # 落としても失うものは無い
       - name: Build and push image
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         # build record artifact と job summary には build inputs (project ID 入りの
         # image tag / cache 参照) がそのまま入る。§7 の分類ではどちらも出せない
         # (artifact は公開リポジトリでは実質公開で、secret マスクも効かない)
