@@ -109,10 +109,16 @@ jobs:
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
           owner: perldoc-jp
           repositories: perldoc.jp
-          # ブランチの push と PR の作成・更新だけ。cpanfile.snapshot しか
-          # 書き換えないので workflows は要らない
+          # contents / pull-requests: ブランチの push と PR の作成・更新。
+          # workflows: このジョブが書き換えるのは cpanfile.snapshot だけだが、
+          # 前回の PR ブランチを新しい master の上に作り直して force push すると、
+          # その間に master で変わった .github/workflows/ も ref の更新に含まれ、
+          # workflows 権限の無い token では push が拒否される (Renovate が毎月
+          # action の SHA を書き換えるので、前月の PR が残っていれば毎回起きる)。
+          # このジョブは artifact を検査してコミットするだけで何も実行しない
           permission-contents: write
           permission-pull-requests: write
+          permission-workflows: write
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -131,7 +137,7 @@ jobs:
           DIR: ${{ runner.temp }}/cpan-update
         run: |
           # 期待する 2 ファイル以外が無いこと、snapshot の形式と大きさ
-          test "$(cd "$DIR" && find . -type f | sort | tr '\n' ' ')" = './cpan-update-summary.md ./cpanfile.snapshot '
+          test "$(cd "$DIR" && find . -type f | LC_ALL=C sort | tr '\n' ' ')" = './cpan-update-summary.md ./cpanfile.snapshot '
           test "$(head -1 "$DIR/cpanfile.snapshot")" = '# carton snapshot format: version 1.0'
           test "$(stat -c %s "$DIR/cpanfile.snapshot")" -lt 1048576
           test "$(stat -c %s "$DIR/cpan-update-summary.md")" -lt 65536

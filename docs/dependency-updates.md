@@ -143,8 +143,10 @@ gh variable set RENOVATE_APP_CLIENT_ID --env renovate
 Dashboard の issue が立つことを確認する。
 
 CPAN の更新 PR を作る update-cpan-deps.yml も、同じ App と同じ environment を
-使う (token に載せる権限は contents と pull-requests だけ)。App と鍵を増やさずに
-済むため。`gh workflow run update-cpan-deps.yml` で 1 回流して、PR が作られる
+使う。App と鍵を増やさずに済むため。token に載せる権限は contents /
+pull-requests / workflows で、workflows は前回の PR ブランチを新しい master の上に
+作り直して force push するときに要る (その間に master で変わった
+`.github/workflows/` も ref の更新に含まれるため)。`gh workflow run update-cpan-deps.yml` で 1 回流して、PR が作られる
 ことを確認する。
 
 ### 3. リポジトリの security 設定
@@ -258,9 +260,13 @@ update-cpanfile-snapshot.yml は走らない。Dockerfile の deps ステージ�
 `cpm install --resolver snapshot` で snapshot の版をそのまま入れるので、
 固定した版が本番に入る。
 
-固定の requires は元の cpanfile より前に置いている。carton は同じモジュールへの
-requires が複数あると最初のものを使うため、後ろに置くと `cpanfile` に直接
-書かれたモジュールの固定が効かない。
+固定の requires は元の cpanfile より前に置き、その配布物が提供するモジュールを
+すべて並べる。carton は同じモジュールへの requires が複数あると最初のものを
+使うので、後ろに置くと `cpanfile` に直接書かれたモジュールの固定が効かない。
+また cpanm は `dist =>` の指定をモジュール名ごとに覚えるので、1 つだけ固定すると、
+同じ配布物の別のモジュールを要求する依存 (HTML-Parser なら、`HTML::Entities` を
+固定しても libwww-perl が要求する `HTML::HeadParser`) がそれを最新の配布物から
+入れ直してしまう。
 
 公開日が取れない配布物は「7 日経過した」とみなさず、解決を失敗させる
 (`minimumReleaseAgeBehaviour=timestamp-required` と同じ)。次の場合も失敗する。
