@@ -144,7 +144,8 @@
       // 管理できない (cpanfile manager に lock file 対応が無い)。
       // 下限だけを最新へ上げても入る版は変わらず、Text::Markdown::Discount の
       // ように理由付きで選んだ下限を意味なく書き換えてしまうため、manager ごと
-      // 無効にする。CPAN 側の更新は docs/dependency-updates.md を参照
+      // 無効にする。cpanfile.snapshot は update-cpan-deps.yml が同じ 7 日待ちで
+      // 更新し、脆弱性は cpan-audit.yml が調べる (docs/dependency-updates.md)
       matchManagers: ['cpanfile'],
       enabled: false,
     },

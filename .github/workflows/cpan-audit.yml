@@ -1,0 +1,136 @@
+name: CPAN audit
+
+# cpanfile.snapshot に載っている配布物の既知の脆弱性を CPAN::Audit (CPAN
+# Security Advisory DB) で日次に確かめ、結果を 1 つの issue にまとめる。
+# Dependabot alerts は CPAN を対象にしていないので、Renovate の
+# vulnerabilityAlerts の経路では CPAN の脆弱性は検知されない。その穴を埋める。
+# 設計は docs/dependency-updates.md の「CPAN (cpanfile.snapshot)」を参照。
+#
+# 21:30 UTC = 6:30 JST。renovate.yml (21:00 UTC) の後
+on:
+  schedule:
+    - cron: '30 21 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: cpan-audit
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  # CPAN から CPAN::Audit と最新の DB を入れて実行する (= CPAN のコードを
+  # 実行する) ので、このジョブには書き込み権限を持たせない
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # アプリと同じ perl で見る (perl 本体の advisory も対象になる)
+      - name: Build base image
+        run: docker build . -t perl-app-base --target base
+
+      # DB (CPANSA::DB) は日々更新されるので、7 日待ちはかけず毎回最新を入れる。
+      # 取り込むのは advisory のデータで、アプリの依存にはならない。
+      #
+      # 2 回実行する。all.json は perl 本体と perl 同梱のモジュール (corelist)
+      # を含む全体、snapshot.json は --no-corelist で cpanfile.snapshot の分だけ。
+      # 前者は perl イメージの更新 (Renovate) で、後者は update-cpan-deps.yml で
+      # 直すので、issue で経路を分けて示す
+      - name: Run cpan-audit
+        run: |
+          mkdir -p out
+          docker run --rm -v "$PWD:/usr/src/app" perl-app-base bash -c '
+            set -e
+            cpm install -g --show-build-log-on-failure CPAN::Audit CPANSA::DB >&2
+            cpan-audit --json --exit-zero --no-color deps . > out/all.json
+            cpan-audit --json --exit-zero --no-color --no-corelist deps . > out/snapshot.json
+          '
+          for f in out/all.json out/snapshot.json; do
+            jq -e '.dists | type == "object"' "$f" > /dev/null
+          done
+
+      - name: Upload result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cpan-audit
+          path: out/
+          retention-days: 7
+          if-no-files-found: error
+
+  # 結果を issue に反映するだけ。audit の成果物は jq でデータとして読む
+  report:
+    needs: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TITLE: 'CPAN 依存の既知の脆弱性 (cpan-audit)'
+    steps:
+      - name: Download result
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cpan-audit
+          path: ${{ runner.temp }}/cpan-audit
+
+      - name: Update issue
+        env:
+          DIR: ${{ runner.temp }}/cpan-audit
+        run: |
+          all="$DIR/all.json"
+          snap="$DIR/snapshot.json"
+          count=$(jq '[.dists[] | .advisories | length] | add // 0' "$all")
+          issue=$(gh issue list --state open --search "in:title \"$TITLE\"" \
+            --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+
+          if [ "$count" = 0 ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --comment '既知の脆弱性は無くなった。'
+            fi
+            exit 0
+          fi
+
+          # cpanfile.snapshot の配布物 (update-cpan-deps.yml で直せるもの)
+          in_snapshot=$(jq -c '.dists | keys' "$snap")
+          {
+            echo 'CPAN Security Advisory DB に既知の脆弱性がある配布物。cpan-audit.yml が毎日更新する。'
+            echo
+            echo '| 配布物 | 版 | 入り方 | advisory | 修正済みの版 |'
+            echo '|---|---|---|---|---|'
+            jq -r --argjson snap "$in_snapshot" '.dists | to_entries[]
+              | .key as $d | .value.version as $v
+              | (if ($snap | index($d)) then "cpanfile.snapshot" else "perl 同梱" end) as $via
+              | .value.advisories[]
+              | "| \($d) | \($v) | \($via) | \(.id) | \(.fixed_versions // [] | if length > 0 then "`" + join(", ") + "`" else "なし" end) |"' "$all"
+            echo
+            echo '## 対応'
+            echo
+            echo '- 入り方が cpanfile.snapshot のもの: 修正済みの版があれば、update-cpan-deps.yml を'
+            echo '  7 日待ちを外して起動する (修正版が 7 日以上前に出ていれば外さなくてもよい)'
+            echo
+            echo '  ```sh'
+            # 修正済みの版があるものだけを挙げる
+            fixable=$(jq -r '[.dists | to_entries[] | select(any(.value.advisories[]; (.fixed_versions // []) | length > 0)) | .key] | join(" ")' "$snap")
+            echo "  gh workflow run update-cpan-deps.yml -f allow_young='$fixable'"
+            echo '  ```'
+            echo
+            echo '- 入り方が perl 同梱のもの: perl のイメージ (Dockerfile) の更新で直る。Renovate の PR を待つか、'
+            echo '  cpanfile に明示して CPAN の新しい版を入れる'
+            echo
+            echo '修正版が無いもの・この repo では使わない機能のものの扱いは docs/dependency-updates.md を参照。'
+          } > "$RUNNER_TEMP/body.md"
+
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file "$RUNNER_TEMP/body.md"
+          else
+            gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/body.md"
+          fi

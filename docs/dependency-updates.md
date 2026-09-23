@@ -3,6 +3,8 @@
 Renovate が依存の更新 pull request を作る。設定は
 [.github/renovate.json5](../.github/renovate.json5)、実行は
 [.github/workflows/renovate.yml](../.github/workflows/renovate.yml)。
+Renovate が扱えない CPAN の依存 (`cpanfile.snapshot`) は、同じ方針で動く専用の
+workflow が受け持つ (後述の「CPAN (cpanfile.snapshot)」)。
 
 workflow は**日次**で Renovate を起動するが、出る PR の頻度は 2 種類に分かれる。
 
@@ -48,8 +50,9 @@ worker-test) を通るので、動かない更新はマージ前に落ちる。
 | `.github/workflows/*.yml` の `uses:` | `github-actions` | SHA ピン留めを保ったまま、SHA と `# vX.Y.Z` コメントの両方を書き換える |
 | `.github/workflows/*.yml` の `node-version:` | `github-actions` | test.yml と deploy-worker.yml が同じ版なので 1 PR にまとまる |
 | `Dockerfile` の `FROM perl:...` | `dockerfile` | base と runtime の 2 箇所を必ず同じ PR で動かす |
+| `cpanfile.snapshot` | (Renovate 外) | update-cpan-deps.yml が月 1 回、同じ 7 日待ちで解決し直す |
 
-`cpanfile` は対象外にしている (理由は後述)。`renovate.yml` が固定している
+Renovate の `cpanfile` manager は無効にしている (理由は後述)。`renovate.yml` が固定している
 Renovate 自身の版も対象外で、手で上げる (後述)。`docker-compose.yml` は image を
 ビルドしているだけで参照していないので、そもそも更新対象が無い。
 
@@ -79,7 +82,8 @@ GA になり、今は設定しなくても既定で 3 日待つ。この repo �
 のは次の理由:
 
 - **Perl (cpanfile) の manager がある**。Dependabot に Perl の ecosystem は
-  無い。ただし後述のとおり、この repo では結局 cpanfile を対象外にしている
+  無い。ただし後述のとおり、この repo では結局 cpanfile manager を使わず、
+  CPAN は専用の workflow で更新している
 - **`.github/workflows/` の SHA ピン留めと `# vX.Y.Z` コメントの整合を保った
   まま更新できる**。digest 更新だけを個別に無効にすることもできる
 - **公開日が取れない版の扱いを選べる** (`minimumReleaseAgeBehaviour`)。
@@ -137,6 +141,11 @@ gh variable set RENOVATE_APP_CLIENT_ID --env renovate
 
 置き終わったら `gh workflow run renovate.yml` で 1 回流して、Dependency
 Dashboard の issue が立つことを確認する。
+
+CPAN の更新 PR を作る update-cpan-deps.yml も、同じ App と同じ environment を
+使う (token に載せる権限は contents と pull-requests だけ)。App と鍵を増やさずに
+済むため。`gh workflow run update-cpan-deps.yml` で 1 回流して、PR が作られる
+ことを確認する。
 
 ### 3. リポジトリの security 設定
 
@@ -206,45 +215,107 @@ renovate.yml は `actions/create-github-app-token` で installation token を作
 ローテーションし (App 設定で新しい鍵を追加 → secret を差し替え → 旧鍵を削除)、
 漏えい時は App 設定から鍵を即失効する。
 
-## カバーできていない範囲
+## CPAN (cpanfile.snapshot)
 
-### cpanfile.snapshot (CPAN)
+この repo で最も大きい依存 (直接・推移依存あわせて 150 前後の配布物) は
+`cpanfile.snapshot` が決めている。Renovate はこれを更新できないので、
+専用の workflow を 2 つ置いている。
 
-**この repo で最も大きい依存は Renovate では更新できない。通常の更新でも、
-脆弱性の修正でも同じ。**
+| workflow | いつ | 何をするか |
+|---|---|---|
+| [update-cpan-deps.yml](../.github/workflows/update-cpan-deps.yml) | 毎月 2 日 6:00 (JST) | `cpanfile.snapshot` を 7 日待ち付きで解決し直し、差分を PR にする |
+| [cpan-audit.yml](../.github/workflows/cpan-audit.yml) | 毎日 6:30 (JST) | 既知の脆弱性を調べ、結果を 1 つの issue にまとめる |
+
+### Renovate で扱わない理由
 
 `cpanfile` の版指定は 4 件 (`Pod::Simple` 3.16 / `Pod::Perldoc` 3.28 /
 `SQL::Maker` 0.14 / `Text::Markdown::Discount` 0.18) しかなく、いずれも
 「これ以上でないと動かない」下限であって実際に入る版ではない。実際に入る版を
-決めているのは `cpanfile.snapshot` (直接・推移依存あわせて全モジュール) で、
-lock file を扱う機能が cpanfile manager に無いため Renovate は触れない
-(Dependabot にも Perl の ecosystem 自体が無い)。
+決めているのは `cpanfile.snapshot` で、lock file を扱う機能が cpanfile manager に
+無いため Renovate は触れない (Dependabot には Perl の ecosystem 自体が無い)。
 
 下限だけを最新へ上げても入る版は変わらず、`Text::Markdown::Discount` のように
 理由付きで選んだ下限を意味なく書き換えてしまうので、`cpanfile` manager は
 `enabled: false` にしている。
 
-`vulnerabilityAlerts` の経路でも CPAN はカバーされない。Dependabot alerts が
-CPAN を対象にしていないため、脆弱性が出ても alert 自体が立たない。CPAN の
-セキュリティ情報は別途 (CPAN Security Group の advisory など) 追う必要がある。
+脆弱性も Renovate の経路では検知されない。Dependabot alerts が CPAN を対象に
+していないため、alert 自体が立たない。
 
-CPAN 側を更新したいときは、`cpanfile.snapshot` を消して `carton install` を
-回し、生成された差分を PR にする:
+### 通常の更新 (update-cpan-deps.yml)
 
-```sh
-docker build . -t perl-app-image --target base
-docker run --rm -v $(pwd):/usr/src/app perl-app-image \
-  bash -c 'rm -f cpanfile.snapshot && carton install'
-```
+[.github/scripts/resolve-cpanfile-snapshot.pl](../.github/scripts/resolve-cpanfile-snapshot.pl)
+が、Renovate の `minimumReleaseAge` と同じ条件で `cpanfile.snapshot` を解決し直す。
 
-これには 7 日待ちが効かない (carton は CPAN の最新へ解決する)。自動化するなら
-「新しい snapshot と古い snapshot の差分に出た配布物の公開日を MetaCPAN で
-引き、7 日未満のものを旧版に固定して解決し直す」という作りが要る。既製の
-ツールは無い。
+1. 空の `local/` から `carton install` し、CPAN の最新で snapshot を作る
+2. 元の snapshot に無かった配布物それぞれについて、MetaCPAN で公開日を引く
+3. 公開から 7 日未満のものがあれば、7 日以上経過した中で最も新しい版を
+   `requires 'Module', 0, dist => 'AUTHOR/Dist-x.y.tar.gz'` で固定して 1 に戻る。
+   無ければその snapshot を採用する
 
-なお `cpanfile` を変更する PR では update-cpanfile-snapshot.yml が
-`cpanfile.snapshot` を再生成してコミットするので、`cpanfile` の下限を手で
-上げた場合の snapshot 追従は自動で行われる。
+固定は解決のためだけの一時 cpanfile に置き、`cpanfile` 自体は書き換えない。
+`cpanfile` が変わらないので `cpanfile.target` も一致したままで、
+update-cpanfile-snapshot.yml は走らない。Dockerfile の deps ステージは
+`cpm install --resolver snapshot` で snapshot の版をそのまま入れるので、
+固定した版が本番に入る。
+
+固定の requires は元の cpanfile より前に置いている。carton は同じモジュールへの
+requires が複数あると最初のものを使うため、後ろに置くと `cpanfile` に直接
+書かれたモジュールの固定が効かない。
+
+公開日が取れない配布物は「7 日経過した」とみなさず、解決を失敗させる
+(`minimumReleaseAgeBehaviour=timestamp-required` と同じ)。次の場合も失敗する。
+いずれも PR は作られず、workflow の失敗として見える。
+
+- 7 日以上前に公開された版が 1 つも無い配布物が新たに依存に入った
+- 固定した版より新しい版を、別の配布物が要求している
+  (その配布物側の更新が 7 日経つのを待つ)
+
+ジョブは 2 つに分けている。CPAN の配布物の `Makefile.PL` / `Build.PL` は任意の
+コードを実行できるので、解決する `resolve` ジョブは書き込み権限も資格情報も
+持たず、成果物 (`cpanfile.snapshot` と要約) を artifact に置くだけにしている。
+PR を作る `pull-request` ジョブは App token を持つが、artifact をデータとして
+検査してコミットするだけで、何も実行しない。
+
+PR のブランチは `cpan-deps/update` で固定し、毎月 force push で作り直す。
+ただし、そのブランチに workflow 以外のコミット (CI を通すための修正など) が
+あれば上書きせずに終わる。
+
+作られた PR は他の PR と同じく test.yml を通る。runtime-test は本番と同じ
+データで全テストを回すので、動かない更新はここで落ちる。
+
+### 脆弱性 (cpan-audit.yml)
+
+[CPAN::Audit](https://metacpan.org/pod/CPAN::Audit) (CPAN Security Advisory
+DB) で `cpanfile.snapshot` と perl 本体・同梱モジュールを調べ、既知の脆弱性が
+あれば「CPAN 依存の既知の脆弱性 (cpan-audit)」という issue を作るか更新する。
+無くなれば issue を閉じる。DB は毎日 CPAN から最新を入れる (advisory のデータで、
+アプリの依存にはならないので 7 日待ちはかけない)。
+
+issue の表では、配布物ごとに入り方を分けている。
+
+- **cpanfile.snapshot**: `update-cpan-deps.yml` で直す。修正版の公開から
+  7 日経っていなければ、該当する配布物だけ 7 日待ちを外して起動する
+  (issue にコマンドが載る)。
+
+  ```sh
+  gh workflow run update-cpan-deps.yml -f allow_young='DBI HTTP-Tiny'
+  ```
+
+  これは Renovate の `vulnerabilityAlerts` が `minimumReleaseAge` を無視するのと
+  同じ扱いで、7 日待ちを外すのは指定した配布物だけ。ほかの配布物は通常どおり
+  7 日待ちで解決される
+- **perl 同梱**: perl のイメージ (Dockerfile) の更新で直る。急ぐなら
+  `cpanfile` に明示して CPAN の新しい版を入れる
+
+修正版が無い advisory は issue に残り続ける。影響を確かめて、この repo が
+使わない機能のものであればそのまま残してよい (issue が閉じないことで、
+未対応のものがあることは見え続ける)。
+
+脆弱性の検知から PR まで自動にはしていない。自動で PR を作るには、
+cpan-audit.yml から update-cpan-deps.yml を起動する権限 (Actions: write) を
+持たせる必要があり、その権限は workflow_dispatch の起動経路を増やすため。
+
+## カバーできていない範囲
 
 ### Docker イメージの公開日
 
