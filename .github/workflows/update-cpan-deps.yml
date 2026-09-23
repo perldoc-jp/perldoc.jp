@@ -60,8 +60,10 @@ jobs:
           ALLOW_YOUNG: ${{ inputs.allow_young }}
           WORK: ${{ runner.temp }}/resolve
         run: |
-          # 入力はシェルに展開せず、配布物名として妥当な文字だけを通す
-          if ! printf '%s' "$ALLOW_YOUNG" | grep -Eq '^[A-Za-z0-9_. -]*$'; then
+          # 入力はシェルに展開せず、配布物名として妥当な文字だけを通す。
+          # 空 (通常の起動) も通す。grep で判定すると、空の入力は 1 行も
+          # 渡らないため不一致になる
+          if ! [[ $ALLOW_YOUNG =~ ^[A-Za-z0-9_.\ -]*$ ]]; then
             echo "invalid allow_young: $ALLOW_YOUNG" >&2
             exit 1
           fi
