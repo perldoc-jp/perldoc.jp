@@ -2,6 +2,7 @@ requires 'Amon2';
 requires 'Text::Xslate';
 requires 'Text::Xslate::Bridge::TT2Like';
 requires 'Plack::Middleware::ReverseProxy';
+requires 'Plack::Middleware::Deflater';
 requires 'Time::Piece';
 requires 'Pod::Simple', '3.16';
 requires 'Pod::Simple::XHTML';

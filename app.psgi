@@ -7,7 +7,7 @@ use Log::Minimal;
 
 # 静的ファイルの Cache-Control。ファイル名にダイジェストが入らないので恒久
 # キャッシュにはせず、デプロイ後に自然に入れ替わる長さに留める。docs.json と
-# rss はビルドごとに変わるため短くする (Cloudflare の Edge TTL と揃える)
+# rss はビルドごとに変わるため短くする
 my $STATIC_MAX_AGE    = 14400;
 my $GENERATED_MAX_AGE = 7200;
 
@@ -27,9 +27,9 @@ my @STATIC = (
     },
     {
         # ルート直下で配信するファイル。実体は static/ に置くので root を分ける。
-        # 本番の robots.txt は Cloudflare のゾーン管理 (Content Signals) がエッジで
-        # 配信しており、この実体はエッジ管理を無効化した場合に origin が 404 を
-        # 返さないためのもの
+        # /robots.txt はリクエストログで 1 日 76 回 origin に届いており、
+        # Cloudflare のゾーン管理 (Content Signals) はエッジで配信を完結させる
+        # のではなく、この origin の robots.txt に指示を足す形で動いている
         path    => qr{^/(?:favicon\.ico|robots\.txt)$},
         root    => './static/',
         max_age => sub { $STATIC_MAX_AGE },
@@ -45,6 +45,18 @@ sub static_max_age {
 }
 
 builder {
+    # 最も外側に置き、Static が返す静的ファイルの応答も含めて圧縮する。
+    # 対象は HTML・JSON・CSS・JavaScript・RSS・text/plain (.pod のソース表示)
+    enable 'Plack::Middleware::Deflater',
+        content_type => [qw(
+            text/html
+            application/json
+            text/css
+            application/javascript
+            text/javascript
+            application/rss+xml
+            text/plain
+        )];
     # Static より外側に置き、配信されたレスポンスにヘッダを足す
     enable sub {
         my $app = shift;

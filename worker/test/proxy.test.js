@@ -273,11 +273,14 @@ describe('origin 障害時の応答', () => {
   });
 });
 
-// 全パスの GET/HEAD の status 200 は Cloudflare エッジで 2 時間キャッシュする
-// (docs/cloud-run.md)。cf はサブリクエスト単位の設定で、200 以外は負数 = 保存しない
+// 全パスの GET/HEAD の status 200 はエッジの二層でキャッシュする
+// (docs/cloud-run.md §10)。cf は内側 (fetch) のサブリクエスト単位の設定で、
+// 200 以外は負数 = 保存しない。内側は deploy.yml の purge ジョブがデプロイの
+// たびに消すので、TTL は purge が失敗したときの残留の上限として 24 時間に
+// してある。外側 (Workers Cache) は purge できないため 1 時間のまま
 const EDGE_CACHE = {
   cacheEverything: true,
-  cacheTtlByStatus: { '200': 7200, '201-599': -1 },
+  cacheTtlByStatus: { '200': 86400, '201-599': -1 },
 };
 
 const DIFF = '/docs/perl/5.42.0/perlfunc.pod/diff';
@@ -312,7 +315,7 @@ describe('全パス共通のエッジキャッシュ設定', () => {
     assert.equal(await new Response(calls[0].init.body).text(), 'hello');
   });
 
-  // 2 時間はエッジ TTL であり、ブラウザーへ新しい TTL を公開しない
+  // cf の TTL はエッジ専用であり、ブラウザーへ新しい TTL を公開しない
   it('レスポンスへ Cache-Control を追加しない', async () => {
     const res = await proxy('https://perldoc.jp/');
     assert.equal(res.headers.get('Cache-Control'), null);
@@ -326,6 +329,75 @@ describe('全パス共通のエッジキャッシュ設定', () => {
       });
     const res = await proxy('https://perldoc.jp/static/css/style.css');
     assert.equal(res.headers.get('Cache-Control'), 'public, max-age=14400');
+  });
+});
+
+// 外側 (Workers Cache) はレスポンスの Cloudflare-CDN-Cache-Control で制御する。
+// 無指定はオプトアウトにならずヒューリスティックで保持されるため、
+// キャッシュしない応答にも no-store を明示する。保存対象は内側と同じ
+// GET/HEAD の 200 だけ
+describe('Workers Cache 向けレスポンスヘッダー', () => {
+  const edgeControl = (res) => res.headers.get('Cloudflare-CDN-Cache-Control');
+
+  for (const method of ['GET', 'HEAD']) {
+    it(`${method} の 200 は max-age=3600`, async () => {
+      const res = await proxy('https://perldoc.jp/docs/perl/perl.pod', { method });
+      assert.equal(edgeControl(res), 'max-age=3600');
+    });
+  }
+
+  it('404 は no-store (エラーをヒューリスティックで固定しない)', async () => {
+    originResponse = () => new Response('not found', { status: 404 });
+    const res = await proxy('https://perldoc.jp/docs/perl/no-such.pod');
+    assert.equal(edgeControl(res), 'no-store');
+  });
+
+  it('3xx は no-store', async () => {
+    originResponse = () =>
+      new Response(null, {
+        status: 301,
+        headers: { Location: 'https://perldoc.jp/func/chomp' },
+      });
+    const res = await proxy('https://perldoc.jp/chomp');
+    assert.equal(edgeControl(res), 'no-store');
+  });
+
+  it('POST は 200 でも no-store', async () => {
+    const res = await proxy('https://perldoc.jp/', { method: 'POST', body: 'x' });
+    assert.equal(edgeControl(res), 'no-store');
+  });
+
+  it('Worker 自身の 400 も no-store', async () => {
+    const res = await proxy('https://perldoc.jp/docs/perl/x.pod/diff?target=a&target=b');
+    assert.equal(res.status, 400);
+    assert.equal(edgeControl(res), 'no-store');
+  });
+
+  it('Worker 自身の 502 も no-store', async () => {
+    globalThis.fetch = () => Promise.reject(new TypeError('network error'));
+    const res = await proxy('https://perldoc.jp/');
+    assert.equal(res.status, 502);
+    assert.equal(edgeControl(res), 'no-store');
+  });
+
+  // オリジン側で誤ってこのヘッダーを返しても、エッジ TTL の唯一の情報源は
+  // Worker のまま
+  it('オリジン由来の値は上書きする', async () => {
+    originResponse = () =>
+      new Response('ok', {
+        status: 200,
+        headers: { 'Cloudflare-CDN-Cache-Control': 'max-age=999999' },
+      });
+    const res = await proxy('https://perldoc.jp/');
+    assert.equal(edgeControl(res), 'max-age=3600');
+  });
+
+  // 保存された応答がそのまま HIT で返るため、staging はキャッシュ済みでも
+  // クロール除けが付いた状態で配られる
+  it('NOINDEX と共存する', async () => {
+    const res = await proxy('https://staging.perldoc.jp/', {}, { NOINDEX: '1' });
+    assert.equal(edgeControl(res), 'max-age=3600');
+    assert.equal(res.headers.get('X-Robots-Tag'), 'noindex, nofollow');
   });
 });
 
@@ -552,9 +624,112 @@ describe('diff のパス等価表現', () => {
 // diff 以外のクエリはアプリが意味を持ち得る (例: tmpl/pod.tt は c().req.uri() を
 // Source link に使う) ため、削除も並べ替えもせずそのまま渡す。クエリ全体が
 // 既定キャッシュキーに含まれるので、変種は別キー = 現在と同じ都度計算になる
+// このサイトに存在したことのない path への既知のスキャン (issue #89)。
+// origin へ fetch せずに Worker が 404 を返し、Cloud Run の課金対象リクエストを
+// 減らす。判定は path の先頭一致の列挙ではなく、スキャンにしか現れない断片
+// (ルート直下の dot 名、任意位置の .env と /wp-、.php 末尾、Vite の /@fs/) で行う
+describe('スキャン path の遮断', () => {
+  for (const path of [
+    // ルート直下の dot 名
+    '/.env',
+    '/.env.local',
+    '/.git/config',
+    '/.git/HEAD',
+    '/.aws/credentials',
+    '/.bashrc',
+    // 任意位置の .env (dir の下、符号化した区切りの後ろ)
+    '/static//.env',
+    '/docs/perl/5.38.0/.env',
+    '/variable/%40fs%2F.env',
+    // .php 末尾
+    '/wp-login.php',
+    '/xmlrpc.php',
+    '/index.php',
+    '/docs/wp-login.php',
+    // 任意位置の /wp-
+    '/wp-admin/',
+    '/wp-json/',
+    '/wp-content/plugins/x',
+    '/blog/wp-json/batch/v1',
+    '/wordpress/wp-includes/wlwmanifest.xml',
+    // Vite の /@fs/ (アプリの変数名ルートが /variable/%40fs%2F... へ 302 する分も含む)
+    '/@fs/.env',
+    '/@fs/root/.aws/credentials',
+  ]) {
+    it(`${path} は origin に fetch せず 404 を返す`, async () => {
+      const res = await proxy(`https://perldoc.jp${path}`);
+      assert.equal(res.status, 404);
+      assert.equal(calls.length, 0);
+    });
+  }
+
+  it('HEAD でも同様に 404 で、fetch を呼ばない', async () => {
+    const res = await proxy('https://perldoc.jp/wp-login.php', { method: 'HEAD' });
+    assert.equal(res.status, 404);
+    assert.equal(calls.length, 0);
+  });
+
+  it('404 は固定文言の text/plain で、Workers Cache に保存しない', async () => {
+    const res = await proxy('https://perldoc.jp/.env');
+    assert.equal(res.headers.get('Content-Type'), 'text/plain; charset=utf-8');
+    assert.equal(res.headers.get('Cloudflare-CDN-Cache-Control'), 'no-store');
+    assert.equal(await res.text(), 'Not Found\n');
+  });
+
+  // アプリのルートに当たる正当なリクエストや、将来使いうる path、クローラの
+  // 正当なリクエストは遮断しない。断片に近い正当な名前 (PHP::Session、変数の
+  // @ARGV、core の Env) も通す
+  for (const path of [
+    '/wp',
+    '/sitemap.xml',
+    '/.well-known/traffic-advice',
+    '/',
+    '/func/chomp',
+    '/pod/PHP::Session',
+    '/docs/modules/PHP-Session-0.15/lib/PHP/Session.pod',
+    '/variable/%40ARGV',
+    '/pod/Env',
+  ]) {
+    it(`${path} は通常どおり origin に転送する`, async () => {
+      await proxy(`https://perldoc.jp${path}`);
+      assert.equal(calls.length, 1);
+    });
+  }
+});
+
 describe('一般ルートのクエリ互換', () => {
   it('diff 以外はクエリを順序ごと素通しする', async () => {
     await proxy('https://perldoc.jp/docs/perl/5.42.0/perlfunc.pod?b=2&a=1');
     assert.equal(calls[0].url.href, `${ORIGIN}/docs/perl/5.42.0/perlfunc.pod?b=2&a=1`);
+  });
+
+  it('docs.json 以外の静的ファイルもクエリを素通しする', async () => {
+    await proxy('https://perldoc.jp/static/css/style.css?v=2');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/css/style.css?v=2`);
+  });
+});
+
+// 拡張機能の一部の版は docs.json を毎回 ?time=<ミリ秒> 付きで取る。クエリを残すと
+// 内側のキャッシュキーが 1 回ごとに別になり、全件が origin に届く
+describe('docs.json のクエリ除去', () => {
+  it('?time= を上流 URL から除く', async () => {
+    await proxy('https://perldoc.jp/static/docs.json?time=1789799603251');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+  });
+
+  it('time 以外のパラメーターも除く', async () => {
+    await proxy('https://perldoc.jp/static/docs.json?time=1789799603251&nonce=x');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+  });
+
+  it('HEAD でも除き、メソッドは HEAD のまま', async () => {
+    await proxy('https://perldoc.jp/static/docs.json?time=1789799603251', { method: 'HEAD' });
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
+    assert.equal(calls[0].init.method, 'HEAD');
+  });
+
+  it('クエリ無しはそのまま転送する', async () => {
+    await proxy('https://perldoc.jp/static/docs.json');
+    assert.equal(calls[0].url.href, `${ORIGIN}/static/docs.json`);
   });
 });

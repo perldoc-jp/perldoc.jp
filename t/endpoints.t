@@ -66,8 +66,11 @@ subtest 'GET /static/docs.json' => sub {
 
     # docs.json は Chrome 拡張 / Firefox アドオンが参照する外部契約
     # (docs/cloud-run.md 参照)。生成手順の不整合で空の JSON になっても
-    # ビルド自体は成功してしまうため、中身までここでゲートする
-    my $docs = decode_json($mech->response->content);
+    # ビルド自体は成功してしまうため、中身までここでゲートする。
+    # WWW::Mechanize は Accept-Encoding: gzip を自動で送るため、Deflater が
+    # 応答を圧縮すると response->content は生の gzip バイト列になる。
+    # decoded_content で Content-Encoding に応じた展開後の本文を取る
+    my $docs = decode_json($mech->response->decoded_content);
     cmp_ok scalar(keys %$docs), '>', 500, 'has enough entries';
     like $docs->{'Acme::Bleach'}, qr{^modules/Acme-Bleach-}, 'maps package to path';
 };
@@ -81,11 +84,12 @@ subtest 'GET /favicon.ico' => sub {
 };
 
 subtest 'GET /robots.txt' => sub {
-    # 本番はエッジ (Cloudflare のゾーン管理) が配信するが、エッジ管理を
-    # 無効化した場合に origin が 404 を返さないことをここで守る
+    # Cloudflare のゾーン管理 (Content Signals) は、この origin の
+    # robots.txt に指示を足す形で動いている
     $mech->get('/robots.txt');
     is $mech->status, 200, 'status is 200';
     like $mech->content, qr{^User-agent: \*}m, 'robots.txt の実体が返る';
+    like $mech->content, qr{^Disallow: /docs/\*/diff$}m, 'diff への Disallow が含まれる';
 };
 
 subtest '静的ファイルの Cache-Control' => sub {
@@ -294,6 +298,7 @@ subtest '/docs/(modules|perl)/*.pod/diff' => sub {
         is $mech->title, 'perl/5.38.0/perl.pod と perl/5.36.0/perl.pod の翻訳の差分 - perldoc.jp';
         $mech->content_contains(q{<table class='diff'>}, 'diff テーブルが描画される');
         $mech->content_contains(q{<tr class='match'>}, '共通行が描画される');
+        $mech->content_contains(q{<meta name="robots" content="noindex, nofollow" />}, 'noindex, nofollow が付く');
     };
 
     subtest 'DBに存在しないpodの場合、404が返る (500にならない)' => sub {

@@ -6,7 +6,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # apt のダウンロード済み .deb とインデックスを BuildKit の cache mount に残す
 # (既定の docker-clean はキャッシュを消すため無効化する)。cache mount は
-# 同一マシンでの再ビルドにのみ効き、registry cache には乗らない
+# 同一マシンでの再ビルドにのみ使われ、エクスポートされるビルドキャッシュ
+# (type=gha) には含まれない
 RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
   echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
@@ -80,7 +81,7 @@ RUN git clone --filter=blob:none https://github.com/perldoc-jp/translation.git a
 # 無効化され、update.pl の pod2html (翻訳 2500 ファイル) から VACUUM までが
 # まるごと再実行される。しかもそれが PR (test.yml) とマージ後 (deploy.yml) で
 # 2 回起きる。
-# 変更頻度の低い順に重ねる。data/ (= 年次統計の seed である years.pl) は
+# 変更頻度の低い順に重ねる。data/ (= 年次統計の years.pl) は
 # デプロイのたびに自動コミットされる最も揮発的な入力で、しかも update.pl は
 # 読まないため、ここには置かず update.pl の後・create_data.pl の直前で重ねる
 COPY sql ./sql
@@ -106,13 +107,13 @@ RUN SKIP_ASSETS_UPDATE=1 perl script/update.pl
 # 更新しないため、この位置でも仕上がりの DB は変わらない
 RUN sqlite3 db/perldocjp.db 'PRAGMA page_size = 8192; VACUUM; ANALYZE;'
 
-# 年次統計の seed (data/years.pl)。デプロイのたびに自動コミットされるため、
-# update.pl より下に置いて pod2html のレイヤキャッシュを壊さないようにする
+# 年次統計 (data/years.pl) はここで再生成せず、コミットされている現物をそのまま
+# イメージへ入れる。再導出はビルドより前に deploy.yml の years ジョブが行い、
+# その結果のコミットがこのビルドのソースになる (create_data.pl の冒頭を参照)。
+# デプロイのたびに自動コミットされる最も揮発的な入力なので、update.pl より下に
+# 置いて pod2html のレイヤキャッシュを無効化しないようにする
 COPY data ./data
 
-# 対象年 (translation の最新イベントの前年) は script 側で導出する。
-# 壁時計から取るとコマンド文字列が入力に依らず一定のため、年をまたいでも
-# キャッシュされたレイヤが再利用され、対象年が古いまま進まない
 RUN perl script/create_data.pl
 
 RUN rm -rf assets/translation/.git db/perldocjp.master.db
@@ -128,23 +129,15 @@ RUN rm -rf assets/translation/.git db/perldocjp.master.db
 FROM databuild AS test
 
 # アプリを起動して叩くために要るものを足す。data/ は context から重ねない。
-# context の data/years.pl は seed であり、databuild が再導出した現物を
-# 上書きしてしまうため (テストは配信するものを検証する)
+# 配信されるのは databuild が持つ data/ (コミット済みの years.pl と、
+# create_data.pl が生成した recent.pl / index-*.pl) なので、context から
+# 重ね直すとテストが配信物とは別のものを見ることになる
 COPY t ./t
 COPY tmpl ./tmpl
 COPY static ./static
 COPY app.psgi toc.txt toc-var.txt ./
 
 RUN prove -lr t/ && touch /tests-passed
-
-
-# years-export: deploy.yml の commit-years-data ジョブが、ビルドで再導出された
-# data/years.pl を取り出して master へ書き戻すための export 専用ステージ。
-# (databuild が git から再導出するのは前年+当年だけなので、書き戻しが無いと
-# ある年の統計は 2 年後にシードのコミット時点の内容で凍結されてしまう)
-FROM scratch AS years-export
-
-COPY --from=databuild /usr/src/app/data/years.pl /years.pl
 
 
 # runtime: Cloud Run 用。レイヤは変更頻度の低い順に重ね、DB を最後に置く。
@@ -178,7 +171,8 @@ COPY --from=deps /usr/src/app/local ./local
 # 配信イメージは COPY . . (denylist) にしない。CI のワークスペースに落ちた
 # ファイル (google-github-actions/auth の gha-creds-*.json 等) を .dockerignore の
 # 列挙漏れひとつで拾ってしまうため、実行時に読むものだけを列挙する。
-# 列挙漏れは deploy.yml の smoke test が検出する (toc.txt → /index/core など)
+# 列挙漏れは smoke test が検出する (toc.txt → /index/core など)。
+# 本番は deploy.yml、PR は test.yml がこれを回す
 COPY app.psgi toc.txt toc-var.txt ./
 COPY config ./config
 COPY lib ./lib

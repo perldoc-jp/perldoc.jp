@@ -1,11 +1,18 @@
 #!/usr/bin/perl
 
-# databuild の派生データ (recent feed / 年次統計 / docs.json / 目次) を
-# 1 プロセスで生成する。翻訳イベントの導出は translation の git log 全走査で
-# 高価なうえ、空チェックと shadowed-deletion 検査という不変条件を伴う。
-# 生成物ごとに別プロセスで導出すると走査が重複し、検査の適用が生成物ごとに
-# 非対称になるため、導出と検査をここで 1 回だけ行い、すべての生成物を同じ
-# 検査済みイベント列から組み立てる。
+# databuild の派生データ (recent feed / docs.json / 目次) を 1 プロセスで生成する。
+# 翻訳イベントの導出は translation の git log 全走査で高価なうえ、空チェックと
+# shadowed-deletion 検査という不変条件を伴う。生成物ごとに別プロセスで導出すると
+# 走査が重複し、検査の適用が生成物ごとに非対称になるため、導出と検査をここで
+# 1 回だけ行い、すべての生成物を同じ検査済みイベント列から組み立てる。
+#
+# 年次統計 (data/years.pl) だけは main から外してある。イメージのビルドより前に
+# 再導出して master へコミットし、そのコミットをソースにしてビルドする構成のため
+# (.github/workflows/deploy.yml の years ジョブと script/update-years.pl)。
+# ここでも再生成すると、コミットされている現物とイメージの中身が食い違いうる。
+# その分だけ走査が 2 プロセスに分かれるので、update-years.pl 側にも同じ
+# 空チェックを置いてある。create_year_data 自体はここに残し、導出のロジックが
+# 1 箇所であることは保つ
 
 use strict;
 use warnings;
@@ -38,7 +45,7 @@ sub main {
     mkdir './data' or die $! if not -d './data';
 
     create_recent($pjp, $events);
-    create_year_data($events, $ARGV[0]);
+    # create_year_data はここから呼ばない (冒頭のコメント参照)
     create_docs_json($pjp);
     create_index_data($pjp, $events);
 }
@@ -118,6 +125,7 @@ sub create_rss {
     });
 }
 
+# 呼ぶのは script/update-years.pl だけ (main からは呼ばない)
 sub create_year_data {
     my ($events, $target_year) = @_;
 

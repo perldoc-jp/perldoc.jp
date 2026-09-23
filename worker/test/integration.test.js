@@ -56,6 +56,10 @@ describe('実 workerd 上の Worker', () => {
     const res = await production.fetch('https://perldoc.jp/func/chomp');
     assert.equal(res.status, 200);
     assert.equal(await res.text(), 'origin body');
+    // 外側 (Workers Cache) を制御するヘッダーが bundle 後の実ランタイムでも
+    // 付くこと。エッジでの消費と HIT/MISS はローカルで観測できないため、
+    // ヘッダーの存在だけをここで見る
+    assert.equal(res.headers.get('Cloudflare-CDN-Cache-Control'), 'max-age=3600');
   });
 
   it('本番の設定では X-Robots-Tag を足さない', async () => {
@@ -118,6 +122,36 @@ describe('実 workerd 上の Worker', () => {
       'https://perldoc.jp/docs/perl%2F5.42.0/perlfunc.pod/diff?target=perl%2F5.10.1%2Fperlfunc.pod',
     );
     assert.equal(res.status, 400);
+    assert.deepEqual(captured, []);
+  });
+
+  // docs.json のクエリ除去が bundle 後の実ランタイムでも効いていること。
+  // 内側のキーが 1 つに寄ることはローカルで観測できないため、上流 URL だけを見る
+  it('docs.json はクエリを落として上流に渡す', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.json({});
+      }),
+    );
+    const res = await production.fetch('https://perldoc.jp/static/docs.json?time=1789799603251');
+    assert.equal(res.status, 200);
+    assert.deepEqual(captured, [`${ORIGIN}/static/docs.json`]);
+  });
+
+  // スキャン path の遮断 (src/index.js の isScannerPath、issue #89) が bundle 後の
+  // 実ランタイムでも効いていること
+  it('スキャン path は origin に届かず 404 を返す', async () => {
+    const captured = [];
+    network.use(
+      http.get(`${ORIGIN}/*`, ({ request }) => {
+        captured.push(request.url);
+        return HttpResponse.text('origin body');
+      }),
+    );
+    const res = await production.fetch('https://perldoc.jp/wp-login.php');
+    assert.equal(res.status, 404);
     assert.deepEqual(captured, []);
   });
 

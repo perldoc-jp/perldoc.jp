@@ -1,7 +1,7 @@
 #!/usr/bin/env perl
 # ビルド済みイメージを Cloud Run 相当の FS 制約 (--read-only + /tmp の tmpfs) で
-# 起動し、主要経路の開通を確認する。deploy.yml (デプロイ前の検証) と test.yml
-# (PR での runtime ビルド検証) が共用する。
+# 起動し、主要経路の開通を確認する。deploy.yml (デプロイ前の検証) と
+# test.yml (PR での runtime ビルド検証) が共用する。
 #
 # 使い方: script/smoke-test.pl <image>
 #
@@ -64,8 +64,7 @@ sub smoke_test ($image) {
     # ホストと異なる platform のイメージ (Apple Silicon から本番の amd64 イメージ
     # を検査する場合など) では docker run のたびに platform mismatch の WARNING が
     # 出る。イメージ自身の platform を明示すると、動作を変えずに抑制できる。
-    # イメージがまだ手元に無ければ従来どおり docker run の自動 pull に任せる
-    # (deploy.yml は push だけで daemon に load しないのでこの分岐を通る)。
+    # イメージがまだ手元に無ければ docker run の自動 pull に任せる。
     # その場合の inspect のエラーは想定内なので stderr に出さない
     open my $stderr_backup, '>&', \*STDERR or die "dup STDERR: $!\n";
     open STDERR, '>', '/dev/null' or die "redirect STDERR: $!\n";
