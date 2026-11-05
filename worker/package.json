@@ -9,7 +9,7 @@
     "node": ">=22"
   },
   "devDependencies": {
-    "msw": "2.15.0",
+    "msw": "3.0.3",
     "wrangler": "4.157.0"
   }
 }
