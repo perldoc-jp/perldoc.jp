@@ -73,6 +73,25 @@ describe('クライアント由来の X-Forwarded-* の一掃', () => {
     }
   });
 
+  // origin の Plack::HTTPParser::PP はヘッダ名の - を _ に置き換えて PSGI の
+  // 環境変数名にするため、区切りを _ で書いたヘッダも同じ HTTP_X_FORWARDED_* に
+  // なる。- の表記だけを消すと、_ の表記で同じ値を origin に届けられる
+  for (const name of [
+    'X_Forwarded_For',
+    'X_Forwarded_Host',
+    'X_Forwarded_HTTPS',
+    'X_Forwarded_Port',
+    'X_Forwarded_Proto',
+    'X_Forwarded_Server',
+    'X-Forwarded_Port',
+    'X_Forwarded-Port',
+  ]) {
+    it(`区切りが _ の ${name} も転送しない`, async () => {
+      await proxy('https://perldoc.jp/func/chomp', { headers: { [name]: '443@evil.example' } });
+      assert.equal(calls[0].init.headers.get(name), null);
+    });
+  }
+
   it('一掃しても通常のリクエストヘッダは残す', async () => {
     await proxy('https://perldoc.jp/', {
       headers: { 'Accept-Language': 'ja', 'User-Agent': 'test-agent', 'Referer': 'https://example.com/' },
