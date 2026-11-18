@@ -88,9 +88,13 @@ async function proxy(request, env, url) {
   // 自由に送れる。個別に上書きすると取りこぼす (例えば
   // X-Forwarded-Port: 443@evil.example は HTTP_HOST を
   // perldoc.jp:443@evil.example にし、Location の実ホストが evil.example になる)
-  // ため、転送前に一掃してから必要なものだけをここで確定させる
+  // ため、転送前に一掃してから必要なものだけをここで確定させる。
+  // origin の Plack::HTTPParser::PP はヘッダ名の - を _ に置き換えて PSGI の
+  // 環境変数名にするため、X_Forwarded_Port も X-Forwarded-Port と同じ
+  // HTTP_X_FORWARDED_PORT になる。区切りを - に揃えてから判定する
   for (const name of [...headers.keys()]) {
-    if (/^x-forwarded-/i.test(name) || name.toLowerCase() === 'forwarded') headers.delete(name);
+    const canonical = name.toLowerCase().replaceAll('_', '-');
+    if (canonical.startsWith('x-forwarded-') || canonical === 'forwarded') headers.delete(name);
   }
   // 一掃で Cloudflare が付けた実クライアント IP (X-Forwarded-For) も消えるため、
   // Cloudflare 自身が確定させる CF-Connecting-IP から設定し直す。
